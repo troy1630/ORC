@@ -1,0 +1,45 @@
+services:
+  orc-api:
+    image: orc-api:latest
+    environment:
+      PORTAINER_BASE_URL: ${PORTAINER_BASE_URL}
+      PORTAINER_API_TOKEN_FILE: /run/secrets/portainer_api_token
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+    ports:
+      - target: 8000
+        published: 8000
+        protocol: tcp
+        mode: ingress
+    secrets:
+      - portainer_api_token
+
+  orc-worker:
+    image: orc-api:latest
+    command: ["python", "-m", "app.worker"]
+    environment:
+      PORTAINER_BASE_URL: ${PORTAINER_BASE_URL}
+      PORTAINER_API_TOKEN_FILE: /run/secrets/portainer_api_token
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+    secrets:
+      - portainer_api_token
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: orc
+      POSTGRES_USER: orc
+      POSTGRES_PASSWORD: orc
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+
+secrets:
+  portainer_api_token:
+    external: true
+
+volumes:
+  postgres_data:

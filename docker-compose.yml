@@ -1,0 +1,48 @@
+services:
+  orc-api:
+    build:
+      context: ./backend
+    container_name: orc-api
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./agents:/app/agents:ro
+      - ./skills:/app/skills:ro
+      - ./docs:/app/docs:ro
+    depends_on:
+      - postgres
+      - redis
+
+  orc-worker:
+    build:
+      context: ./backend
+    container_name: orc-worker
+    env_file:
+      - .env
+    command: ["python", "-m", "app.worker"]
+    volumes:
+      - ./agents:/app/agents:ro
+      - ./skills:/app/skills:ro
+      - ./docs:/app/docs:ro
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: postgres:16
+    container_name: orc-postgres
+    environment:
+      POSTGRES_DB: orc
+      POSTGRES_USER: orc
+      POSTGRES_PASSWORD: orc
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: orc-redis
+
+volumes:
+  postgres_data:
