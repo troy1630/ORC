@@ -8,7 +8,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://orc:orc@postgres:5432/orc}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ../agents:/app/agents:ro
       - ../skills:/app/skills:ro
