@@ -14,8 +14,10 @@ services:
       - ../skills:/app/skills:ro
       - ../docs:/app/docs:ro
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   orc-worker:
     build:
@@ -31,8 +33,10 @@ services:
       - ../skills:/app/skills:ro
       - ../docs:/app/docs:ro
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   postgres:
     image: postgres:16
@@ -42,6 +46,11 @@ services:
       POSTGRES_PASSWORD: orc
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orc -d orc"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7

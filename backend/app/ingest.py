@@ -21,6 +21,7 @@ def _detect_severity(msg: str) -> str:
 
 def parse_logs(
     raw: str,
+    connection_id: int,
     endpoint_id: int,
     container_id: str,
     container_name: str,
@@ -49,6 +50,7 @@ def parse_logs(
         last_ts = max(last_ts, int(occurred_at.timestamp()))
         events.append(
             ObservedEvent(
+                connection_id=connection_id,
                 endpoint_id=endpoint_id,
                 container_id=container_id,
                 container_name=container_name,
