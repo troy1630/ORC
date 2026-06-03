@@ -699,6 +699,17 @@ function containerFriendlyName(app){
 function serverDisplayName(k){
   return k.server_name||k.server||'Unknown server';
 }
+function connectionDisplayName(name){
+  const c=_conns.find(conn=>conn.name===name);
+  return c?(c.server_name||c.name):name;
+}
+function ravenServerKey(msg){
+  return msg.server_key||msg.connection_name||msg.server||'';
+}
+function ravenServerDisplay(msg){
+  const key=ravenServerKey(msg);
+  return msg.server||connectionDisplayName(key)||'Unknown server';
+}
 function serverLogo(k){
   return k.server_logo||BLACK_LOGO_SRC;
 }
@@ -1725,7 +1736,7 @@ function setStatus(icon,text,_state){
 }
 function issueKey(msg){
   if(msg.type==='issue_event'&&msg.event_id)return `event:${msg.event_id}`;
-  return [msg.type,msg.server||'',msg.container||'',msg.severity||'',msg.occurred_at||msg.ts||'',msg.message||msg.error||''].join('|');
+  return [msg.type,ravenServerKey(msg),msg.server||'',msg.container||'',msg.severity||'',msg.occurred_at||msg.ts||'',msg.message||msg.error||''].join('|');
 }
 function issueTime(msg){
   return new Date(msg.occurred_at||msg.ts||0).getTime()||0;
@@ -1764,7 +1775,8 @@ function eventToRavenIssue(e){
   return {
     type:'issue_event',
     event_id:e.id,
-    server:e.server,
+    server:connectionDisplayName(e.server),
+    server_key:e.server,
     container:e.container_name,
     severity:e.severity,
     message:e.message,
@@ -1800,27 +1812,29 @@ async function loadRavenBacklog(){
 }
 function issuePillHtml(msg,opacity,isCurrent){
   const ts=fmtShort(msg.occurred_at||msg.ts);
+  const serverKey=ravenServerKey(msg);
+  const serverDisplay=ravenServerDisplay(msg);
   const accent=isCurrent?'border-left:3px solid currentColor;padding-left:9px;':'';
   const style=`opacity:${opacity};${accent}`;
   if(msg.type==='issue_event'){
     const sev=msg.severity||'error';
     const cls=sev==='warning'?'p-warn':'p-error';
     const clickSev=sev==='critical'?'critical':(sev==='warning'?'warning':'error');
-    return `<div class="pill ${cls}" style="${style};cursor:pointer" data-server="${esc(msg.server||'')}" data-container="${esc(msg.container||'')}" data-severity="${esc(clickSev)}" onclick="jumpToEventsFromEl(this)" title="Click to filter Events">
-      <div class="pill-hdr"><span class="pill-cn">${esc(msg.container||'')}</span><span class="pill-sv">${esc(msg.server||'')} - ${esc(sev.toUpperCase())}</span></div>
+    return `<div class="pill ${cls}" style="${style};cursor:pointer" data-server="${esc(serverKey)}" data-container="${esc(msg.container||'')}" data-severity="${esc(clickSev)}" onclick="jumpToEventsFromEl(this)" title="Click to filter Events">
+      <div class="pill-hdr"><span class="pill-cn">${esc(msg.container||'')}</span><span class="pill-sv">${esc(serverDisplay)} - ${esc(sev.toUpperCase())}</span></div>
       <div class="pill-msg">${esc(issueSummary(msg))}</div>
       <div class="pill-ts">${ts}</div>
     </div>`;
   }
   if(msg.type==='poll_error')
-    return `<div class="pill p-error" style="${style}">✗ <strong>${esc(msg.server)}</strong><div style="font-size:.72rem;margin-top:2px;opacity:.85">${esc(msg.error||'')}</div></div>`;
+    return `<div class="pill p-error" style="${style}">✗ <strong>${esc(serverDisplay)}</strong><div style="font-size:.72rem;margin-top:2px;opacity:.85">${esc(msg.error||'')}</div></div>`;
   if(msg.type==='container_result'){
     const ne=msg.errors||0,nw=msg.warnings||0;
     let cls,detail,sev;
     if(ne>0){cls='p-error';sev='error';detail=`${ne} new error${ne!==1?'s':''}`;if(nw>0)detail+=`, ${nw} new warn`;}
     else{cls='p-warn';sev='warning';detail=`${nw} new warning${nw!==1?'s':''}`;}
-    return `<div class="pill ${cls}" style="${style};cursor:pointer" data-server="${esc(msg.server)}" data-container="${esc(msg.container)}" data-severity="${esc(sev)}" onclick="jumpToEventsFromEl(this)" title="Click to filter Events">
-      <div class="pill-hdr"><span class="pill-cn">${esc(msg.container)}</span><span class="pill-sv">${esc(msg.server)}</span></div>
+    return `<div class="pill ${cls}" style="${style};cursor:pointer" data-server="${esc(serverKey)}" data-container="${esc(msg.container)}" data-severity="${esc(sev)}" onclick="jumpToEventsFromEl(this)" title="Click to filter Events">
+      <div class="pill-hdr"><span class="pill-cn">${esc(msg.container)}</span><span class="pill-sv">${esc(serverDisplay)}</span></div>
       <div style="display:flex;justify-content:space-between;margin-top:2px"><span>${detail}</span><span class="pill-ts">${ts}</span></div>
     </div>`;
   }
@@ -1835,13 +1849,15 @@ function renderFeed(){
   feed.scrollTop=feed.scrollHeight;
 }
 function handleRaven(msg){
+  const serverKey=ravenServerKey(msg);
+  const serverDisplay=ravenServerDisplay(msg);
   switch(msg.type){
     case 'no_connections': setStatus('—','No connections configured.',false); break;
     case 'queue_ready':{const iv=msg.interval?` · ${msg.interval}s/ctr`:'';setStatus('▶',`Scanning ${msg.containers} containers${iv}`,true);break;}
     case 'container_checking':
-      setStatus('🔍',`Checking ${msg.container} on ${msg.server}`,true);
-      setNetworkCheckingContainer(msg.server||'',msg.container||'',true);
-      launchRavenFromContainer(msg.server||'',msg.container||'');
+      setStatus('🔍',`Checking ${msg.container} on ${serverDisplay}`,true);
+      setNetworkCheckingContainer(serverKey,msg.container||'',true);
+      launchRavenFromContainer(serverKey,msg.container||'');
       break;
     case 'issue_event':{
       const sev=msg.severity||'error';
@@ -1851,7 +1867,7 @@ function handleRaven(msg){
       break;
     }
     case 'container_result':{
-      setNetworkCheckingContainer(msg.server||'',msg.container||'',false);
+      setNetworkCheckingContainer(serverKey,msg.container||'',false);
       const ne=msg.errors||0,nw=msg.warnings||0;
       if(!msg.issue_events)_hbBucket+=ne+nw;
       if(ne>0){setStatus('⚠',`${msg.container} · ${ne} new error${ne!==1?'s':''}`,true);addIssuePill(msg);}
@@ -1859,7 +1875,7 @@ function handleRaven(msg){
       else setStatus('✓',`${msg.container} · no new issues`,true);
       break;
     }
-    case 'poll_error': setStatus('✗',`${msg.server}: ${msg.error||'connection failed'}`,true);addIssuePill(msg); break;
+    case 'poll_error': setStatus('✗',`${serverDisplay}: ${msg.error||'connection failed'}`,true);addIssuePill(msg); break;
   }
 }
 
@@ -2469,13 +2485,13 @@ def poll_now(cid: int) -> dict:
         c = s.get(Connection, cid)
         if not c:
             raise HTTPException(404, "Not found")
-        conn_id, name, url, token = c.id, c.name, c.base_url, c.api_token
+        conn_id, name, server_display, url, token = c.id, c.name, c.server_name or c.name, c.base_url, c.api_token
 
     client = PortainerClient(url, token)
     try:
         endpoints = client.get_endpoints()
     except Exception as exc:
-        _raven.publish({"type": "poll_error", "server": name, "error": str(exc)})
+        _raven.publish({"type": "poll_error", "server": server_display, "server_key": name, "error": str(exc)})
         with SessionLocal() as s:
             c2 = s.get(Connection, conn_id)
             if c2:
@@ -2494,7 +2510,7 @@ def poll_now(cid: int) -> dict:
         for container in containers:
             cid_c = container["Id"]
             cname = (container.get("Names") or [f"/{cid_c[:12]}"])[0].lstrip("/")
-            _raven.publish({"type": "container_checking", "server": name, "container": cname})
+            _raven.publish({"type": "container_checking", "server": server_display, "server_key": name, "container": cname})
             try:
                 event_count = 0
                 err_c = 0
@@ -2523,7 +2539,7 @@ def poll_now(cid: int) -> dict:
                     if events:
                         session.add_all(events)
                         session.flush()
-                        issue_payloads = _raven.issue_event_payloads(name, events)
+                        issue_payloads = _raven.issue_event_payloads(server_display, events, server_key=name)
                         chk.last_unix_ts = last_ts
 
                     session.commit()
@@ -2531,7 +2547,7 @@ def poll_now(cid: int) -> dict:
                     _raven.publish(payload)
                 _raven.publish({
                     "type": "container_result",
-                    "server": name, "container": cname,
+                    "server": server_display, "server_key": name, "container": cname,
                     "events": event_count, "errors": err_c, "warnings": warn_c,
                     "issue_events": len(issue_payloads),
                 })

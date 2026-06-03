@@ -24,7 +24,7 @@ from .portainer import PortainerClient
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("orc.worker")
 
-# Each entry: (conn_id, conn_name, endpoint_id, container_id, container_name, client, interval_s)
+# Each entry: (conn_id, conn_name, server_display, endpoint_id, container_id, container_name, client, interval_s)
 _queue: deque = deque()
 _sleep: float = float(POLL_INTERVAL_SECONDS)
 _warned_no_connections: bool = False
@@ -38,7 +38,7 @@ def _rebuild_queue() -> None:
     with SessionLocal() as s:
         connections = s.query(Connection).filter_by(enabled=True).all()
         conn_list = [
-            (c.id, c.name, c.base_url, c.api_token, c.poll_interval_seconds)
+            (c.id, c.name, c.server_name or c.name, c.base_url, c.api_token, c.poll_interval_seconds)
             for c in connections
         ]
 
@@ -53,7 +53,7 @@ def _rebuild_queue() -> None:
     _warned_no_connections = False
     total = 0
 
-    for conn_id, conn_name, base_url, api_token, conn_interval in conn_list:
+    for conn_id, conn_name, server_display, base_url, api_token, conn_interval in conn_list:
         client = PortainerClient(base_url, api_token)
         conn_ok, conn_error = True, None
         try:
@@ -61,7 +61,7 @@ def _rebuild_queue() -> None:
         except Exception as exc:
             conn_ok, conn_error = False, str(exc)
             log.error("[%s] cannot reach Portainer: %s", conn_name, exc)
-            raven.publish({"type": "poll_error", "server": conn_name, "error": conn_error})
+            raven.publish({"type": "poll_error", "server": server_display, "server_key": conn_name, "error": conn_error})
 
         _update_conn(conn_id, "ok" if conn_ok else "error", conn_error, now)
 
@@ -74,7 +74,7 @@ def _rebuild_queue() -> None:
                 for c in client.get_running_containers(eid):
                     cid = c["Id"]
                     cname = (c.get("Names") or [f"/{cid[:12]}"])[0].lstrip("/")
-                    _queue.append((conn_id, conn_name, eid, cid, cname, client, conn_interval))
+                    _queue.append((conn_id, conn_name, server_display, eid, cid, cname, client, conn_interval))
                     total += 1
             except Exception as exc:
                 log.error("[%s] endpoint %s: %s", conn_name, eid, exc)
@@ -115,7 +115,7 @@ def _recent_counts(conn_id: int, cid: str) -> tuple[int, int]:
 
 def _poll_next() -> None:
     global _sleep
-    conn_id, conn_name, eid, cid, cname, client, conn_interval = _queue.popleft()
+    conn_id, conn_name, server_display, eid, cid, cname, client, conn_interval = _queue.popleft()
     event_count = 0
     new_errors = 0
     new_warnings = 0
@@ -125,7 +125,7 @@ def _poll_next() -> None:
     if conn_interval:
         _sleep = float(conn_interval)
 
-    raven.publish({"type": "container_checking", "server": conn_name, "container": cname})
+    raven.publish({"type": "container_checking", "server": server_display, "server_key": conn_name, "container": cname})
 
     try:
         with SessionLocal() as session:
@@ -153,7 +153,7 @@ def _poll_next() -> None:
             if events:
                 session.add_all(events)
                 session.flush()
-                issue_payloads = raven.issue_event_payloads(conn_name, events)
+                issue_payloads = raven.issue_event_payloads(server_display, events, server_key=conn_name)
                 checkpoint.last_unix_ts = last_ts
 
             session.commit()
@@ -165,7 +165,8 @@ def _poll_next() -> None:
 
         raven.publish({
             "type": "container_result",
-            "server": conn_name,
+            "server": server_display,
+            "server_key": conn_name,
             "container": cname,
             "events": event_count,
             "errors": new_errors,
@@ -183,7 +184,8 @@ def _poll_next() -> None:
         recent_errors, recent_warnings = _recent_counts(conn_id, cid)
         raven.publish({
             "type": "container_result",
-            "server": conn_name,
+            "server": server_display,
+            "server_key": conn_name,
             "container": cname,
             "events": 0,
             "errors": 0,

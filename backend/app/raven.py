@@ -43,7 +43,7 @@ def _iso(value: Any) -> str | None:
     return str(value)
 
 
-def issue_event_payload(server: str, event: Any) -> dict[str, Any] | None:
+def issue_event_payload(server: str, event: Any, server_key: str | None = None) -> dict[str, Any] | None:
     severity = str(getattr(event, "severity", "") or "").lower()
     if severity not in ISSUE_SEVERITIES:
         return None
@@ -56,16 +56,20 @@ def issue_event_payload(server: str, event: Any) -> dict[str, Any] | None:
         "message": getattr(event, "message", ""),
         "occurred_at": _iso(getattr(event, "occurred_at", None)),
     }
+    if server_key:
+        payload["server_key"] = server_key
     event_id = getattr(event, "id", None)
     if event_id is not None:
         payload["event_id"] = event_id
     return payload
 
 
-def issue_event_payloads(server: str, events: list[Any], limit: int = 25) -> list[dict[str, Any]]:
+def issue_event_payloads(
+    server: str, events: list[Any], limit: int = 25, server_key: str | None = None
+) -> list[dict[str, Any]]:
     payloads: list[dict[str, Any]] = []
     for event in events:
-        payload = issue_event_payload(server, event)
+        payload = issue_event_payload(server, event, server_key=server_key)
         if payload:
             payloads.append(payload)
         if len(payloads) >= limit:
