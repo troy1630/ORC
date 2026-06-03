@@ -66,6 +66,7 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
 .tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--mut);cursor:pointer;padding:0 14px;font-size:.94rem;font-weight:600;height:100%}
 .tab:hover{color:var(--txt)}.tab.on{color:var(--txt);border-bottom-color:var(--pur)}
 .nav-r{margin-left:auto;display:flex;align-items:center;gap:8px}
+.nav-sel{background:#21262d;border:1px solid var(--bdr);border-radius:8px;color:var(--txt);font-size:.78rem;padding:5px 9px;outline:none;cursor:pointer;min-width:72px}
 /* Status pills */
 .sp{font-size:.75rem;padding:2px 8px;border-radius:10px;background:#21262d;border:1px solid var(--bdr);display:flex;align-items:center;gap:4px}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--mut)}
@@ -238,6 +239,11 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     <span class="sp" style="cursor:pointer" onclick="showTab('events');setEvFilter('severity','warning')">
       <span id="warn-cnt" class="sw2">—</span><span class="muted"> warn</span>
     </span>
+    <select class="nav-sel" id="window-hours" onchange="setWindowHours(this.value)" title="Issue time window">
+      <option value="1">1 hour</option>
+      <option value="6">6 hours</option>
+      <option value="24" selected>24 hours</option>
+    </select>
     <span class="small muted" id="upd"></span>
     <button class="btn" onclick="loadAll()">&#8635;</button>
   </div>
@@ -358,6 +364,7 @@ let _conns=[], _editId=null, _charEditKey='';
 let _hbData=new Array(40).fill(0), _hbBucket=0;
 let _ravenFilter='', _issuePills=[];
 let _oracleState={busy:false,summary:null,analysis:'',error:''};
+let _windowHours=24;
 const MAX_ISSUE_PILLS=20;
 
 /* ============================================================
@@ -415,9 +422,20 @@ function selectedCharacterId(stack){
 }
 function issueCounts(app){
   return {
-    errors:Number(app.errors_24h ?? app.errors_1h ?? app.errors ?? 0),
-    warnings:Number(app.warnings_24h ?? app.warnings_1h ?? app.warnings ?? 0)
+    errors:Number(app.errors ?? app.errors_24h ?? app.errors_1h ?? 0),
+    warnings:Number(app.warnings ?? app.warnings_24h ?? app.warnings_1h ?? 0)
   };
+}
+function validWindowHours(v){
+  const n=Number(v);
+  return [1,6,24].includes(n)?n:24;
+}
+function setWindowHours(v,refresh=true){
+  _windowHours=validWindowHours(v);
+  storageSet('orc.window.hours',String(_windowHours));
+  const sel=document.getElementById('window-hours');
+  if(sel)sel.value=String(_windowHours);
+  if(refresh)loadAll();
 }
 function countLabel(n){return n>99?'99+':String(n);}
 function statusCircles(errors,warnings){
@@ -527,7 +545,7 @@ async function loadStatus(){
    ============================================================ */
 async function loadMap(){
   try{
-    const d=await fetch('/overview').then(r=>r.json());
+    const d=await fetch(`/overview?hours=${_windowHours}`).then(r=>r.json());
     renderMap(d.stacks);
   }catch(e){
     document.getElementById('map-grid').innerHTML='<div class="empty">Could not load stack map.</div>';
@@ -614,7 +632,7 @@ function renderMap(stacks){
    EVENTS
    ============================================================ */
 function _evUrl(){
-  const p=new URLSearchParams({limit:200});
+  const p=new URLSearchParams({limit:200,hours:String(_windowHours)});
   if(_evFilters.severity)p.set('severity',_evFilters.severity);
   if(_evFilters.container)p.set('container',_evFilters.container);
   if(_evFilters.server)p.set('server',_evFilters.server);
@@ -623,8 +641,8 @@ function _evUrl(){
 async function loadEvts(){
   try{
     const d=await fetch(_evUrl()).then(r=>r.json());
-    document.getElementById('err-cnt').textContent=d.err_24h??0;
-    document.getElementById('warn-cnt').textContent=d.warn_24h??0;
+    document.getElementById('err-cnt').textContent=d.err_count??0;
+    document.getElementById('warn-cnt').textContent=d.warn_count??0;
     _evts=d.items; renderEvts();
   }catch{document.getElementById('ev-body').innerHTML='<div class="empty">Could not load events.</div>';}
 }
@@ -883,6 +901,7 @@ async function loadAll(){
 window.addEventListener('resize',()=>{resizeCanvas();drawHb();});
 resizeCanvas();drawHb();
 renderOracle();
+setWindowHours(storageGet('orc.window.hours')||24,false);
 loadAll();
 setInterval(loadAll,30000);
 connectRaven();
@@ -1197,6 +1216,10 @@ def _oracle_review(summary: dict) -> str:
     return content or "Summary:\n- The Oracle did not return any content."
 
 
+def _hours_window(hours: int) -> int:
+    return hours if hours in (1, 6, 24) else 24
+
+
 # ---------------------------------------------------------------------------
 # Routes — Connections
 # ---------------------------------------------------------------------------
@@ -1365,12 +1388,15 @@ def get_events(
     severity: str = "",
     container: str = "",
     server: str = "",
+    hours: int = 24,
 ) -> dict:
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    hours = _hours_window(hours)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     with SessionLocal() as s:
         q = (
             s.query(ObservedEvent, Connection)
             .outerjoin(Connection, ObservedEvent.connection_id == Connection.id)
+            .filter(ObservedEvent.occurred_at >= cutoff)
             .order_by(ObservedEvent.occurred_at.desc())
         )
         if severity:
@@ -1385,18 +1411,19 @@ def get_events(
 
         rows = q.limit(limit).all()
 
-        err_24h = s.query(func.count(ObservedEvent.id)).filter(
+        err_count = s.query(func.count(ObservedEvent.id)).filter(
             ObservedEvent.occurred_at >= cutoff,
             ObservedEvent.severity.in_(["error", "critical"]),
         ).scalar() or 0
-        warn_24h = s.query(func.count(ObservedEvent.id)).filter(
+        warn_count = s.query(func.count(ObservedEvent.id)).filter(
             ObservedEvent.occurred_at >= cutoff,
             ObservedEvent.severity == "warning",
         ).scalar() or 0
 
     return {
-        "err_24h": err_24h,
-        "warn_24h": warn_24h,
+        "hours": hours,
+        "err_count": err_count,
+        "warn_count": warn_count,
         "items": [
             {
                 "id": e.id,
@@ -1453,8 +1480,9 @@ def _stack_character(name: str) -> str:
 
 
 @app.get("/overview")
-def get_overview() -> dict:
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+def get_overview(hours: int = 24) -> dict:
+    hours = _hours_window(hours)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     with SessionLocal() as s:
         connections = s.query(Connection).filter_by(enabled=True).all()
         err_rows = s.query(
@@ -1497,8 +1525,8 @@ def get_overview() -> dict:
                         "full_name": cname,
                         "container_id": cid,
                         "type": _container_type(service),
-                        "errors_24h":   errs.get((conn.id, cid), 0),
-                        "warnings_24h": warns.get((conn.id, cid), 0),
+                        "errors": errs.get((conn.id, cid), 0),
+                        "warnings": warns.get((conn.id, cid), 0),
                     })
             except Exception:
                 continue
@@ -1508,7 +1536,7 @@ def get_overview() -> dict:
                 "character": _stack_character(sname),
                 "containers": sorted(containers, key=lambda x: x["type"]),
             })
-    return {"stacks": stacks_out}
+    return {"hours": hours, "stacks": stacks_out}
 
 
 def _cdct(c: Connection) -> dict:
