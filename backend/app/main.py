@@ -59,7 +59,10 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
 .hb-title{font-size:.78rem;font-weight:600;letter-spacing:.04em;color:var(--txt)}
 .hb-status{font-size:.7rem;color:var(--mut)}
 canvas{display:block;width:100%;height:52px}
-.feed{flex:1;overflow-y:auto;padding:10px 10px 16px}
+.feed-hdr{display:flex;gap:5px;padding:7px 10px;border-bottom:1px solid var(--bdr);flex-shrink:0}
+.ff{background:#21262d;border:1px solid var(--bdr);border-radius:12px;color:var(--mut);cursor:pointer;font-size:.72rem;padding:3px 0;flex:1;text-align:center}
+.ff:hover{color:var(--txt)}.ff.on{background:var(--bdr);color:var(--txt)}
+.feed{flex:1;overflow-y:auto;padding:8px 10px 16px;display:flex;flex-direction:column}
 .pill{margin-bottom:8px;border-radius:14px;padding:9px 12px;font-size:.78rem;border:1px solid transparent;animation:fadein .3s ease}
 @keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .p-start{background:#161f2e;border-color:#1d2d45;color:var(--blu)}
@@ -178,6 +181,11 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
         <span class="hb-status" id="hb-status">connecting…</span>
       </div>
       <canvas id="hb-cv" height="52"></canvas>
+    </div>
+    <div class="feed-hdr">
+      <button class="ff on" id="rf-all" onclick="setRF('')">All</button>
+      <button class="ff" id="rf-error" onclick="setRF('error')">Errors</button>
+      <button class="ff" id="rf-warning" onclick="setRF('warning')">Warnings</button>
     </div>
     <div class="feed" id="feed">
       <div class="ph">Waiting for activity…</div>
@@ -355,36 +363,60 @@ async function pollNow(id,btn){
 }
 
 /* ---- raven / activity feed ---- */
-function addPill(msg){
-  _pills.unshift(msg);
-  if(_pills.length>MAX_PILLS)_pills.pop();
-  renderFeed();
+let _ravenFilter='';
+
+function setRF(f){
+  _ravenFilter=f;
+  ['all','error','warning'].forEach(k=>document.getElementById('rf-'+k).classList.toggle('on',k===(f||'all')));
+  renderFeed(false);
 }
 
-function renderFeed(){
-  if(!_pills.length){document.getElementById('feed').innerHTML='<div class="ph">Waiting for activity…</div>';return;}
-  const html=_pills.map(msg=>{
-    const ts=msg.ts?fmtShort(msg.ts):'';
-    if(msg.type==='poll_start')
-      return `<div class="pill p-start">&#9656; Polling <strong>${esc(msg.server)}</strong></div>`;
-    if(msg.type==='poll_error')
-      return `<div class="pill p-error">&#10007; <strong>${esc(msg.server)}</strong><br><span style="opacity:.8">${esc(msg.error||'')}</span></div>`;
-    if(msg.type==='poll_complete')
-      return `<div class="pill p-done">&#10003; <strong>${esc(msg.server)}</strong> — ${msg.containers} container${msg.containers!==1?'s':''}, ${msg.total_events} event${msg.total_events!==1?'s':''} <span style="opacity:.6">${ts}</span></div>`;
-    if(msg.type==='container_result'){
-      let cls='p-clean', detail='clean';
-      if(msg.errors>0){cls='p-error';detail=`${msg.errors} error${msg.errors>1?'s':''}${msg.warnings>0?`, ${msg.warnings} warning${msg.warnings>1?'s':''}`:''}`;}
-      else if(msg.warnings>0){cls='p-warn';detail=`${msg.warnings} warning${msg.warnings>1?'s':''}`;}
-      else if(msg.events>0){cls='p-ok';detail=`${msg.events} new event${msg.events>1?'s':''}`;}
-      return `<div class="pill ${cls}">
-        <div class="pill-hdr"><span class="pill-cn">${esc(msg.container)}</span><span class="pill-sv">${esc(msg.server)}</span></div>
-        <div>${detail}</div>
-        <div class="pill-ts">${ts}</div>
-      </div>`;
-    }
-    return '';
-  }).join('');
-  document.getElementById('feed').innerHTML=html;
+function pillVisible(msg){
+  if(_ravenFilter==='')return true;
+  if(_ravenFilter==='error')
+    return msg.type==='poll_error'||(msg.type==='container_result'&&msg.errors>0);
+  if(_ravenFilter==='warning')
+    return msg.type==='container_result'&&msg.warnings>0;
+  return true;
+}
+
+function pillHtml(msg){
+  const ts=msg.ts?fmtShort(msg.ts):'';
+  if(msg.type==='queue_ready')
+    return `<div class="pill p-start">&#9654; Scanning ${msg.containers} container${msg.containers!==1?'s':''}</div>`;
+  if(msg.type==='poll_error')
+    return `<div class="pill p-error">&#10007; <strong>${esc(msg.server)}</strong><div style="opacity:.8;font-size:.75rem;margin-top:2px">${esc(msg.error||'')}</div></div>`;
+  if(msg.type==='container_result'){
+    let cls='p-clean',detail='clean';
+    if(msg.errors>0){cls='p-error';detail=`${msg.errors} error${msg.errors>1?'s':''}${msg.warnings>0?`, ${msg.warnings} warn`:''}`;
+    }else if(msg.warnings>0){cls='p-warn';detail=`${msg.warnings} warning${msg.warnings>1?'s':''}`;
+    }else if(msg.events>0){cls='p-ok';detail=`${msg.events} new`;}
+    return `<div class="pill ${cls}">
+      <div class="pill-hdr"><span class="pill-cn">${esc(msg.container)}</span><span class="pill-sv">${esc(msg.server)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span>${detail}</span><span class="pill-ts">${ts}</span></div>
+    </div>`;
+  }
+  return '';
+}
+
+function addPill(msg){
+  _pills.push(msg); // newest at bottom
+  if(_pills.length>MAX_PILLS)_pills.shift();
+  const feed=document.getElementById('feed');
+  const nearBottom=feed.scrollHeight-feed.clientHeight<=feed.scrollTop+80;
+  renderFeed(false);
+  if(nearBottom)feed.scrollTop=feed.scrollHeight;
+}
+
+function renderFeed(scrollToBottom){
+  const feed=document.getElementById('feed');
+  const visible=_pills.filter(pillVisible);
+  if(!visible.length){
+    feed.innerHTML=`<div class="ph">${_pills.length?'No events match this filter.':'Waiting for activity…'}</div>`;
+    return;
+  }
+  feed.innerHTML=visible.map(pillHtml).join('');
+  if(scrollToBottom)feed.scrollTop=feed.scrollHeight;
 }
 
 /* ---- heartbeat chart ---- */
@@ -430,7 +462,8 @@ function connectRaven(){
       const msg=JSON.parse(e.data);
       if(msg.type==='connected'){document.getElementById('hb-status').textContent='live';return;}
       if(msg.type==='container_result')_hbBucket+=msg.events;
-      addPill(msg);
+      const show=['container_result','poll_error','queue_ready'];
+      if(show.includes(msg.type))addPill(msg);
     }catch{}
   };
   es.onerror=()=>{
