@@ -153,14 +153,20 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
         <div class="card sc"><div class="lbl">Warnings (24 h)</div><div class="val sw2" id="warn-cnt">—</div></div>
       </div>
       <div class="card" style="padding:18px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <div style="font-weight:600">Events</div>
-          <div style="display:flex;gap:5px">
-            <button class="fbtn on" id="f-all" onclick="setFilter('')">All</button>
-            <button class="fbtn" id="f-critical" onclick="setFilter('critical')">Critical</button>
-            <button class="fbtn" id="f-error" onclick="setFilter('error')">Errors</button>
-            <button class="fbtn" id="f-warning" onclick="setFilter('warning')">Warnings</button>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">
+          <div style="font-weight:600;margin-right:4px">Events</div>
+          <div style="display:flex;gap:4px">
+            <button class="fbtn on" id="f-all" onclick="setEvFilter('severity','')">All</button>
+            <button class="fbtn" id="f-critical" onclick="setEvFilter('severity','critical')">Critical</button>
+            <button class="fbtn" id="f-error" onclick="setEvFilter('severity','error')">Errors</button>
+            <button class="fbtn" id="f-warning" onclick="setEvFilter('severity','warning')">Warnings</button>
           </div>
+          <select id="ev-server" onchange="setEvFilter('server',this.value)" style="background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.78rem;padding:3px 8px;cursor:pointer">
+            <option value="">All servers</option>
+          </select>
+          <input id="ev-container" placeholder="Container…" oninput="setEvFilter('container',this.value)"
+            style="background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.78rem;padding:3px 8px;width:130px;outline:none">
+          <button class="fbtn" onclick="clearEvFilters()" id="ev-clear" style="display:none">✕ Clear</button>
         </div>
         <div id="ev-body"><div class="empty">Loading…</div></div>
       </div>
@@ -241,7 +247,9 @@ function fmt(iso){const d=new Date(iso);return d.toLocaleDateString()+' '+d.toLo
 function fmtShort(iso){return new Date(iso).toLocaleTimeString();}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
-/* ---- dashboard ---- */
+/* ---- dashboard / events ---- */
+let _evFilters={severity:'',container:'',server:''};
+
 async function loadStatus(){
   try{
     const d=await fetch('/health').then(r=>r.json());
@@ -254,30 +262,79 @@ async function loadStatus(){
     document.getElementById('api-dot').className='dot er';
   }
 }
+
+function _evUrl(){
+  const p=new URLSearchParams({limit:200});
+  if(_evFilters.severity)p.set('severity',_evFilters.severity);
+  if(_evFilters.container)p.set('container',_evFilters.container);
+  if(_evFilters.server)p.set('server',_evFilters.server);
+  return '/events?'+p.toString();
+}
+
 async function loadEvts(){
   try{
-    const d=await fetch('/events?limit=200').then(r=>r.json());
+    const d=await fetch(_evUrl()).then(r=>r.json());
     document.getElementById('err-cnt').textContent=d.err_24h??0;
     document.getElementById('warn-cnt').textContent=d.warn_24h??0;
-    _evts=d.items; renderEvts();
+    _evts=d.items;
+    renderEvts();
   }catch{document.getElementById('ev-body').innerHTML='<div class="empty">Could not load events.</div>';}
 }
-function setFilter(s){
-  _filter=s;
-  ['all','critical','error','warning'].forEach(k=>document.getElementById('f-'+k).classList.toggle('on',k===(s||'all')));
-  renderEvts();
+
+function setEvFilter(key, val){
+  _evFilters[key]=val;
+  // sync severity buttons
+  if(key==='severity'){
+    ['all','critical','error','warning'].forEach(k=>
+      document.getElementById('f-'+k).classList.toggle('on',k===(val||'all')));
+  }
+  // show/hide clear button
+  const active=Object.values(_evFilters).some(v=>v);
+  document.getElementById('ev-clear').style.display=active?'':'none';
+  loadEvts();
 }
+
+function clearEvFilters(){
+  _evFilters={severity:'',container:'',server:''};
+  document.getElementById('ev-container').value='';
+  document.getElementById('ev-server').value='';
+  ['all','critical','error','warning'].forEach(k=>
+    document.getElementById('f-'+k).classList.toggle('on',k==='all'));
+  document.getElementById('ev-clear').style.display='none';
+  loadEvts();
+}
+
+function jumpToEvents(server, container, severity){
+  _evFilters={severity:severity||'error', container:container||'', server:server||''};
+  document.getElementById('ev-container').value=container||'';
+  const sel=document.getElementById('ev-server');
+  sel.value=server||'';
+  ['all','critical','error','warning'].forEach(k=>
+    document.getElementById('f-'+k).classList.toggle('on',k===(_evFilters.severity||'all')));
+  document.getElementById('ev-clear').style.display='';
+  showTab('dash');
+  loadEvts();
+}
+
+function _populateServerDropdown(){
+  const sel=document.getElementById('ev-server');
+  const cur=sel.value;
+  sel.innerHTML='<option value="">All servers</option>'+
+    _conns.map(c=>`<option value="${esc(c.name)}" ${c.name===cur?'selected':''}>${esc(c.name)}</option>`).join('');
+}
+
 function renderEvts(){
   const S={critical:'sc2',error:'se2',warning:'sw2',info:'si2',debug:'si2'};
-  const items=_filter?_evts.filter(e=>e.severity===_filter):_evts;
-  if(!items.length){
-    document.getElementById('ev-body').innerHTML=`<div class="empty">${_evts.length?'No events match this filter.':'No events yet — worker polls each connection in turn.'}</div>`;
+  if(!_evts.length){
+    const hasFilters=Object.values(_evFilters).some(v=>v);
+    document.getElementById('ev-body').innerHTML=
+      `<div class="empty">${hasFilters?'No events match these filters.':'No events yet — worker polls each connection in turn.'}</div>`;
     return;
   }
-  const rows=items.map(e=>`<tr>
+  const rows=_evts.map(e=>`<tr>
     <td class="mono muted">${fmt(e.occurred_at)}</td>
-    <td style="color:var(--pur);font-size:.78rem">${esc(e.server)}</td>
-    <td class="mono" style="color:var(--blu)">${esc(e.container_name)}</td>
+    <td style="color:var(--pur);font-size:.78rem;cursor:pointer" onclick="jumpToEvents('${esc(e.server)}','','error')">${esc(e.server)}</td>
+    <td class="mono" style="color:var(--blu);cursor:pointer" onclick="jumpToEvents('${esc(e.server)}','${esc(e.container_name)}','error')">${esc(e.container_name)}</td>
     <td><span class="${S[e.severity]||'si2'}">${e.severity}</span></td>
     <td class="msg" title="${esc(e.message)}">${esc(e.message)}</td>
   </tr>`).join('');
@@ -290,6 +347,7 @@ function renderEvts(){
 async function loadConns(){
   try{
     _conns=await fetch('/connections').then(r=>r.json());
+    _populateServerDropdown();
     if(!_conns.length){document.getElementById('conn-body').innerHTML='<div class="empty">No connections yet. Add a Portainer server to start ingesting logs.</div>';return;}
     const rows=_conns.map(c=>{
       const st=c.last_status==='ok'?'<span class="st-ok">&#10003; OK</span>':c.last_status==='error'?`<span class="st-er" title="${esc(c.last_error||'')}">&#10007; Error</span>`:'<span class="st-no">—</span>';
@@ -404,14 +462,15 @@ function issuePillHtml(msg, opacity, isCurrent){
   if(msg.type==='container_result'){
     const re=msg.recent_errors||0, rw=msg.recent_warnings||0;
     const ne=msg.errors||0, nw=msg.warnings||0;
-    let cls, detail;
+    let cls, detail, sev;
     if(re>0||ne>0){
-      cls='p-error'; const t=re||ne; detail=`${t} error${t!==1?'s':''} (24h)`;
+      cls='p-error'; sev='error'; const t=re||ne; detail=`${t} error${t!==1?'s':''} (24h)`;
       const tw=rw||nw; if(tw>0) detail+=`, ${tw} warn`;
     }else{
-      cls='p-warn'; const tw=rw||nw; detail=`${tw} warning${tw!==1?'s':''} (24h)`;
+      cls='p-warn'; sev='warning'; const tw=rw||nw; detail=`${tw} warning${tw!==1?'s':''} (24h)`;
     }
-    return `<div class="pill ${cls}" style="${style}">
+    const click=`jumpToEvents('${esc(msg.server)}','${esc(msg.container)}','${sev}')`;
+    return `<div class="pill ${cls}" style="${style};cursor:pointer" onclick="${click}" title="Click to filter Events">
       <div class="pill-hdr"><span class="pill-cn">${esc(msg.container)}</span><span class="pill-sv">${esc(msg.server)}</span></div>
       <div style="display:flex;justify-content:space-between;margin-top:2px"><span>${detail}</span><span class="pill-ts">${ts}</span></div>
     </div>`;
@@ -540,6 +599,9 @@ function connectRaven(){
 
 /* ---- init ---- */
 async function loadAll(){
+  // Always refresh connections so server dropdown stays current
+  _conns=await fetch('/connections').then(r=>r.json()).catch(()=>_conns);
+  _populateServerDropdown();
   await Promise.all([loadStatus(),loadEvts()]);
   if(document.getElementById('pane-conn').classList.contains('on'))await loadConns();
   document.getElementById('upd').textContent='Updated '+new Date().toLocaleTimeString();
@@ -791,16 +853,31 @@ def registry_skills() -> dict:
 
 
 @app.get("/events")
-def get_events(limit: int = 200) -> dict:
+def get_events(
+    limit: int = 200,
+    severity: str = "",
+    container: str = "",
+    server: str = "",
+) -> dict:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     with SessionLocal() as s:
-        rows = (
+        q = (
             s.query(ObservedEvent, Connection)
             .outerjoin(Connection, ObservedEvent.connection_id == Connection.id)
             .order_by(ObservedEvent.occurred_at.desc())
-            .limit(limit)
-            .all()
         )
+        if severity:
+            if severity == "error":
+                q = q.filter(ObservedEvent.severity.in_(["error", "critical"]))
+            else:
+                q = q.filter(ObservedEvent.severity == severity)
+        if container:
+            q = q.filter(ObservedEvent.container_name.ilike(f"%{container}%"))
+        if server:
+            q = q.filter(Connection.name == server)
+
+        rows = q.limit(limit).all()
+
         err_24h = s.query(func.count(ObservedEvent.id)).filter(
             ObservedEvent.occurred_at >= cutoff,
             ObservedEvent.severity.in_(["error", "critical"]),
@@ -809,6 +886,7 @@ def get_events(limit: int = 200) -> dict:
             ObservedEvent.occurred_at >= cutoff,
             ObservedEvent.severity == "warning",
         ).scalar() or 0
+
     return {
         "err_24h": err_24h,
         "warn_24h": warn_24h,
