@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import func, text as _sa_text
 
@@ -62,23 +63,26 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
 .main{overflow-y:auto;padding:16px}
 .pane{display:none}.pane.on{display:block}
 /* STACK MAP */
-.map-grid{display:flex;flex-wrap:wrap;gap:12px}
-.stack-card{background:var(--sur);border:1px solid var(--bdr);border-radius:10px;padding:14px 10px 12px;width:152px;text-align:center;transition:border-color .2s}
-.stack-card:hover{border-color:var(--pur)}
-.char-svg{display:flex;justify-content:center;margin-bottom:6px}
-.char-svg svg{width:68px;height:88px}
-.stack-nm{font-size:.78rem;font-weight:600;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.stack-sv{font-size:.68rem;color:var(--mut);margin-bottom:10px}
-.ci-row{display:flex;flex-wrap:wrap;justify-content:center;gap:5px}
-.ci{position:relative;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 5px;border-radius:6px;transition:background .15s}
-.ci:hover{background:#21262d}
-.ci svg{width:20px;height:20px}
-.ci-lbl{font-size:.6rem;color:var(--mut);max-width:36px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.badge{position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;border-radius:8px;font-size:.6rem;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;border:1.5px solid var(--bg)}
+.map-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;align-items:start}
+.app-card{position:relative;background:var(--sur);border:1px solid var(--bdr);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0;transition:border-color .2s}
+.app-card:hover{border-color:var(--pur)}
+.app-card.er{border-color:var(--red)}
+.app-card.warn{border-color:var(--yel)}
+.char-frame{position:relative;display:flex;align-items:center;justify-content:center;width:100%;aspect-ratio:1.62/1;background:#0d1117;border:1px solid #21262d;border-radius:6px;overflow:hidden;cursor:pointer;padding:0;color:inherit;font:inherit}
+.char-frame:hover{border-color:var(--pur)}
+.char-img{display:block;width:100%;height:100%;object-fit:contain}
+.app-badge{position:absolute;top:7px;right:7px;min-width:32px;height:20px;border-radius:10px;font-size:.68rem;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 7px;border:1px solid rgba(0,0,0,.55)}
 .b-ok{background:var(--grn);color:#000}
 .b-warn{background:var(--yel);color:#000}
 .b-err{background:var(--red);color:#fff}
 .b-hide{display:none}
+.app-nm{font-size:.82rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app-stack{font-size:.68rem;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app-meta{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;min-width:0}
+.app-copy{min-width:0}
+.app-type{flex-shrink:0;color:var(--mut);font-size:.62rem;text-transform:uppercase;border:1px solid #21262d;border-radius:4px;padding:2px 5px;line-height:1.15}
+.char-select{background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.75rem;padding:5px 8px;outline:none;width:100%;cursor:pointer}
+.char-select:focus{border-color:var(--pur)}
 /* EVENTS */
 .card{background:var(--sur);border:1px solid var(--bdr);border-radius:8px}
 .fbtn{background:#21262d;border:1px solid var(--bdr);border-radius:6px;color:var(--mut);cursor:pointer;font-size:.78rem;padding:3px 11px}
@@ -144,6 +148,17 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 .tr-ok{background:#1a3a1a;color:var(--grn);border:1px solid #2d5a2d}
 .tr-er{background:#3a1a1a;color:var(--red);border:1px solid #5a2d2d}
 .tr-no{background:#21262d;color:var(--mut);border:1px solid var(--bdr)}
+@media (max-width:700px){
+  .nav{padding:0 8px;gap:6px;height:52px}
+  .brand{font-size:.9rem;line-height:1.05;max-width:48px}
+  .tab{padding:0 9px}
+  .nav-r{gap:4px}
+  .nav-r .sp:nth-of-type(n+2),.nav-r .small{display:none}
+  .layout{grid-template-columns:1fr}
+  .aside{display:none}
+  .main{padding:12px}
+  .map-grid{grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+}
 </style>
 </head>
 <body>
@@ -263,93 +278,27 @@ let _ravenFilter='', _issuePills=[];
 const MAX_ISSUE_PILLS=20;
 
 /* ============================================================
-   CHARACTER & ICON SVGs
+   CHARACTER ASSETS
    ============================================================ */
-const CHARS={
-orc:`<svg viewBox="0 0 60 88" xmlns="http://www.w3.org/2000/svg">
-  <rect x="12" y="52" width="36" height="28" rx="5" fill="#2d6a2d"/>
-  <rect x="4" y="54" width="13" height="20" rx="5" fill="#2d6a2d"/>
-  <rect x="43" y="54" width="13" height="20" rx="5" fill="#2d6a2d"/>
-  <ellipse cx="11" cy="30" rx="6" ry="9" fill="#4a9e4a"/>
-  <ellipse cx="49" cy="30" rx="6" ry="9" fill="#4a9e4a"/>
-  <circle cx="30" cy="30" r="21" fill="#4a9e4a"/>
-  <circle cx="21" cy="25" r="6" fill="#d4f0d4"/><circle cx="39" cy="25" r="6" fill="#d4f0d4"/>
-  <circle cx="22" cy="25" r="3" fill="#1a3a1a"/><circle cx="40" cy="25" r="3" fill="#1a3a1a"/>
-  <ellipse cx="30" cy="33" rx="5" ry="3.5" fill="#3a8a3a"/>
-  <rect x="22" y="40" width="5" height="12" rx="2.5" fill="#fffacd"/>
-  <rect x="33" y="40" width="5" height="12" rx="2.5" fill="#fffacd"/>
-  <path d="M22 38 Q30 44 38 38" stroke="#2a5a2a" stroke-width="2" fill="none"/>
-  <rect x="12" y="52" width="36" height="5" fill="#8B6914"/>
-</svg>`,
-wizard:`<svg viewBox="0 0 60 88" xmlns="http://www.w3.org/2000/svg">
-  <path d="M13 52 L5 86 L55 86 L47 52 Z" fill="#4a3b8c"/>
-  <rect x="17" y="42" width="26" height="14" rx="4" fill="#5a4a9c"/>
-  <circle cx="30" cy="28" r="17" fill="#f5deb3"/>
-  <ellipse cx="30" cy="13" rx="22" ry="4.5" fill="#2d1b5e"/>
-  <path d="M10 13 L30 -6 L50 13 Z" fill="#2d1b5e"/>
-  <circle cx="22" cy="26" r="4.5" fill="#fff"/><circle cx="38" cy="26" r="4.5" fill="#fff"/>
-  <circle cx="22.5" cy="26" r="2.5" fill="#1a0066"/><circle cx="38.5" cy="26" r="2.5" fill="#1a0066"/>
-  <path d="M20 34 Q30 42 40 34 L38 44 Q30 49 22 44 Z" fill="#d8d8d8"/>
-  <rect x="52" y="28" width="3" height="52" rx="1.5" fill="#8B6914"/>
-  <circle cx="53.5" cy="25" r="6.5" fill="#4fc3f7" opacity="0.9"/>
-  <circle cx="53.5" cy="25" r="3" fill="#fff" opacity="0.6"/>
-</svg>`,
-fighter:`<svg viewBox="0 0 60 88" xmlns="http://www.w3.org/2000/svg">
-  <rect x="17" y="62" width="11" height="24" rx="3" fill="#7a3b1a"/>
-  <rect x="32" y="62" width="11" height="24" rx="3" fill="#7a3b1a"/>
-  <rect x="11" y="42" width="38" height="24" rx="5" fill="#c8830a"/>
-  <rect x="3" y="40" width="14" height="14" rx="5" fill="#d89030"/>
-  <rect x="43" y="40" width="14" height="14" rx="5" fill="#d89030"/>
-  <rect x="3" y="50" width="13" height="18" rx="4" fill="#c8830a"/>
-  <rect x="44" y="50" width="13" height="18" rx="4" fill="#c8830a"/>
-  <circle cx="30" cy="26" r="17" fill="#e8a060"/>
-  <path d="M13 23 Q13 7 30 7 Q47 7 47 23" fill="#b8730a"/>
-  <rect x="25" y="10" width="10" height="18" rx="2" fill="#9a5a0a"/>
-  <circle cx="22" cy="26" r="4" fill="#fff"/><circle cx="38" cy="26" r="4" fill="#fff"/>
-  <circle cx="22.5" cy="26" r="2" fill="#1a1a1a"/><circle cx="38.5" cy="26" r="2" fill="#1a1a1a"/>
-  <path d="M32 21 L39 27" stroke="#c85000" stroke-width="1.5"/>
-  <rect x="53" y="18" width="3" height="48" rx="1.5" fill="#b8b8b8"/>
-  <rect x="47" y="30" width="15" height="3.5" rx="1.5" fill="#9a5a0a"/>
-</svg>`,
-ranger:`<svg viewBox="0 0 60 88" xmlns="http://www.w3.org/2000/svg">
-  <path d="M10 48 L4 86 L56 86 L50 48 Z" fill="#3a5a2a"/>
-  <rect x="15" y="40" width="30" height="14" rx="4" fill="#4a6a3a"/>
-  <circle cx="30" cy="26" r="16" fill="#c8905a"/>
-  <path d="M15 26 Q15 10 30 9 Q45 10 45 26 L43 21 Q30 16 17 21 Z" fill="#2a4a1a"/>
-  <circle cx="23" cy="26" r="3.5" fill="#fff"/><circle cx="37" cy="26" r="3.5" fill="#fff"/>
-  <circle cx="23.5" cy="26" r="2" fill="#2d1b00"/><circle cx="37.5" cy="26" r="2" fill="#2d1b00"/>
-  <path d="M23 33 Q30 38 37 33" stroke="#8B4513" stroke-width="1.5" fill="none"/>
-  <path d="M53 14 Q61 34 53 56" stroke="#6b3a1a" stroke-width="2.5" fill="none"/>
-  <line x1="53" y1="14" x2="53" y2="56" stroke="#d4aa70" stroke-width="1"/>
-  <line x1="49" y1="18" x2="57" y2="26" stroke="#d4aa70" stroke-width="0.8"/>
-</svg>`};
-
-const ICONS={
-api:`<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-  <rect x="2" y="4" width="16" height="12" rx="2"/>
-  <line x1="5" y1="8" x2="15" y2="8"/>
-  <line x1="5" y1="11" x2="11" y2="11"/>
-</svg>`,
-worker:`<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
-  <circle cx="10" cy="10" r="3"/>
-  <path d="M10 1v3M10 16v3M1 10h3M16 10h3M3.5 3.5l2.1 2.1M14.4 14.4l2.1 2.1M3.5 16.5l2.1-2.1M14.4 5.6l2.1-2.1"/>
-</svg>`,
-db:`<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
-  <ellipse cx="10" cy="5" rx="7" ry="2.5"/>
-  <path d="M3 5v10q0 2.5 7 2.5t7-2.5V5"/>
-  <path d="M3 10q0 2.5 7 2.5t7-2.5"/>
-</svg>`,
-cache:`<svg viewBox="0 0 20 20" fill="currentColor">
-  <path d="M11.5 2 L14 8h5l-4 3 1.5 6L11.5 14 6 17l1.5-6-4-3h5Z"/>
-</svg>`,
-ui:`<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
-  <rect x="2" y="3" width="16" height="11" rx="2"/>
-  <line x1="7" y1="18" x2="13" y2="18"/>
-  <line x1="10" y1="14" x2="10" y2="18"/>
-</svg>`,
-service:`<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
-  <path d="M10 2l6 3.5v7L10 16l-6-3.5v-7Z"/>
-</svg>`};
+const CHARACTERS=[
+  {id:'wizard',label:'Wizard',src:'/assets/characters/wizard.png'},
+  {id:'orc',label:'Orc',src:'/assets/characters/orc.png'},
+  {id:'elf',label:'Elf',src:'/assets/characters/elf.png'},
+  {id:'warrior',label:'Warrior',src:'/assets/characters/warrior.png'},
+  {id:'fighter',label:'Fighter',src:'/assets/characters/fighter.png'},
+  {id:'dwarf',label:'Dwarf',src:'/assets/characters/dwarf.png'},
+  {id:'rogue',label:'Rogue',src:'/assets/characters/rogue.png'},
+  {id:'cleric',label:'Cleric',src:'/assets/characters/cleric.png'},
+  {id:'bard',label:'Bard',src:'/assets/characters/bard.png'},
+  {id:'farmer',label:'Farmer',src:'/assets/characters/farmer.png'},
+  {id:'vendor',label:'Vendor',src:'/assets/characters/vendor.png'},
+  {id:'blacksmith',label:'Blacksmith',src:'/assets/characters/blacksmith.png'},
+  {id:'shepherd',label:'Shepherd',src:'/assets/characters/shepherd.png'},
+  {id:'herder',label:'Herder',src:'/assets/characters/herder.png'},
+  {id:'sorceress',label:'Sorceress',src:'/assets/characters/sorceress.png'}
+];
+const CHARACTER_BY_ID=Object.fromEntries(CHARACTERS.map(c=>[c.id,c]));
+const CHARACTER_STORAGE_PREFIX='orc.map.character.';
 
 /* ============================================================
    UTILS
@@ -366,6 +315,29 @@ function showTab(id){
 function fmt(iso){const d=new Date(iso);return d.toLocaleDateString()+' '+d.toLocaleTimeString();}
 function fmtShort(iso){return new Date(iso).toLocaleTimeString();}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function hashStr(s){let h=0;for(let i=0;i<s.length;i++)h=((h<<5)-h+s.charCodeAt(i))|0;return Math.abs(h);}
+function storageGet(k){try{return localStorage.getItem(k);}catch{return null;}}
+function storageSet(k,v){try{localStorage.setItem(k,v);}catch{}}
+function appCharacterKey(app){return `${app.server}::${app.stack}::${app.full_name}`;}
+function defaultCharacterId(app){return CHARACTERS[hashStr(appCharacterKey(app))%CHARACTERS.length].id;}
+function selectedCharacterId(app){
+  const saved=storageGet(CHARACTER_STORAGE_PREFIX+appCharacterKey(app));
+  return CHARACTER_BY_ID[saved]?saved:defaultCharacterId(app);
+}
+function charOptions(selected){
+  return CHARACTERS.map(c=>`<option value="${esc(c.id)}"${c.id===selected?' selected':''}>${esc(c.label)}</option>`).join('');
+}
+function setAppCharacter(sel){
+  const ch=CHARACTER_BY_ID[sel.value];
+  if(!ch)return;
+  storageSet(CHARACTER_STORAGE_PREFIX+sel.dataset.appKey,ch.id);
+  const card=sel.closest('.app-card');
+  const img=card?.querySelector('.char-img');
+  if(img){img.src=ch.src;img.alt=ch.label;}
+}
+function jumpToEventsFromEl(el){
+  jumpToEvents(el.dataset.server||'',el.dataset.container||'',el.dataset.severity||'');
+}
 
 /* ============================================================
    STATUS BAR
@@ -398,30 +370,34 @@ async function loadMap(){
 function renderMap(stacks){
   const grid=document.getElementById('map-grid');
   if(!stacks.length){grid.innerHTML='<div class="empty">No stacks found. Add a connection in the Connections tab.</div>';return;}
-  grid.innerHTML=stacks.map(s=>{
-    const char=CHARS[s.character]||CHARS.orc;
-    const icons=s.containers.map(c=>{
-      const icon=ICONS[c.type]||ICONS.service;
-      const hasErr=c.errors_1h>0, hasWarn=c.warnings_1h>0;
-      const badgeCls=hasErr?'b-err':hasWarn?'b-warn':c.errors_1h===0&&c.warnings_1h===0?'b-ok':'b-hide';
-      const badgeTxt=hasErr?c.errors_1h:hasWarn?c.warnings_1h:'';
-      const badgeVis=(hasErr||hasWarn)?'':'b-hide';
-      const click=`jumpToEvents('${esc(s.server)}','${esc(c.full_name)}','${hasErr?'error':hasWarn?'warning':''}')`;
-      const col=hasErr?'var(--red)':hasWarn?'var(--yel)':'var(--mut)';
-      return `<div class="ci" onclick="${click}" title="${esc(c.full_name)}">
-        <div style="color:${col}">${icon}</div>
-        <span class="badge ${badgeVis?badgeCls:'b-hide'}">${badgeTxt}</span>
-        <span class="ci-lbl">${esc(c.name.substring(0,8))}</span>
-      </div>`;
-    }).join('');
-    const totalErr=s.containers.reduce((a,c)=>a+c.errors_1h,0);
-    const totalWarn=s.containers.reduce((a,c)=>a+c.warnings_1h,0);
-    const cardBorder=totalErr>0?'border-color:var(--red)':totalWarn>0?'border-color:var(--yel)':'';
-    return `<div class="stack-card" style="${cardBorder}">
-      <div class="char-svg">${char}</div>
-      <div class="stack-nm" title="${esc(s.name)}">${esc(s.name)}</div>
-      <div class="stack-sv">${esc(s.server)}</div>
-      <div class="ci-row">${icons}</div>
+  const apps=stacks.flatMap(s=>s.containers.map(c=>({...c,stack:s.name,server:s.server})));
+  if(!apps.length){grid.innerHTML='<div class="empty">No containers found for the configured connections.</div>';return;}
+  grid.innerHTML=apps.map(app=>{
+    const hasErr=app.errors_1h>0, hasWarn=app.warnings_1h>0;
+    const severity=hasErr?'error':hasWarn?'warning':'';
+    const cardCls=hasErr?'er':hasWarn?'warn':'';
+    const badgeCls=hasErr?'b-err':hasWarn?'b-warn':'b-ok';
+    const badgeTxt=hasErr?`${app.errors_1h} err`:hasWarn?`${app.warnings_1h} warn`:'ok';
+    const charId=selectedCharacterId(app);
+    const ch=CHARACTER_BY_ID[charId]||CHARACTERS[0];
+    const key=appCharacterKey(app);
+    return `<div class="app-card ${cardCls}">
+      <button class="char-frame" type="button" onclick="jumpToEventsFromEl(this)"
+        data-server="${esc(app.server)}" data-container="${esc(app.full_name)}" data-severity="${esc(severity)}"
+        title="View events for ${esc(app.full_name)}">
+        <img class="char-img" src="${esc(ch.src)}" alt="${esc(ch.label)}">
+        <span class="app-badge ${badgeCls}">${esc(badgeTxt)}</span>
+      </button>
+      <div class="app-meta">
+        <div class="app-copy">
+          <div class="app-nm" title="${esc(app.full_name)}">${esc(app.name)}</div>
+          <div class="app-stack" title="${esc(app.stack)} on ${esc(app.server)}">${esc(app.stack)} - ${esc(app.server)}</div>
+        </div>
+        <span class="app-type">${esc(app.type)}</span>
+      </div>
+      <select class="char-select" data-app-key="${esc(key)}" onchange="setAppCharacter(this)" aria-label="Character for ${esc(app.name)}">
+        ${charOptions(charId)}
+      </select>
     </div>`;
   }).join('');
 }
@@ -462,7 +438,7 @@ function clearEvFilters(){
   loadEvts();
 }
 function jumpToEvents(server,container,sev){
-  _evFilters={severity:sev||'error',container:container||'',server:server||''};
+  _evFilters={severity:sev||'',container:container||'',server:server||''};
   document.getElementById('ev-container').value=container||'';
   const sel=document.getElementById('ev-server');
   if(sel)sel.value=server||'';
@@ -718,6 +694,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ORC API", version="0.1.0", lifespan=lifespan)
+app.mount("/assets", StaticFiles(directory=REPO_ROOT / "app" / "static"), name="assets")
 
 
 # ---------------------------------------------------------------------------
