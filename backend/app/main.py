@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import func, text as _sa_text
 
 from .config import REDIS_URL, REPO_ROOT
 from .db import Connection, ObservedEvent, SessionLocal, init_db
@@ -46,50 +46,41 @@ _HTML = """<!doctype html>
 :root{--bg:#0d1117;--sur:#161b22;--bdr:#30363d;--txt:#e6edf3;--mut:#8b949e;--grn:#3fb950;--red:#f85149;--yel:#d29922;--blu:#58a6ff;--pur:#a371f7}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
-.nav{background:var(--sur);border-bottom:1px solid var(--bdr);padding:0 20px;display:flex;align-items:center;gap:16px;height:52px;flex-shrink:0}
-.brand{font-weight:700;font-size:1rem;margin-right:8px}
+/* NAV */
+.nav{background:var(--sur);border-bottom:1px solid var(--bdr);padding:0 16px;display:flex;align-items:center;gap:10px;height:48px;flex-shrink:0}
+.brand{font-weight:700;font-size:1rem;margin-right:4px}
 .tabs{display:flex;height:100%}
-.tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--mut);cursor:pointer;padding:0 14px;font-size:.9rem;font-weight:500;height:100%}
+.tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--mut);cursor:pointer;padding:0 12px;font-size:.88rem;font-weight:500;height:100%}
 .tab:hover{color:var(--txt)}.tab.on{color:var(--txt);border-bottom-color:var(--pur)}
-.nav-r{margin-left:auto;display:flex;align-items:center;gap:10px}
-.layout{display:grid;grid-template-columns:1fr 300px;flex:1;overflow:hidden}
-.main{overflow-y:auto;padding:20px}
-.aside{border-left:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;background:var(--sur)}
-.hb-wrap{padding:12px 14px 10px;border-bottom:1px solid var(--bdr);flex-shrink:0}
-.hb-lbl{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-.hb-title{font-size:.78rem;font-weight:600;letter-spacing:.04em;color:var(--txt)}
-.hb-status{font-size:.7rem;color:var(--mut)}
-canvas{display:block;width:100%;height:52px}
-.feed-hdr{display:flex;gap:5px;padding:7px 10px;border-bottom:1px solid var(--bdr);flex-shrink:0}
-.ff{background:#21262d;border:1px solid var(--bdr);border-radius:12px;color:var(--mut);cursor:pointer;font-size:.72rem;padding:3px 0;flex:1;text-align:center}
-.ff:hover{color:var(--txt)}.ff.on{background:var(--bdr);color:var(--txt)}
-.feed{flex:1;overflow-y:auto;padding:8px 10px 16px;display:flex;flex-direction:column}
-.pill{margin-bottom:8px;border-radius:14px;padding:9px 12px;font-size:.78rem;border:1px solid transparent;animation:fadein .3s ease}
-@keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.p-start{background:#161f2e;border-color:#1d2d45;color:var(--blu)}
-.p-error{background:#2a1515;border-color:#4a2020;color:var(--red)}
-.p-warn{background:#2a2000;border-color:#4a3800;color:var(--yel)}
-.p-ok{background:#152215;border-color:#1f3d1f;color:var(--grn)}
-.p-clean{background:#161b22;border-color:var(--bdr);color:var(--mut)}
-.p-done{background:#1c1529;border-color:#2d2040;color:var(--pur);font-size:.75rem}
-.p-checking{background:#161b22;border-color:#21262d;color:var(--mut)}
-.raven-sl{padding:8px 14px;border-bottom:1px solid var(--bdr);font-size:.78rem;color:var(--mut);flex-shrink:0;min-height:34px;display:flex;align-items:center;gap:6px;overflow:hidden}
-.raven-sl.live{color:var(--txt)}
-.raven-sl .sl-icon{flex-shrink:0;font-size:.85rem}
-.raven-sl .sl-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ph{color:var(--mut);font-size:.82rem;text-align:center;padding:24px 0}
-.pill-hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
-.pill-cn{font-family:monospace;font-weight:600;font-size:.8rem}
-.pill-sv{font-size:.7rem;opacity:.75}
-.pill-ts{font-size:.7rem;opacity:.6;text-align:right;margin-top:2px}
-.card{background:var(--sur);border:1px solid var(--bdr);border-radius:8px}
-.pane{display:none}.pane.on{display:block}
-.sg{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
-.sc{padding:14px}
-.lbl{font-size:.72rem;color:var(--mut);margin-bottom:4px}
-.val{font-size:1.6rem;font-weight:700}
-.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle;background:var(--mut)}
+.nav-r{margin-left:auto;display:flex;align-items:center;gap:8px}
+/* Status pills */
+.sp{font-size:.75rem;padding:2px 8px;border-radius:10px;background:#21262d;border:1px solid var(--bdr);display:flex;align-items:center;gap:4px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--mut)}
 .dot.ok{background:var(--grn)}.dot.er{background:var(--red)}
+/* Layout */
+.layout{display:grid;grid-template-columns:1fr 292px;flex:1;overflow:hidden}
+.main{overflow-y:auto;padding:16px}
+.pane{display:none}.pane.on{display:block}
+/* STACK MAP */
+.map-grid{display:flex;flex-wrap:wrap;gap:12px}
+.stack-card{background:var(--sur);border:1px solid var(--bdr);border-radius:10px;padding:14px 10px 12px;width:152px;text-align:center;transition:border-color .2s}
+.stack-card:hover{border-color:var(--pur)}
+.char-svg{display:flex;justify-content:center;margin-bottom:6px}
+.char-svg svg{width:68px;height:88px}
+.stack-nm{font-size:.78rem;font-weight:600;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stack-sv{font-size:.68rem;color:var(--mut);margin-bottom:10px}
+.ci-row{display:flex;flex-wrap:wrap;justify-content:center;gap:5px}
+.ci{position:relative;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 5px;border-radius:6px;transition:background .15s}
+.ci:hover{background:#21262d}
+.ci svg{width:20px;height:20px}
+.ci-lbl{font-size:.6rem;color:var(--mut);max-width:36px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;border-radius:8px;font-size:.6rem;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;border:1.5px solid var(--bg)}
+.b-ok{background:var(--grn);color:#000}
+.b-warn{background:var(--yel);color:#000}
+.b-err{background:var(--red);color:#fff}
+.b-hide{display:none}
+/* EVENTS */
+.card{background:var(--sur);border:1px solid var(--bdr);border-radius:8px}
 .fbtn{background:#21262d;border:1px solid var(--bdr);border-radius:6px;color:var(--mut);cursor:pointer;font-size:.78rem;padding:3px 11px}
 .fbtn:hover{color:var(--txt)}.fbtn.on{background:var(--bdr);color:var(--txt)}
 .btn{background:#21262d;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);cursor:pointer;font-size:.85rem;padding:5px 12px}
@@ -104,24 +95,52 @@ th{color:var(--mut);font-weight:500;padding:6px 10px;border-bottom:1px solid var
 td{padding:6px 10px;border-bottom:1px solid #21262d;font-size:.82rem;vertical-align:middle}
 tr:last-child td{border-bottom:none}
 .sc2{color:var(--red);font-weight:700}.se2{color:var(--red)}.sw2{color:var(--yel)}.si2{color:var(--mut)}
-.scroll{max-height:440px;overflow-y:auto}
+.scroll{max-height:calc(100vh - 200px);overflow-y:auto}
 .msg{max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mono{font-family:monospace;font-size:.78rem}
 .muted{color:var(--mut)}.small{font-size:.78rem}
 .empty{color:var(--mut);padding:16px 0;font-size:.83rem}
+/* RAVEN */
+.aside{border-left:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;background:var(--sur)}
+.hb-wrap{padding:10px 12px 8px;border-bottom:1px solid var(--bdr);flex-shrink:0}
+.hb-lbl{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+.hb-title{font-size:.75rem;font-weight:700;letter-spacing:.06em}
+.hb-st{font-size:.68rem;color:var(--mut)}
+canvas{display:block;width:100%;height:48px}
+.raven-sl{padding:7px 12px;border-bottom:1px solid var(--bdr);font-size:.76rem;color:var(--mut);flex-shrink:0;min-height:32px;display:flex;align-items:center;gap:5px;overflow:hidden}
+.raven-sl.live{color:var(--txt)}
+.sl-icon{flex-shrink:0}.sl-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.feed-hdr{display:flex;gap:4px;padding:6px 10px;border-bottom:1px solid var(--bdr);flex-shrink:0}
+.ff{background:#21262d;border:1px solid var(--bdr);border-radius:12px;color:var(--mut);cursor:pointer;font-size:.7rem;padding:2px 0;flex:1;text-align:center}
+.ff:hover{color:var(--txt)}.ff.on{background:var(--bdr);color:var(--txt)}
+.feed{flex:1;overflow-y:auto;padding:8px 10px 16px;display:flex;flex-direction:column}
+.pill{margin-bottom:7px;border-radius:12px;padding:8px 11px;font-size:.76rem;border:1px solid transparent}
+.p-start{background:#161f2e;border-color:#1d2d45;color:var(--blu)}
+.p-error{background:#2a1515;border-color:#4a2020;color:var(--red)}
+.p-warn{background:#2a2000;border-color:#4a3800;color:var(--yel)}
+.p-ok{background:#152215;border-color:#1f3d1f;color:var(--grn)}
+.p-clean{background:#161b22;border-color:var(--bdr);color:var(--mut)}
+.p-checking{background:#161b22;border-color:#21262d;color:var(--mut)}
+.ph{color:var(--mut);font-size:.8rem;text-align:center;padding:20px 0}
+.pill-hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
+.pill-cn{font-family:monospace;font-weight:600;font-size:.78rem}
+.pill-sv{font-size:.68rem;opacity:.75}
+.pill-ts{font-size:.68rem;opacity:.6;text-align:right;margin-top:2px}
+/* CONNECTIONS */
 .st-ok{color:var(--grn)}.st-er{color:var(--red)}.st-no{color:var(--mut)}
+/* MODAL */
 dialog{background:var(--sur);border:1px solid var(--bdr);border-radius:10px;color:var(--txt);padding:0;width:500px;max-width:96vw}
 dialog::backdrop{background:rgba(0,0,0,.75)}
-.mh{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--bdr);font-weight:600}
+.mh{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--bdr);font-weight:600}
 .mx{background:none;border:none;color:var(--mut);cursor:pointer;font-size:1.3rem;line-height:1}
 .mx:hover{color:var(--txt)}
-.mb{padding:18px 20px;display:flex;flex-direction:column;gap:13px}
-.mf{padding:12px 20px;border-top:1px solid var(--bdr);display:flex;justify-content:flex-end;gap:8px}
+.mb{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.mf{padding:12px 18px;border-top:1px solid var(--bdr);display:flex;justify-content:flex-end;gap:8px}
 .fg{display:flex;flex-direction:column;gap:4px}
 .fg label{font-size:.78rem;color:var(--mut)}
 .fg input,.fg select{background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.88rem;padding:6px 10px;outline:none;width:100%}
 .fg input:focus,.fg select:focus{border-color:var(--pur)}
-.tr{border-radius:6px;font-size:.83rem;padding:7px 11px}
+.tr{border-radius:6px;font-size:.82rem;padding:7px 11px}
 .tr-ok{background:#1a3a1a;color:var(--grn);border:1px solid #2d5a2d}
 .tr-er{background:#3a1a1a;color:var(--red);border:1px solid #5a2d2d}
 .tr-no{background:#21262d;color:var(--mut);border:1px solid var(--bdr)}
@@ -131,83 +150,88 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 <nav class="nav">
   <span class="brand">&#9876; ORC</span>
   <div class="tabs">
-    <button class="tab on" id="tab-dash" onclick="showTab('dash')">Dashboard</button>
+    <button class="tab on" id="tab-map" onclick="showTab('map')">Map</button>
+    <button class="tab" id="tab-events" onclick="showTab('events')">Events</button>
     <button class="tab" id="tab-conn" onclick="showTab('conn')">Connections</button>
   </div>
   <div class="nav-r">
-    <span class="muted small" id="upd"></span>
-    <button class="btn" onclick="loadAll()">&#8635; Refresh</button>
+    <span class="sp"><span class="dot" id="api-dot"></span><span id="api-txt">API</span></span>
+    <span class="sp"><span id="srv-txt" style="color:var(--mut)">—</span> <span style="color:var(--mut)">srv</span></span>
+    <span class="sp" style="cursor:pointer" onclick="showTab('events');setEvFilter('severity','error')">
+      <span id="err-cnt" class="se2">—</span><span class="muted"> err</span>
+    </span>
+    <span class="sp" style="cursor:pointer" onclick="showTab('events');setEvFilter('severity','warning')">
+      <span id="warn-cnt" class="sw2">—</span><span class="muted"> warn</span>
+    </span>
+    <span class="small muted" id="upd"></span>
+    <button class="btn" onclick="loadAll()">&#8635;</button>
   </div>
 </nav>
 
 <div class="layout">
-  <!-- MAIN CONTENT -->
-  <div class="main">
+<div class="main">
 
-    <!-- DASHBOARD -->
-    <div class="pane on" id="pane-dash">
-      <div class="sg">
-        <div class="card sc"><div class="lbl">API</div><span class="dot" id="api-dot"></span><span id="api-txt">—</span></div>
-        <div class="card sc"><div class="lbl">Servers</div><div class="val" id="srv-txt">—</div></div>
-        <div class="card sc"><div class="lbl">Errors (24 h)</div><div class="val se2" id="err-cnt">—</div></div>
-        <div class="card sc"><div class="lbl">Warnings (24 h)</div><div class="val sw2" id="warn-cnt">—</div></div>
-      </div>
-      <div class="card" style="padding:18px">
-        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">
-          <div style="font-weight:600;margin-right:4px">Events</div>
-          <div style="display:flex;gap:4px">
-            <button class="fbtn on" id="f-all" onclick="setEvFilter('severity','')">All</button>
-            <button class="fbtn" id="f-critical" onclick="setEvFilter('severity','critical')">Critical</button>
-            <button class="fbtn" id="f-error" onclick="setEvFilter('severity','error')">Errors</button>
-            <button class="fbtn" id="f-warning" onclick="setEvFilter('severity','warning')">Warnings</button>
-          </div>
-          <select id="ev-server" onchange="setEvFilter('server',this.value)" style="background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.78rem;padding:3px 8px;cursor:pointer">
-            <option value="">All servers</option>
-          </select>
-          <input id="ev-container" placeholder="Container…" oninput="setEvFilter('container',this.value)"
-            style="background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.78rem;padding:3px 8px;width:130px;outline:none">
-          <button class="fbtn" onclick="clearEvFilters()" id="ev-clear" style="display:none">✕ Clear</button>
+  <!-- MAP -->
+  <div class="pane on" id="pane-map">
+    <div class="map-grid" id="map-grid"><div class="empty">Loading stack map…</div></div>
+  </div>
+
+  <!-- EVENTS -->
+  <div class="pane" id="pane-events">
+    <div class="card" style="padding:16px">
+      <div style="display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-bottom:12px">
+        <div style="font-weight:600;margin-right:4px">Events</div>
+        <div style="display:flex;gap:4px">
+          <button class="fbtn on" id="f-all" onclick="setEvFilter('severity','')">All</button>
+          <button class="fbtn" id="f-critical" onclick="setEvFilter('severity','critical')">Critical</button>
+          <button class="fbtn" id="f-error" onclick="setEvFilter('severity','error')">Errors</button>
+          <button class="fbtn" id="f-warning" onclick="setEvFilter('severity','warning')">Warnings</button>
         </div>
-        <div id="ev-body"><div class="empty">Loading…</div></div>
+        <select id="ev-server" onchange="setEvFilter('server',this.value)" style="background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.76rem;padding:3px 8px;cursor:pointer">
+          <option value="">All servers</option>
+        </select>
+        <input id="ev-container" placeholder="Container…" oninput="setEvFilter('container',this.value)"
+          style="background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.76rem;padding:3px 8px;width:120px;outline:none">
+        <button class="fbtn" onclick="clearEvFilters()" id="ev-clear" style="display:none">&#215; Clear</button>
       </div>
+      <div id="ev-body"><div class="empty">Loading…</div></div>
     </div>
+  </div>
 
-    <!-- CONNECTIONS -->
-    <div class="pane" id="pane-conn">
-      <div class="card" style="padding:18px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <div style="font-weight:600">Portainer Connections</div>
-          <button class="btnp" onclick="openModal()">+ Add Connection</button>
-        </div>
-        <div id="conn-body"><div class="empty">Loading…</div></div>
+  <!-- CONNECTIONS -->
+  <div class="pane" id="pane-conn">
+    <div class="card" style="padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-weight:600">Portainer Connections</div>
+        <button class="btnp" onclick="openModal()">+ Add Connection</button>
       </div>
+      <div id="conn-body"><div class="empty">Loading…</div></div>
     </div>
+  </div>
 
-  </div><!-- /main -->
+</div><!-- /main -->
 
-  <!-- RAVEN SIDEBAR -->
-  <aside class="aside">
-    <div class="hb-wrap">
-      <div class="hb-lbl">
-        <span class="hb-title">RAVEN</span>
-        <span class="hb-status" id="hb-status">connecting…</span>
-      </div>
-      <canvas id="hb-cv" height="52"></canvas>
+<!-- RAVEN -->
+<aside class="aside">
+  <div class="hb-wrap">
+    <div class="hb-lbl">
+      <span class="hb-title">RAVEN</span>
+      <span class="hb-st" id="hb-status">connecting…</span>
     </div>
-    <div class="raven-sl" id="raven-sl">
-      <span class="sl-icon" id="sl-icon">—</span>
-      <span class="sl-txt" id="sl-txt">Waiting for activity…</span>
-    </div>
-    <div class="feed-hdr">
-      <button class="ff on" id="rf-all" onclick="setRF('')">All</button>
-      <button class="ff" id="rf-error" onclick="setRF('error')">Errors</button>
-      <button class="ff" id="rf-warning" onclick="setRF('warning')">Warnings</button>
-    </div>
-    <div class="feed" id="feed">
-      <div class="ph">No issues found yet.</div>
-    </div>
-  </aside>
-</div>
+    <canvas id="hb-cv" height="48"></canvas>
+  </div>
+  <div class="raven-sl" id="raven-sl">
+    <span class="sl-icon" id="sl-icon">—</span>
+    <span class="sl-txt" id="sl-txt">Waiting for activity…</span>
+  </div>
+  <div class="feed-hdr">
+    <button class="ff on" id="rf-all" onclick="setRF('')">All</button>
+    <button class="ff" id="rf-error" onclick="setRF('error')">Errors</button>
+    <button class="ff" id="rf-warning" onclick="setRF('warning')">Warnings</button>
+  </div>
+  <div class="feed" id="feed"><div class="ph">No issues found yet.</div></div>
+</aside>
+</div><!-- /layout -->
 
 <!-- MODAL -->
 <dialog id="dlg">
@@ -229,27 +253,123 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 </dialog>
 
 <script>
-/* ---- state ---- */
-let _evts=[], _filter='', _conns=[], _editId=null;
+/* ============================================================
+   STATE
+   ============================================================ */
+let _evts=[], _evFilters={severity:'',container:'',server:''};
+let _conns=[], _editId=null;
 let _hbData=new Array(40).fill(0), _hbBucket=0;
+let _ravenFilter='', _issuePills=[];
+const MAX_ISSUE_PILLS=20;
 
-/* ---- tabs ---- */
+/* ============================================================
+   CHARACTER & ICON SVGs
+   ============================================================ */
+const CHARS={
+orc:`<svg viewBox="0 0 60 88" xmlns="http://www.w3.org/2000/svg">
+  <rect x="12" y="52" width="36" height="28" rx="5" fill="#2d6a2d"/>
+  <rect x="4" y="54" width="13" height="20" rx="5" fill="#2d6a2d"/>
+  <rect x="43" y="54" width="13" height="20" rx="5" fill="#2d6a2d"/>
+  <ellipse cx="11" cy="30" rx="6" ry="9" fill="#4a9e4a"/>
+  <ellipse cx="49" cy="30" rx="6" ry="9" fill="#4a9e4a"/>
+  <circle cx="30" cy="30" r="21" fill="#4a9e4a"/>
+  <circle cx="21" cy="25" r="6" fill="#d4f0d4"/><circle cx="39" cy="25" r="6" fill="#d4f0d4"/>
+  <circle cx="22" cy="25" r="3" fill="#1a3a1a"/><circle cx="40" cy="25" r="3" fill="#1a3a1a"/>
+  <ellipse cx="30" cy="33" rx="5" ry="3.5" fill="#3a8a3a"/>
+  <rect x="22" y="40" width="5" height="12" rx="2.5" fill="#fffacd"/>
+  <rect x="33" y="40" width="5" height="12" rx="2.5" fill="#fffacd"/>
+  <path d="M22 38 Q30 44 38 38" stroke="#2a5a2a" stroke-width="2" fill="none"/>
+  <rect x="12" y="52" width="36" height="5" fill="#8B6914"/>
+</svg>`,
+wizard:`<svg viewBox="0 0 60 88" xmlns="http://www.w3.org/2000/svg">
+  <path d="M13 52 L5 86 L55 86 L47 52 Z" fill="#4a3b8c"/>
+  <rect x="17" y="42" width="26" height="14" rx="4" fill="#5a4a9c"/>
+  <circle cx="30" cy="28" r="17" fill="#f5deb3"/>
+  <ellipse cx="30" cy="13" rx="22" ry="4.5" fill="#2d1b5e"/>
+  <path d="M10 13 L30 -6 L50 13 Z" fill="#2d1b5e"/>
+  <circle cx="22" cy="26" r="4.5" fill="#fff"/><circle cx="38" cy="26" r="4.5" fill="#fff"/>
+  <circle cx="22.5" cy="26" r="2.5" fill="#1a0066"/><circle cx="38.5" cy="26" r="2.5" fill="#1a0066"/>
+  <path d="M20 34 Q30 42 40 34 L38 44 Q30 49 22 44 Z" fill="#d8d8d8"/>
+  <rect x="52" y="28" width="3" height="52" rx="1.5" fill="#8B6914"/>
+  <circle cx="53.5" cy="25" r="6.5" fill="#4fc3f7" opacity="0.9"/>
+  <circle cx="53.5" cy="25" r="3" fill="#fff" opacity="0.6"/>
+</svg>`,
+fighter:`<svg viewBox="0 0 60 88" xmlns="http://www.w3.org/2000/svg">
+  <rect x="17" y="62" width="11" height="24" rx="3" fill="#7a3b1a"/>
+  <rect x="32" y="62" width="11" height="24" rx="3" fill="#7a3b1a"/>
+  <rect x="11" y="42" width="38" height="24" rx="5" fill="#c8830a"/>
+  <rect x="3" y="40" width="14" height="14" rx="5" fill="#d89030"/>
+  <rect x="43" y="40" width="14" height="14" rx="5" fill="#d89030"/>
+  <rect x="3" y="50" width="13" height="18" rx="4" fill="#c8830a"/>
+  <rect x="44" y="50" width="13" height="18" rx="4" fill="#c8830a"/>
+  <circle cx="30" cy="26" r="17" fill="#e8a060"/>
+  <path d="M13 23 Q13 7 30 7 Q47 7 47 23" fill="#b8730a"/>
+  <rect x="25" y="10" width="10" height="18" rx="2" fill="#9a5a0a"/>
+  <circle cx="22" cy="26" r="4" fill="#fff"/><circle cx="38" cy="26" r="4" fill="#fff"/>
+  <circle cx="22.5" cy="26" r="2" fill="#1a1a1a"/><circle cx="38.5" cy="26" r="2" fill="#1a1a1a"/>
+  <path d="M32 21 L39 27" stroke="#c85000" stroke-width="1.5"/>
+  <rect x="53" y="18" width="3" height="48" rx="1.5" fill="#b8b8b8"/>
+  <rect x="47" y="30" width="15" height="3.5" rx="1.5" fill="#9a5a0a"/>
+</svg>`,
+ranger:`<svg viewBox="0 0 60 88" xmlns="http://www.w3.org/2000/svg">
+  <path d="M10 48 L4 86 L56 86 L50 48 Z" fill="#3a5a2a"/>
+  <rect x="15" y="40" width="30" height="14" rx="4" fill="#4a6a3a"/>
+  <circle cx="30" cy="26" r="16" fill="#c8905a"/>
+  <path d="M15 26 Q15 10 30 9 Q45 10 45 26 L43 21 Q30 16 17 21 Z" fill="#2a4a1a"/>
+  <circle cx="23" cy="26" r="3.5" fill="#fff"/><circle cx="37" cy="26" r="3.5" fill="#fff"/>
+  <circle cx="23.5" cy="26" r="2" fill="#2d1b00"/><circle cx="37.5" cy="26" r="2" fill="#2d1b00"/>
+  <path d="M23 33 Q30 38 37 33" stroke="#8B4513" stroke-width="1.5" fill="none"/>
+  <path d="M53 14 Q61 34 53 56" stroke="#6b3a1a" stroke-width="2.5" fill="none"/>
+  <line x1="53" y1="14" x2="53" y2="56" stroke="#d4aa70" stroke-width="1"/>
+  <line x1="49" y1="18" x2="57" y2="26" stroke="#d4aa70" stroke-width="0.8"/>
+</svg>`};
+
+const ICONS={
+api:`<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+  <rect x="2" y="4" width="16" height="12" rx="2"/>
+  <line x1="5" y1="8" x2="15" y2="8"/>
+  <line x1="5" y1="11" x2="11" y2="11"/>
+</svg>`,
+worker:`<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+  <circle cx="10" cy="10" r="3"/>
+  <path d="M10 1v3M10 16v3M1 10h3M16 10h3M3.5 3.5l2.1 2.1M14.4 14.4l2.1 2.1M3.5 16.5l2.1-2.1M14.4 5.6l2.1-2.1"/>
+</svg>`,
+db:`<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+  <ellipse cx="10" cy="5" rx="7" ry="2.5"/>
+  <path d="M3 5v10q0 2.5 7 2.5t7-2.5V5"/>
+  <path d="M3 10q0 2.5 7 2.5t7-2.5"/>
+</svg>`,
+cache:`<svg viewBox="0 0 20 20" fill="currentColor">
+  <path d="M11.5 2 L14 8h5l-4 3 1.5 6L11.5 14 6 17l1.5-6-4-3h5Z"/>
+</svg>`,
+ui:`<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+  <rect x="2" y="3" width="16" height="11" rx="2"/>
+  <line x1="7" y1="18" x2="13" y2="18"/>
+  <line x1="10" y1="14" x2="10" y2="18"/>
+</svg>`,
+service:`<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+  <path d="M10 2l6 3.5v7L10 16l-6-3.5v-7Z"/>
+</svg>`};
+
+/* ============================================================
+   UTILS
+   ============================================================ */
 function showTab(id){
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   document.getElementById('pane-'+id).classList.add('on');
   document.getElementById('tab-'+id).classList.add('on');
   if(id==='conn')loadConns();
+  if(id==='map')loadMap();
+  if(id==='events')loadEvts();
 }
-
-/* ---- utils ---- */
 function fmt(iso){const d=new Date(iso);return d.toLocaleDateString()+' '+d.toLocaleTimeString();}
 function fmtShort(iso){return new Date(iso).toLocaleTimeString();}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
-/* ---- dashboard / events ---- */
-let _evFilters={severity:'',container:'',server:''};
-
+/* ============================================================
+   STATUS BAR
+   ============================================================ */
 async function loadStatus(){
   try{
     const d=await fetch('/health').then(r=>r.json());
@@ -258,11 +378,57 @@ async function loadStatus(){
     const c=d.connections;
     document.getElementById('srv-txt').textContent=c.total?`${c.ok}/${c.total}`:'—';
   }catch{
-    document.getElementById('api-txt').textContent='Error';
+    document.getElementById('api-txt').textContent='err';
     document.getElementById('api-dot').className='dot er';
   }
 }
 
+/* ============================================================
+   STACK MAP
+   ============================================================ */
+async function loadMap(){
+  try{
+    const d=await fetch('/overview').then(r=>r.json());
+    renderMap(d.stacks);
+  }catch(e){
+    document.getElementById('map-grid').innerHTML='<div class="empty">Could not load stack map.</div>';
+  }
+}
+
+function renderMap(stacks){
+  const grid=document.getElementById('map-grid');
+  if(!stacks.length){grid.innerHTML='<div class="empty">No stacks found. Add a connection in the Connections tab.</div>';return;}
+  grid.innerHTML=stacks.map(s=>{
+    const char=CHARS[s.character]||CHARS.orc;
+    const icons=s.containers.map(c=>{
+      const icon=ICONS[c.type]||ICONS.service;
+      const hasErr=c.errors_1h>0, hasWarn=c.warnings_1h>0;
+      const badgeCls=hasErr?'b-err':hasWarn?'b-warn':c.errors_1h===0&&c.warnings_1h===0?'b-ok':'b-hide';
+      const badgeTxt=hasErr?c.errors_1h:hasWarn?c.warnings_1h:'';
+      const badgeVis=(hasErr||hasWarn)?'':'b-hide';
+      const click=`jumpToEvents('${esc(s.server)}','${esc(c.full_name)}','${hasErr?'error':hasWarn?'warning':''}')`;
+      const col=hasErr?'var(--red)':hasWarn?'var(--yel)':'var(--mut)';
+      return `<div class="ci" onclick="${click}" title="${esc(c.full_name)}">
+        <div style="color:${col}">${icon}</div>
+        <span class="badge ${badgeVis?badgeCls:'b-hide'}">${badgeTxt}</span>
+        <span class="ci-lbl">${esc(c.name.substring(0,8))}</span>
+      </div>`;
+    }).join('');
+    const totalErr=s.containers.reduce((a,c)=>a+c.errors_1h,0);
+    const totalWarn=s.containers.reduce((a,c)=>a+c.warnings_1h,0);
+    const cardBorder=totalErr>0?'border-color:var(--red)':totalWarn>0?'border-color:var(--yel)':'';
+    return `<div class="stack-card" style="${cardBorder}">
+      <div class="char-svg">${char}</div>
+      <div class="stack-nm" title="${esc(s.name)}">${esc(s.name)}</div>
+      <div class="stack-sv">${esc(s.server)}</div>
+      <div class="ci-row">${icons}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ============================================================
+   EVENTS
+   ============================================================ */
 function _evUrl(){
   const p=new URLSearchParams({limit:200});
   if(_evFilters.severity)p.set('severity',_evFilters.severity);
@@ -270,70 +436,58 @@ function _evUrl(){
   if(_evFilters.server)p.set('server',_evFilters.server);
   return '/events?'+p.toString();
 }
-
 async function loadEvts(){
   try{
     const d=await fetch(_evUrl()).then(r=>r.json());
     document.getElementById('err-cnt').textContent=d.err_24h??0;
     document.getElementById('warn-cnt').textContent=d.warn_24h??0;
-    _evts=d.items;
-    renderEvts();
+    _evts=d.items; renderEvts();
   }catch{document.getElementById('ev-body').innerHTML='<div class="empty">Could not load events.</div>';}
 }
-
-function setEvFilter(key, val){
+function setEvFilter(key,val){
   _evFilters[key]=val;
-  // sync severity buttons
   if(key==='severity'){
     ['all','critical','error','warning'].forEach(k=>
       document.getElementById('f-'+k).classList.toggle('on',k===(val||'all')));
   }
-  // show/hide clear button
-  const active=Object.values(_evFilters).some(v=>v);
-  document.getElementById('ev-clear').style.display=active?'':'none';
+  document.getElementById('ev-clear').style.display=Object.values(_evFilters).some(v=>v)?'':'none';
   loadEvts();
 }
-
 function clearEvFilters(){
   _evFilters={severity:'',container:'',server:''};
   document.getElementById('ev-container').value='';
   document.getElementById('ev-server').value='';
-  ['all','critical','error','warning'].forEach(k=>
-    document.getElementById('f-'+k).classList.toggle('on',k==='all'));
+  ['all','critical','error','warning'].forEach(k=>document.getElementById('f-'+k).classList.toggle('on',k==='all'));
   document.getElementById('ev-clear').style.display='none';
   loadEvts();
 }
-
-function jumpToEvents(server, container, severity){
-  _evFilters={severity:severity||'error', container:container||'', server:server||''};
+function jumpToEvents(server,container,sev){
+  _evFilters={severity:sev||'error',container:container||'',server:server||''};
   document.getElementById('ev-container').value=container||'';
   const sel=document.getElementById('ev-server');
-  sel.value=server||'';
+  if(sel)sel.value=server||'';
   ['all','critical','error','warning'].forEach(k=>
     document.getElementById('f-'+k).classList.toggle('on',k===(_evFilters.severity||'all')));
   document.getElementById('ev-clear').style.display='';
-  showTab('dash');
+  showTab('events');
   loadEvts();
 }
-
 function _populateServerDropdown(){
   const sel=document.getElementById('ev-server');
   const cur=sel.value;
   sel.innerHTML='<option value="">All servers</option>'+
-    _conns.map(c=>`<option value="${esc(c.name)}" ${c.name===cur?'selected':''}>${esc(c.name)}</option>`).join('');
+    _conns.map(c=>`<option value="${esc(c.name)}"${c.name===cur?' selected':''}>${esc(c.name)}</option>`).join('');
 }
-
 function renderEvts(){
   const S={critical:'sc2',error:'se2',warning:'sw2',info:'si2',debug:'si2'};
   if(!_evts.length){
-    const hasFilters=Object.values(_evFilters).some(v=>v);
     document.getElementById('ev-body').innerHTML=
-      `<div class="empty">${hasFilters?'No events match these filters.':'No events yet — worker polls each connection in turn.'}</div>`;
+      `<div class="empty">${Object.values(_evFilters).some(v=>v)?'No events match these filters.':'No events yet — worker polls each connection in turn.'}</div>`;
     return;
   }
   const rows=_evts.map(e=>`<tr>
     <td class="mono muted">${fmt(e.occurred_at)}</td>
-    <td style="color:var(--pur);font-size:.78rem;cursor:pointer" onclick="jumpToEvents('${esc(e.server)}','','error')">${esc(e.server)}</td>
+    <td style="color:var(--pur);font-size:.76rem;cursor:pointer" onclick="jumpToEvents('${esc(e.server)}','','error')">${esc(e.server)}</td>
     <td class="mono" style="color:var(--blu);cursor:pointer" onclick="jumpToEvents('${esc(e.server)}','${esc(e.container_name)}','error')">${esc(e.container_name)}</td>
     <td><span class="${S[e.severity]||'si2'}">${e.severity}</span></td>
     <td class="msg" title="${esc(e.message)}">${esc(e.message)}</td>
@@ -343,7 +497,9 @@ function renderEvts(){
     <tbody>${rows}</tbody></table></div>`;
 }
 
-/* ---- connections ---- */
+/* ============================================================
+   CONNECTIONS
+   ============================================================ */
 async function loadConns(){
   try{
     _conns=await fetch('/connections').then(r=>r.json());
@@ -353,18 +509,20 @@ async function loadConns(){
       const st=c.last_status==='ok'?'<span class="st-ok">&#10003; OK</span>':c.last_status==='error'?`<span class="st-er" title="${esc(c.last_error||'')}">&#10007; Error</span>`:'<span class="st-no">—</span>';
       return `<tr${c.enabled?'':' style="opacity:.5"'}>
         <td style="font-weight:500">${esc(c.name)}</td>
-        <td class="mono muted" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.base_url)}</td>
+        <td class="mono muted" style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.base_url)}</td>
         <td>${c.type}</td><td>${st}</td>
         <td class="muted small">${c.last_polled_at?fmt(c.last_polled_at):'Never'}</td>
         <td><div style="display:flex;gap:5px">
-          <button class="btnp" style="font-size:.75rem;padding:4px 10px" onclick="pollNow(${c.id},this)">&#9654; Poll Now</button>
+          <button class="btnp" style="font-size:.72rem;padding:3px 9px" onclick="pollNow(${c.id},this)">&#9654; Poll</button>
           <button class="btns" onclick="testEx(${c.id},this)">Test</button>
           <button class="btns" onclick="openModal(${c.id})">Edit</button>
           <button class="btnd" onclick="delConn(${c.id})">Delete</button>
         </div></td>
       </tr>`;
     }).join('');
-    document.getElementById('conn-body').innerHTML=`<table><thead><tr><th>Name</th><th>URL</th><th>Type</th><th>Status</th><th>Last Polled</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
+    document.getElementById('conn-body').innerHTML=`<table>
+      <thead><tr><th>Name</th><th>URL</th><th>Type</th><th>Status</th><th>Last Polled</th><th>Actions</th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
   }catch{document.getElementById('conn-body').innerHTML='<div class="empty">Could not load connections.</div>';}
 }
 function openModal(id){
@@ -382,14 +540,9 @@ function openModal(id){
   document.getElementById('dlg').showModal();
 }
 function closeDlg(){document.getElementById('dlg').close();}
-function showTr(ok,msg){
-  const el=document.getElementById('tr');
-  el.style.display='block';
-  el.className='tr '+(ok===true?'tr-ok':ok===false?'tr-er':'tr-no');
-  el.textContent=(ok===true?'✓ ':ok===false?'✗ ':'')+msg;
-}
+function showTr(ok,msg){const el=document.getElementById('tr');el.style.display='block';el.className='tr '+(ok===true?'tr-ok':ok===false?'tr-er':'tr-no');el.textContent=(ok===true?'✓ ':ok===false?'✗ ':'')+msg;}
 async function testDlg(){
-  const url=document.getElementById('f-url').value.trim(), tok=document.getElementById('f-tok').value;
+  const url=document.getElementById('f-url').value.trim(),tok=document.getElementById('f-tok').value;
   if(!url){showTr(false,'Enter a URL first.');return;}
   showTr(null,'Testing…');
   try{
@@ -401,74 +554,62 @@ async function testDlg(){
   }catch(e){showTr(false,'Request failed: '+e.message);}
 }
 async function saveDlg(){
-  const name=document.getElementById('f-name').value.trim(), url=document.getElementById('f-url').value.trim(), tok=document.getElementById('f-tok').value;
+  const name=document.getElementById('f-name').value.trim(),url=document.getElementById('f-url').value.trim(),tok=document.getElementById('f-tok').value;
   if(!name||!url){showTr(false,'Name and URL are required.');return;}
   if(!_editId&&!tok){showTr(false,'API token is required.');return;}
   const iv=document.getElementById('f-interval').value;
   const body={name,type:document.getElementById('f-type').value,base_url:url,api_token:tok,
-    enabled:document.getElementById('f-en').checked,
-    poll_interval_seconds:iv?parseInt(iv):null};
+    enabled:document.getElementById('f-en').checked,poll_interval_seconds:iv?parseInt(iv):null};
   try{
-    const r=await fetch(_editId?`/connections/${_editId}`:'/connections',{method:_editId?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const r=await fetch(_editId?`/connections/${_editId}`:'/connections',
+      {method:_editId?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!r.ok)throw new Error(await r.text());
-    closeDlg(); await loadConns();
+    closeDlg();await loadConns();
   }catch(e){showTr(false,'Save failed: '+e.message);}
 }
-async function testEx(id,btn){
-  const orig=btn.textContent; btn.textContent='…'; btn.disabled=true;
-  try{const d=await fetch(`/connections/${id}/test`,{method:'POST'}).then(r=>r.json());alert(d.ok?'✓ Connection successful!':'✗ '+(d.error||'Failed'));await loadConns();}
-  finally{btn.textContent=orig;btn.disabled=false;}
-}
-async function delConn(id){
-  if(!confirm('Delete this connection? Events will be preserved.'))return;
-  await fetch(`/connections/${id}`,{method:'DELETE'}); await loadConns();
-}
+async function testEx(id,btn){const o=btn.textContent;btn.textContent='…';btn.disabled=true;try{const d=await fetch(`/connections/${id}/test`,{method:'POST'}).then(r=>r.json());alert(d.ok?'✓ Connection successful!':'✗ '+(d.error||'Failed'));await loadConns();}finally{btn.textContent=o;btn.disabled=false;}}
+async function delConn(id){if(!confirm('Delete this connection?'))return;await fetch(`/connections/${id}`,{method:'DELETE'});await loadConns();}
 async function pollNow(id,btn){
-  const orig=btn.textContent; btn.textContent='Polling…'; btn.disabled=true;
-  try{
-    const d=await fetch(`/connections/${id}/poll`,{method:'POST'}).then(r=>r.json());
-    if(!d.ok)addPill({type:'poll_error',server:_conns.find(c=>c.id===id)?.name||'',error:d.error||'Poll failed'});
-    await loadConns();
-  }catch(e){
-    addPill({type:'poll_error',server:'',error:'Request failed: '+e.message});
-  }finally{btn.textContent=orig;btn.disabled=false;}
+  const o=btn.textContent;btn.textContent='…';btn.disabled=true;
+  try{const d=await fetch(`/connections/${id}/poll`,{method:'POST'}).then(r=>r.json());if(!d.ok)alert('✗ '+(d.error||'Poll failed'));await loadConns();}
+  catch(e){alert('Error: '+e.message);}
+  finally{btn.textContent=o;btn.disabled=false;}
 }
 
-/* ---- raven sidebar ---- */
-// Status line: overwrites every tick showing what's being checked
-// Issue pills: only appear when errors/warnings are found, last 5 with opacity fade
-
-let _ravenFilter='', _issuePills=[];
-const MAX_ISSUE_PILLS=20; // keep in memory; display only last 5
-
+/* ============================================================
+   RAVEN
+   ============================================================ */
 function setRF(f){
   _ravenFilter=f;
   ['all','error','warning'].forEach(k=>document.getElementById('rf-'+k).classList.toggle('on',k===(f||'all')));
   renderFeed();
 }
-
-function setStatus(icon, text, live){
+function setStatus(icon,text,live){
   document.getElementById('sl-icon').textContent=icon;
   document.getElementById('sl-txt').textContent=text;
   document.getElementById('raven-sl').className='raven-sl'+(live?' live':'');
 }
-
-function issuePillHtml(msg, opacity, isCurrent){
+function addIssuePill(msg){
+  _issuePills.push(msg);
+  if(_issuePills.length>MAX_ISSUE_PILLS)_issuePills.shift();
+  renderFeed();
+}
+function _filteredPills(){
+  if(_ravenFilter==='error') return _issuePills.filter(m=>m.type==='poll_error'||(m.type==='container_result'&&(m.recent_errors||m.errors)>0));
+  if(_ravenFilter==='warning') return _issuePills.filter(m=>m.type==='container_result'&&(m.recent_warnings||m.warnings)>0&&!(m.recent_errors||m.errors));
+  return _issuePills;
+}
+function issuePillHtml(msg,opacity,isCurrent){
   const ts=msg.ts?fmtShort(msg.ts):'';
   const accent=isCurrent?'border-left:3px solid currentColor;padding-left:9px;':'';
   const style=`opacity:${opacity};${accent}`;
   if(msg.type==='poll_error')
-    return `<div class="pill p-error" style="${style}">✗ <strong>${esc(msg.server)}</strong><div style="font-size:.75rem;margin-top:2px;opacity:.85">${esc(msg.error||'')}</div></div>`;
+    return `<div class="pill p-error" style="${style}">✗ <strong>${esc(msg.server)}</strong><div style="font-size:.72rem;margin-top:2px;opacity:.85">${esc(msg.error||'')}</div></div>`;
   if(msg.type==='container_result'){
-    const re=msg.recent_errors||0, rw=msg.recent_warnings||0;
-    const ne=msg.errors||0, nw=msg.warnings||0;
-    let cls, detail, sev;
-    if(re>0||ne>0){
-      cls='p-error'; sev='error'; const t=re||ne; detail=`${t} error${t!==1?'s':''} (24h)`;
-      const tw=rw||nw; if(tw>0) detail+=`, ${tw} warn`;
-    }else{
-      cls='p-warn'; sev='warning'; const tw=rw||nw; detail=`${tw} warning${tw!==1?'s':''} (24h)`;
-    }
+    const re=msg.recent_errors||0,rw=msg.recent_warnings||0,ne=msg.errors||0,nw=msg.warnings||0;
+    let cls,detail,sev;
+    if(re>0||ne>0){cls='p-error';sev='error';const t=re||ne;detail=`${t} error${t!==1?'s':''} (24h)`;const tw=rw||nw;if(tw>0)detail+=`, ${tw} warn`;}
+    else{cls='p-warn';sev='warning';const tw=rw||nw;detail=`${tw} warning${tw!==1?'s':''} (24h)`;}
     const click=`jumpToEvents('${esc(msg.server)}','${esc(msg.container)}','${sev}')`;
     return `<div class="pill ${cls}" style="${style};cursor:pointer" onclick="${click}" title="Click to filter Events">
       <div class="pill-hdr"><span class="pill-cn">${esc(msg.container)}</span><span class="pill-sv">${esc(msg.server)}</span></div>
@@ -477,138 +618,87 @@ function issuePillHtml(msg, opacity, isCurrent){
   }
   return '';
 }
-
-function addIssuePill(msg){
-  _issuePills.push(msg);
-  if(_issuePills.length>MAX_ISSUE_PILLS)_issuePills.shift();
-  renderFeed();
-}
-
 function renderFeed(){
   const feed=document.getElementById('feed');
-  let src=_issueLinks();
-  if(!src.length){
-    feed.innerHTML='<div class="ph">No issues found yet.</div>';
-    return;
-  }
-  const visible=src.slice(-5);
-  const n=visible.length;
-  const ops=[0.15,0.35,0.55,0.75,1.0];
-  feed.innerHTML=visible.map((msg,i)=>issuePillHtml(msg, ops[i+(5-n)]??1.0, i===n-1)).join('');
+  const src=_filteredPills().slice(-5);
+  if(!src.length){feed.innerHTML='<div class="ph">No issues found yet.</div>';return;}
+  const n=src.length,ops=[0.15,0.35,0.55,0.75,1.0];
+  feed.innerHTML=src.map((msg,i)=>issuePillHtml(msg,ops[i+(5-n)]??1.0,i===n-1)).join('');
   feed.scrollTop=feed.scrollHeight;
 }
-
-function _issueLinks(){
-  if(_ravenFilter==='error')
-    return _issueLinks_all().filter(m=>m.type==='poll_error'||(m.type==='container_result'&&(m.recent_errors||m.errors)>0));
-  if(_ravenFilter==='warning')
-    return _issueLinks_all().filter(m=>m.type==='container_result'&&(m.recent_warnings||m.warnings)>0&&!(m.recent_errors||m.errors));
-  return _issueLinks_all();
-}
-function _issueLinks_all(){return _issueLinks_cache=_issueLinks_cache||_issuePills;}
-let _issueLinks_cache=null;
-
 function handleRaven(msg){
-  _issueLinks_cache=null; // invalidate filter cache
   switch(msg.type){
-    case 'no_connections':
-      setStatus('—','No connections configured. Add one in Connections tab.',false);
-      break;
-    case 'queue_ready':{
-      const iv=msg.interval?` · ${msg.interval}s/container`:'';
-      setStatus('▶',`Scanning ${msg.containers} containers${iv}`,true);
-      break;
-    }
-    case 'container_checking':
-      setStatus('🔍',`Checking ${msg.container} on ${msg.server}`,true);
-      break;
+    case 'no_connections': setStatus('—','No connections configured.',false); break;
+    case 'queue_ready':{const iv=msg.interval?` · ${msg.interval}s/ctr`:'';setStatus('▶',`Scanning ${msg.containers} containers${iv}`,true);break;}
+    case 'container_checking': setStatus('🔍',`Checking ${msg.container} on ${msg.server}`,true); break;
     case 'container_result':{
-      _hbBucket+=msg.events;
-      const re=msg.recent_errors||0, rw=msg.recent_warnings||0;
-      const ne=msg.errors||0, nw=msg.warnings||0;
-      if(re>0||ne>0){
-        const t=re||ne;
-        setStatus('⚠',`${msg.container} · ${t} error${t!==1?'s':''} (24h)`,true);
-        addIssuePill(msg);
-      }else if(rw>0||nw>0){
-        const tw=rw||nw;
-        setStatus('⚠',`${msg.container} · ${tw} warning${tw!==1?'s':''} (24h)`,true);
-        addIssuePill(msg);
-      }else{
-        setStatus('✓',`${msg.container} · no changes`,true);
-      }
+      // Heartbeat: track errors+warnings per container scanned
+      _hbBucket+=(msg.recent_errors||0)+(msg.recent_warnings||0);
+      const re=msg.recent_errors||0,rw=msg.recent_warnings||0,ne=msg.errors||0,nw=msg.warnings||0;
+      if(re>0||ne>0){const t=re||ne;setStatus('⚠',`${msg.container} · ${t} error${t!==1?'s':''} (24h)`,true);addIssuePill(msg);}
+      else if(rw>0||nw>0){const tw=rw||nw;setStatus('⚠',`${msg.container} · ${tw} warning${tw!==1?'s':''} (24h)`,true);addIssuePill(msg);}
+      else setStatus('✓',`${msg.container} · no changes`,true);
       break;
     }
-    case 'poll_error':
-      setStatus('✗',`${msg.server}: ${msg.error||'connection failed'}`,true);
-      addIssuePill(msg);
-      break;
+    case 'poll_error': setStatus('✗',`${msg.server}: ${msg.error||'connection failed'}`,true);addIssuePill(msg); break;
   }
 }
 
-/* ---- heartbeat chart ---- */
-function resizeCanvas(){
-  const cv=document.getElementById('hb-cv');
-  if(cv)cv.width=cv.offsetWidth||280;
-}
+/* ============================================================
+   HEARTBEAT CHART
+   ============================================================ */
+function resizeCanvas(){const cv=document.getElementById('hb-cv');if(cv)cv.width=cv.offsetWidth||270;}
 function drawHb(){
-  const cv=document.getElementById('hb-cv');
-  if(!cv)return;
-  const ctx=cv.getContext('2d'), w=cv.width, h=cv.height;
+  const cv=document.getElementById('hb-cv');if(!cv)return;
+  const ctx=cv.getContext('2d'),w=cv.width,h=cv.height;
   ctx.clearRect(0,0,w,h);
-  const d=_hbData, max=Math.max(...d,1), step=w/(d.length-1);
-  // fill
+  const d=_hbData,max=Math.max(...d,1),step=w/(d.length-1);
+  // gradient fill under line
+  const grad=ctx.createLinearGradient(0,0,0,h);
+  grad.addColorStop(0,'rgba(248,81,73,0.25)');
+  grad.addColorStop(1,'rgba(248,81,73,0.02)');
   ctx.beginPath();
   d.forEach((v,i)=>{const x=i*step,y=h-(v/max)*(h-6)-3;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
   ctx.lineTo((d.length-1)*step,h);ctx.lineTo(0,h);ctx.closePath();
-  ctx.fillStyle='rgba(63,185,80,0.12)';ctx.fill();
-  // line
+  ctx.fillStyle=grad;ctx.fill();
+  // line — red when active, muted when idle
+  const cur=d[d.length-1];
   ctx.beginPath();
   d.forEach((v,i)=>{const x=i*step,y=h-(v/max)*(h-6)-3;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
-  ctx.strokeStyle='#3fb950';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.strokeStyle=cur>0?'#f85149':'#30363d';ctx.lineWidth=1.5;ctx.stroke();
   // label
-  const cur=d[d.length-1];
-  ctx.fillStyle=cur>0?'#3fb950':'#8b949e';
+  ctx.fillStyle=cur>0?'#f85149':'#8b949e';
   ctx.font='10px monospace';ctx.textAlign='right';
-  ctx.fillText(cur>0?`${cur} evt/5s`:'idle',w-4,12);
+  ctx.fillText(cur>0?`${cur} issues/5s`:'idle',w-4,11);
 }
-function tickHb(){
-  _hbData.push(_hbBucket); _hbBucket=0;
-  if(_hbData.length>40)_hbData.shift();
-  drawHb();
-}
+function tickHb(){_hbData.push(_hbBucket);_hbBucket=0;if(_hbData.length>40)_hbData.shift();drawHb();}
 setInterval(tickHb,5000);
 
-/* ---- SSE ---- */
+/* ============================================================
+   SSE
+   ============================================================ */
 function connectRaven(){
   const es=new EventSource('/raven/stream');
   document.getElementById('hb-status').textContent='connecting…';
   es.onopen=()=>document.getElementById('hb-status').textContent='live';
   es.onmessage=e=>{
-    try{
-      const msg=JSON.parse(e.data);
-      if(msg.type==='connected'){document.getElementById('hb-status').textContent='live';return;}
-      handleRaven(msg);
-    }catch{}
+    try{const msg=JSON.parse(e.data);if(msg.type==='connected'){document.getElementById('hb-status').textContent='live';return;}handleRaven(msg);}
+    catch{}
   };
-  es.onerror=()=>{
-    document.getElementById('hb-status').textContent='reconnecting…';
-    es.close(); setTimeout(connectRaven,5000);
-  };
+  es.onerror=()=>{document.getElementById('hb-status').textContent='reconnecting…';es.close();setTimeout(connectRaven,5000);};
 }
 
-/* ---- init ---- */
+/* ============================================================
+   INIT
+   ============================================================ */
 async function loadAll(){
-  // Always refresh connections so server dropdown stays current
   _conns=await fetch('/connections').then(r=>r.json()).catch(()=>_conns);
   _populateServerDropdown();
-  await Promise.all([loadStatus(),loadEvts()]);
-  if(document.getElementById('pane-conn').classList.contains('on'))await loadConns();
-  document.getElementById('upd').textContent='Updated '+new Date().toLocaleTimeString();
+  await Promise.all([loadStatus(),loadEvts(),loadMap()]);
+  document.getElementById('upd').textContent=new Date().toLocaleTimeString();
 }
-
 window.addEventListener('resize',()=>{resizeCanvas();drawHb();});
-resizeCanvas(); drawHb();
+resizeCanvas();drawHb();
 loadAll();
 setInterval(loadAll,30000);
 connectRaven();
@@ -902,6 +992,86 @@ def get_events(
             for e, c in rows
         ],
     }
+
+
+def _infer_stack(cname: str) -> str:
+    parts = cname.split("-")
+    return "-".join(parts[:-2]) if len(parts) >= 3 else cname
+
+
+def _container_type(name: str) -> str:
+    n = name.lower()
+    if any(x in n for x in ("postgres", "mysql", "mongo", "db", "sqlite", "maria")): return "db"
+    if any(x in n for x in ("redis", "cache", "memcache", "rabbit", "kafka")): return "cache"
+    if any(x in n for x in ("worker", "celery", "cron", "job", "task", "beat")): return "worker"
+    if any(x in n for x in ("web", "frontend", "ui", "nginx", "react", "next", "vue")): return "ui"
+    return "api"
+
+
+def _stack_character(name: str) -> str:
+    n = name.lower()
+    if "orc" in n: return "orc"
+    if any(x in n for x in ("ai", "ml", "kpi", "chatbot", "advisor", "analytics", "tower")): return "wizard"
+    if any(x in n for x in ("simulator", "sppm", "presentation", "ux2")): return "fighter"
+    return ("orc", "ranger", "wizard", "fighter")[abs(hash(name)) % 4]
+
+
+@app.get("/overview")
+def get_overview() -> dict:
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+    with SessionLocal() as s:
+        connections = s.query(Connection).filter_by(enabled=True).all()
+        err_rows = s.query(
+            ObservedEvent.connection_id, ObservedEvent.container_name,
+            func.count(ObservedEvent.id).label("n")
+        ).filter(
+            ObservedEvent.occurred_at >= cutoff,
+            ObservedEvent.severity.in_(["error", "critical"])
+        ).group_by(ObservedEvent.connection_id, ObservedEvent.container_name).all()
+
+        warn_rows = s.query(
+            ObservedEvent.connection_id, ObservedEvent.container_name,
+            func.count(ObservedEvent.id).label("n")
+        ).filter(
+            ObservedEvent.occurred_at >= cutoff,
+            ObservedEvent.severity == "warning"
+        ).group_by(ObservedEvent.connection_id, ObservedEvent.container_name).all()
+
+    errs  = {(r.connection_id, r.container_name): int(r.n) for r in err_rows}
+    warns = {(r.connection_id, r.container_name): int(r.n) for r in warn_rows}
+
+    stacks_out = []
+    for conn in connections:
+        client = PortainerClient(conn.base_url, conn.api_token)
+        try:
+            endpoints = client.get_endpoints()
+        except Exception:
+            continue
+        stacks: dict[str, list] = {}
+        for ep in endpoints:
+            try:
+                for c in client.get_containers(ep["Id"]):
+                    cid = c["Id"]
+                    cname = (c.get("Names") or [f"/{cid[:12]}"])[0].lstrip("/")
+                    labels = c.get("Labels") or {}
+                    stack_name = labels.get("com.docker.compose.project") or _infer_stack(cname)
+                    service   = labels.get("com.docker.compose.service")  or cname
+                    stacks.setdefault(stack_name, []).append({
+                        "name": service,
+                        "full_name": cname,
+                        "type": _container_type(service),
+                        "errors_1h":   errs.get((conn.id, cname), 0),
+                        "warnings_1h": warns.get((conn.id, cname), 0),
+                    })
+            except Exception:
+                continue
+        for sname, containers in sorted(stacks.items()):
+            stacks_out.append({
+                "name": sname, "server": conn.name,
+                "character": _stack_character(sname),
+                "containers": sorted(containers, key=lambda x: x["type"]),
+            })
+    return {"stacks": stacks_out}
 
 
 def _cdct(c: Connection) -> dict:
