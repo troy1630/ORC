@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from collections import Counter
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -20,6 +21,8 @@ from .registry import load_registry
 
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+_ORACLE_UUID_RE = re.compile(r"\b[0-9a-f]{8,}\b", re.I)
+_ORACLE_NUM_RE = re.compile(r"\b\d+\b")
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +99,7 @@ box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 .char-frame{position:relative;display:flex;align-items:center;justify-content:center;width:100%;aspect-ratio:1.62/1;background:#0d1117;border:1px solid #21262d;border-radius:6px;overflow:hidden;cursor:pointer;padding:0;color:inherit;font:inherit}
 .char-frame:hover{border-color:var(--pur)}
 .char-img{display:block;width:100%;height:100%;object-fit:contain}
+.stack-banner{position:absolute;left:0;right:0;bottom:0;height:34px;display:flex;align-items:center;justify-content:center;padding:0 38px 0 10px;background:rgba(48,54,61,.94);backdrop-filter:blur(3px);font-size:.84rem;font-weight:800;letter-spacing:.01em;text-shadow:0 1px 2px rgba(0,0,0,.45);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .status-circles{position:absolute;top:7px;left:7px;display:flex;gap:5px}
 .kingdom-score .status-circles{position:static}
 .status-dot{width:25px;height:25px;border-radius:50%;font-size:.62rem;font-weight:800;display:flex;align-items:center;justify-content:center;border:1px solid rgba(0,0,0,.58);box-shadow:0 1px 5px rgba(0,0,0,.42);line-height:1}
@@ -144,11 +148,12 @@ tr:last-child td{border-bottom:none}
 .empty{color:var(--mut);padding:16px 0;font-size:.83rem}
 /* RAVEN */
 .aside{border-left:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;background:var(--sur)}
-.hb-wrap{padding:10px 12px 8px;border-bottom:1px solid var(--bdr);flex-shrink:0}
+.hb-wrap{padding:10px 12px 8px;border-bottom:1px solid var(--bdr);flex-shrink:0;background:#12171f}
 .hb-lbl{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
 .hb-title{font-size:.75rem;font-weight:700;letter-spacing:.06em;display:flex;align-items:center;gap:6px}
-.raven-mark{width:28px;height:28px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5));margin-top:-2px}
+.raven-mark{width:42px;height:42px;object-fit:contain;filter:drop-shadow(0 3px 7px rgba(0,0,0,.55));margin-top:-2px;flex-shrink:0}
 .hb-st{font-size:.68rem;color:var(--mut)}
+.hb-canvas-wrap{background:#0d1117;border:1px solid #21262d;border-radius:10px;padding:6px 8px}
 canvas{display:block;width:100%;height:48px}
 .raven-sl{padding:7px 12px;border-bottom:1px solid var(--bdr);font-size:.76rem;color:var(--mut);flex-shrink:0;min-height:32px;display:flex;align-items:center;gap:5px;overflow:hidden}
 .raven-sl.live{color:var(--txt)}
@@ -171,7 +176,8 @@ canvas{display:block;width:100%;height:48px}
 .pill-ts{font-size:.68rem;opacity:.6;text-align:right;margin-top:2px}
 .oracle{border-top:1px solid var(--bdr);padding:12px;display:flex;flex-direction:column;gap:8px;background:rgba(13,17,23,.24)}
 .oracle-hdr{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.oracle-title{font-size:.73rem;font-weight:800;letter-spacing:.08em}
+.oracle-title{font-size:.73rem;font-weight:800;letter-spacing:.08em;display:flex;align-items:center;gap:8px}
+.oracle-mark{width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid rgba(163,113,247,.35);box-shadow:0 4px 10px rgba(0,0,0,.28);flex-shrink:0}
 .oracle-meta{font-size:.72rem;color:var(--mut);line-height:1.45}
 .oracle-box{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;min-height:108px;max-height:240px;overflow:auto;font-size:.77rem;line-height:1.45;white-space:pre-wrap}
 .oracle-box.busy{color:var(--mut)}
@@ -287,7 +293,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
       <span class="hb-title"><img class="raven-mark" src="/assets/kingdoms/raven.png" alt="">RAVEN</span>
       <span class="hb-st" id="hb-status">connecting…</span>
     </div>
-    <canvas id="hb-cv" height="48"></canvas>
+    <div class="hb-canvas-wrap"><canvas id="hb-cv" height="48"></canvas></div>
   </div>
   <div class="raven-sl" id="raven-sl">
     <span class="sl-icon" id="sl-icon">—</span>
@@ -301,10 +307,10 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   <div class="feed" id="feed"><div class="ph">No issues found yet.</div></div>
   <div class="oracle">
     <div class="oracle-hdr">
-      <span class="oracle-title">THE ORACLE</span>
+      <span class="oracle-title"><img class="oracle-mark" src="/assets/kingdoms/oracle.png" alt="">THE ORACLE</span>
       <button class="btns" id="oracle-btn" onclick="runOracle()">Activate</button>
     </div>
-    <div class="oracle-meta">Review the last hour of warnings and errors on demand, then get a recommendation from the same OpenAI connector BADGE uses.</div>
+    <div class="oracle-meta">Review the last hour of warnings and errors on demand, then get the top three problems worth researching and fixing first.</div>
     <div class="oracle-summary" id="oracle-summary"></div>
     <div class="oracle-box empty" id="oracle-box">Ready to review the last hour of events.</div>
   </div>
@@ -420,6 +426,12 @@ function statusCircles(errors,warnings){
   if(warnings>0)dots.push(`<span class="status-dot b-warn" title="${warnings} warning${warnings!==1?'s':''}">${esc(countLabel(warnings))}</span>`);
   if(!dots.length)dots.push('<span class="status-dot b-ok" title="No recent errors or warnings">0</span>');
   return `<div class="status-circles">${dots.join('')}</div>`;
+}
+function newIssueCounts(msg){
+  return {
+    errors:Number(msg.errors||0),
+    warnings:Number(msg.warnings||0)
+  };
 }
 function openCharDlg(btn){
   _charEditKey=btn.dataset.stackKey||'';
@@ -571,12 +583,12 @@ function renderMap(stacks){
         data-server="${esc(stack.server)}" data-container="${esc(stack.name)}" data-severity="${esc(severity)}"
         title="View events for ${esc(stack.name)}">
         <img class="char-img" src="${esc(ch.src)}" alt="${esc(ch.label)}">
+        <span class="stack-banner">${esc(stack.name)}</span>
         ${statusCircles(stackTotals.errors,stackTotals.warnings)}
       </button>
       <div class="stack-meta">
         <div class="stack-copy">
-          <div class="stack-nm" title="${esc(stack.name)}">${esc(stack.name)}</div>
-          <div class="stack-sv">${stack.containers.length} subordinate${stack.containers.length!==1?'s':''} - ${esc(stack.server)}</div>
+          <div class="stack-sv">${stack.containers.length} subordinate${stack.containers.length!==1?'s':''}</div>
         </div>
       </div>
       <div class="sub-list">${subRows}</div>
@@ -767,8 +779,8 @@ function addIssuePill(msg){
   renderFeed();
 }
 function _filteredPills(){
-  if(_ravenFilter==='error') return _issuePills.filter(m=>m.type==='poll_error'||(m.type==='container_result'&&(m.recent_errors||m.errors)>0));
-  if(_ravenFilter==='warning') return _issuePills.filter(m=>m.type==='container_result'&&(m.recent_warnings||m.warnings)>0&&!(m.recent_errors||m.errors));
+  if(_ravenFilter==='error') return _issuePills.filter(m=>m.type==='poll_error'||(m.type==='container_result'&&newIssueCounts(m).errors>0));
+  if(_ravenFilter==='warning') return _issuePills.filter(m=>m.type==='container_result'&&newIssueCounts(m).warnings>0&&newIssueCounts(m).errors===0);
   return _issuePills;
 }
 function issuePillHtml(msg,opacity,isCurrent){
@@ -778,10 +790,10 @@ function issuePillHtml(msg,opacity,isCurrent){
   if(msg.type==='poll_error')
     return `<div class="pill p-error" style="${style}">✗ <strong>${esc(msg.server)}</strong><div style="font-size:.72rem;margin-top:2px;opacity:.85">${esc(msg.error||'')}</div></div>`;
   if(msg.type==='container_result'){
-    const re=msg.recent_errors||0,rw=msg.recent_warnings||0,ne=msg.errors||0,nw=msg.warnings||0;
+    const ne=msg.errors||0,nw=msg.warnings||0;
     let cls,detail,sev;
-    if(re>0||ne>0){cls='p-error';sev='error';const t=re||ne;detail=`${t} error${t!==1?'s':''} (24h)`;const tw=rw||nw;if(tw>0)detail+=`, ${tw} warn`;}
-    else{cls='p-warn';sev='warning';const tw=rw||nw;detail=`${tw} warning${tw!==1?'s':''} (24h)`;}
+    if(ne>0){cls='p-error';sev='error';detail=`${ne} new error${ne!==1?'s':''}`;if(nw>0)detail+=`, ${nw} new warn`;}
+    else{cls='p-warn';sev='warning';detail=`${nw} new warning${nw!==1?'s':''}`;}
     const click=`jumpToEvents('${esc(msg.server)}','${esc(msg.container)}','${sev}')`;
     return `<div class="pill ${cls}" style="${style};cursor:pointer" onclick="${click}" title="Click to filter Events">
       <div class="pill-hdr"><span class="pill-cn">${esc(msg.container)}</span><span class="pill-sv">${esc(msg.server)}</span></div>
@@ -804,12 +816,11 @@ function handleRaven(msg){
     case 'queue_ready':{const iv=msg.interval?` · ${msg.interval}s/ctr`:'';setStatus('▶',`Scanning ${msg.containers} containers${iv}`,true);break;}
     case 'container_checking': setStatus('🔍',`Checking ${msg.container} on ${msg.server}`,true); break;
     case 'container_result':{
-      // Heartbeat: track errors+warnings per container scanned
-      _hbBucket+=(msg.recent_errors||0)+(msg.recent_warnings||0);
-      const re=msg.recent_errors||0,rw=msg.recent_warnings||0,ne=msg.errors||0,nw=msg.warnings||0;
-      if(re>0||ne>0){const t=re||ne;setStatus('⚠',`${msg.container} · ${t} error${t!==1?'s':''} (24h)`,true);addIssuePill(msg);}
-      else if(rw>0||nw>0){const tw=rw||nw;setStatus('⚠',`${msg.container} · ${tw} warning${tw!==1?'s':''} (24h)`,true);addIssuePill(msg);}
-      else setStatus('✓',`${msg.container} · no changes`,true);
+      const ne=msg.errors||0,nw=msg.warnings||0;
+      _hbBucket+=ne+nw;
+      if(ne>0){setStatus('⚠',`${msg.container} · ${ne} new error${ne!==1?'s':''}`,true);addIssuePill(msg);}
+      else if(nw>0){setStatus('⚠',`${msg.container} · ${nw} new warning${nw!==1?'s':''}`,true);addIssuePill(msg);}
+      else setStatus('✓',`${msg.container} · no new issues`,true);
       break;
     }
     case 'poll_error': setStatus('✗',`${msg.server}: ${msg.error||'connection failed'}`,true);addIssuePill(msg); break;
@@ -969,12 +980,14 @@ def _oracle_summary(window_hours: int = 1) -> dict:
         )
 
     container_rollup: dict[tuple[str, str, str], dict] = {}
-    message_rollup: Counter[tuple[str, str, str]] = Counter()
+    stack_rollup: dict[tuple[str, str], dict] = {}
+    pattern_rollup: dict[tuple[str, str, str, str], dict] = {}
     totals = {"total_events": len(rows), "errors": 0, "warnings": 0}
 
     for event, conn in rows:
         server = conn.name if conn else "Unknown server"
         stack = event.stack_name or _infer_stack(event.container_name)
+        stack_key = (server, stack)
         key = (server, stack, event.container_name)
         bucket = container_rollup.setdefault(
             key,
@@ -988,16 +1001,49 @@ def _oracle_summary(window_hours: int = 1) -> dict:
                 "messages": Counter(),
             },
         )
+        stack_bucket = stack_rollup.setdefault(
+            stack_key,
+            {
+                "server": server,
+                "stack": stack,
+                "errors": 0,
+                "warnings": 0,
+                "containers": set(),
+            },
+        )
         severity = "error" if event.severity in ("error", "critical") else "warning"
         if severity == "error":
             bucket["errors"] += 1
             totals["errors"] += 1
+            stack_bucket["errors"] += 1
         else:
             bucket["warnings"] += 1
             totals["warnings"] += 1
+            stack_bucket["warnings"] += 1
+        stack_bucket["containers"].add(event.container_name)
         bucket["messages"][event.message[:220]] += 1
         bucket["latest_at"] = max(bucket["latest_at"], event.occurred_at.isoformat())
-        message_rollup[(server, event.container_name, event.message[:220])] += 1
+        pattern = _oracle_pattern(event.message)
+        pattern_key = (server, stack, event.container_name, pattern)
+        pattern_bucket = pattern_rollup.setdefault(
+            pattern_key,
+            {
+                "server": server,
+                "stack": stack,
+                "container": event.container_name,
+                "pattern": pattern,
+                "count": 0,
+                "errors": 0,
+                "warnings": 0,
+                "examples": Counter(),
+            },
+        )
+        pattern_bucket["count"] += 1
+        if severity == "error":
+            pattern_bucket["errors"] += 1
+        else:
+            pattern_bucket["warnings"] += 1
+        pattern_bucket["examples"][event.message[:220]] += 1
 
     top_containers = []
     for item in sorted(
@@ -1019,9 +1065,35 @@ def _oracle_summary(window_hours: int = 1) -> dict:
             }
         )
 
-    top_messages = [
-        {"server": server, "container": container, "message": message, "count": count}
-        for (server, container, message), count in message_rollup.most_common(20)
+    stacks = [
+        {
+            "server": item["server"],
+            "stack": item["stack"],
+            "errors": item["errors"],
+            "warnings": item["warnings"],
+            "containers": len(item["containers"]),
+        }
+        for item in sorted(
+            stack_rollup.values(),
+            key=lambda x: (-x["errors"], -x["warnings"], x["stack"].lower()),
+        )[:12]
+    ]
+
+    top_patterns = [
+        {
+            "server": item["server"],
+            "stack": item["stack"],
+            "container": item["container"],
+            "pattern": item["pattern"],
+            "count": item["count"],
+            "errors": item["errors"],
+            "warnings": item["warnings"],
+            "example": item["examples"].most_common(1)[0][0],
+        }
+        for item in sorted(
+            pattern_rollup.values(),
+            key=lambda x: (-x["errors"], -x["warnings"], -x["count"], x["container"].lower()),
+        )[:20]
     ]
 
     return {
@@ -1032,25 +1104,40 @@ def _oracle_summary(window_hours: int = 1) -> dict:
         "errors": totals["errors"],
         "warnings": totals["warnings"],
         "unique_containers": len(container_rollup),
+        "stacks": stacks,
         "top_containers": top_containers,
-        "top_messages": top_messages,
+        "top_patterns": top_patterns,
     }
+
+
+def _oracle_pattern(message: str) -> str:
+    text = message.strip().lower()
+    text = _ORACLE_UUID_RE.sub("<id>", text)
+    text = _ORACLE_NUM_RE.sub("<n>", text)
+    text = re.sub(r"\s+", " ", text)
+    return text[:220]
 
 
 def _oracle_prompt(summary: dict) -> list[dict[str, str]]:
     system_prompt = (
         "You are The Oracle inside ORC, an operations advisor reviewing the last hour "
         "of container warnings and errors collected from Portainer-managed applications. "
-        "Be concise, practical, and specific. Focus on the most affected stacks and "
-        "containers. Respond in plain text with exactly these sections:\n"
-        "Summary:\n"
-        "- bullet points\n"
-        "Most likely causes:\n"
-        "- bullet points\n"
-        "Recommended next steps:\n"
-        "1. numbered actions\n"
-        "2. numbered actions\n"
-        "3. numbered actions"
+        "Prioritize only the top three problems worth researching and fixing first. "
+        "Use the stack, container, message patterns, and event frequencies in the summary. "
+        "Do not try to solve every issue in the data. Respond in plain text with exactly this format:\n"
+        "Top 3 observations\n"
+        "1. <stack / container / pattern / why it matters>\n"
+        "2. <...>\n"
+        "3. <...>\n\n"
+        "Possible root cause\n"
+        "1. <most likely cause for observation 1>\n"
+        "2. <most likely cause for observation 2>\n"
+        "3. <most likely cause for observation 3>\n\n"
+        "What you should do to fix it\n"
+        "1. <first action>\n"
+        "2. <second action>\n"
+        "3. <third action>\n"
+        "Keep each line specific and short."
     )
     return [
         {"role": "system", "content": system_prompt},
@@ -1066,7 +1153,20 @@ def _oracle_prompt(summary: dict) -> list[dict[str, str]]:
 
 def _oracle_review(summary: dict) -> str:
     if not summary["total_events"]:
-        return "Summary:\n- No warnings or errors were found in the last hour.\n\nMost likely causes:\n- Systems were quiet during the review window.\n\nRecommended next steps:\n1. Keep monitoring.\n2. Re-run the Oracle when new issues appear.\n3. Use the Events tab if you want a manual spot check."
+        return (
+            "Top 3 observations\n"
+            "1. No warnings or errors were found in the last hour.\n"
+            "2. There is no active stack or container pattern to prioritize.\n"
+            "3. The environment looked quiet during this review window.\n\n"
+            "Possible root cause\n"
+            "1. Systems may be healthy.\n"
+            "2. Activity may have been low during the last hour.\n"
+            "3. There may be nothing urgent to research right now.\n\n"
+            "What you should do to fix it\n"
+            "1. Keep monitoring.\n"
+            "2. Re-run the Oracle when fresh issues appear.\n"
+            "3. Use the Events tab for a manual spot check if needed."
+        )
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
