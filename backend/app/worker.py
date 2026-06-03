@@ -71,7 +71,7 @@ def _rebuild_queue() -> None:
         for ep in endpoints:
             eid = ep["Id"]
             try:
-                for c in client.get_containers(eid):
+                for c in client.get_running_containers(eid):
                     cid = c["Id"]
                     cname = (c.get("Names") or [f"/{cid[:12]}"])[0].lstrip("/")
                     _queue.append((conn_id, conn_name, eid, cid, cname, client, conn_interval))

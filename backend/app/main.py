@@ -136,39 +136,30 @@ box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 .file-row{display:flex;align-items:center;gap:9px;min-width:0}
 .logo-preview{width:42px;height:42px;border-radius:8px;object-fit:cover;background:#0d1117;border:1px solid var(--bdr);flex-shrink:0}
 .logo-preview.empty{display:none}
-.net-tools{position:absolute;z-index:3;right:14px;top:14px;display:flex;gap:5px;background:rgba(13,17,23,.72);border:1px solid rgba(230,237,243,.12);border-radius:8px;padding:5px}
-.network-stage{position:relative;z-index:1;transform-origin:top left;transition:transform .12s ease;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:14px;align-items:start;padding-top:42px}
-.network-kingdom{position:relative;height:var(--kh,620px);min-height:520px;border:1px solid rgba(163,113,247,.34);border-radius:8px;background:linear-gradient(180deg,rgba(22,27,34,.78),rgba(13,17,23,.62));overflow:hidden;box-shadow:inset 0 0 0 1px rgba(230,237,243,.05),0 12px 28px rgba(0,0,0,.18);isolation:isolate}
-.network-kingdom:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 50%,rgba(48,54,61,.08),rgba(1,4,9,.36));pointer-events:none}
-.network-kingdom.er{border-color:rgba(248,81,73,.7)}
-.network-kingdom.warn{border-color:rgba(210,153,34,.7)}
-.network-title{position:absolute;z-index:5;top:12px;left:14px;right:14px;display:flex;align-items:center;gap:8px;color:var(--txt);font-size:.76rem;font-weight:800;min-width:0;background:rgba(48,54,61,.88);border:1px solid rgba(230,237,243,.16);border-radius:999px;padding:5px 9px;box-shadow:0 8px 18px rgba(0,0,0,.23)}
-.network-title>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.network-title .status-circles{position:static;margin-left:auto;flex-shrink:0}
-.network-title .status-dot{width:18px;height:18px;font-size:.5rem}
-.network-title img{width:28px;height:28px;border-radius:50%;object-fit:cover;background:#0d1117;border:1px solid rgba(230,237,243,.18);flex-shrink:0}
-.network-field{position:absolute;z-index:1;inset:58px 14px 14px}
-.net-topology{position:absolute;inset:0;transform:scale(var(--field-scale,1));transform-origin:center center}
-.net-backbone{position:absolute;z-index:0;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+.net-tools{position:absolute;z-index:5;right:14px;top:14px;display:flex;gap:5px;background:rgba(13,17,23,.72);border:1px solid rgba(230,237,243,.12);border-radius:8px;padding:5px}
+.network-stage{position:relative;z-index:1;height:calc(100vh - 118px);min-height:680px;overflow:hidden;cursor:grab;touch-action:none;border-radius:10px}
+.network-stage.dragging{cursor:grabbing}
+.net-pan-surface{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+.net-backbone{position:absolute;z-index:0;left:0;top:0;overflow:visible;pointer-events:none}
 .net-backbone line{stroke:rgba(139,148,158,.52);stroke-width:1.35;vector-effect:non-scaling-stroke}
 .net-backbone line.hub-link{stroke:rgba(163,113,247,.45);stroke-width:1.55}
 .net-backbone line.err{stroke:rgba(248,81,73,.8)}.net-backbone line.warn{stroke:rgba(210,153,34,.82)}
 .net-hub,.network-stack,.net-worker{position:absolute;left:var(--x);top:var(--y);transform:translate(-50%,-50%)}
-.net-hub{z-index:3;width:68px;height:68px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(13,17,23,.9);border:2px solid rgba(88,166,255,.8);box-shadow:0 0 0 5px rgba(88,166,255,.14),0 10px 24px rgba(0,0,0,.26)}
-.net-hub img{width:46px;height:46px;border-radius:50%;object-fit:cover}
-.net-hub-label{position:absolute;left:50%;top:72px;transform:translateX(-50%);max-width:150px;background:rgba(48,54,61,.92);border:1px solid rgba(230,237,243,.14);border-radius:5px;padding:3px 7px;font-size:.62rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt)}
-.network-stack{z-index:4;width:82px;height:82px;isolation:isolate}
-.net-stack-node{position:relative;width:82px;height:82px;border-radius:50%;overflow:hidden;border:1px solid rgba(230,237,243,.28);box-shadow:0 0 0 4px rgba(13,17,23,.68),0 10px 24px rgba(0,0,0,.32);background:#0d1117;cursor:pointer}
+.net-hub{z-index:3;width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(13,17,23,.9);border:2px solid rgba(88,166,255,.8);box-shadow:0 0 0 5px rgba(88,166,255,.14),0 10px 24px rgba(0,0,0,.26)}
+.net-hub img{width:39px;height:39px;border-radius:50%;object-fit:cover}
+.net-hub-label{position:absolute;left:50%;top:62px;transform:translateX(-50%);max-width:170px;background:rgba(48,54,61,.92);border:1px solid rgba(230,237,243,.14);border-radius:5px;padding:3px 7px;font-size:.61rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt)}
+.network-stack{z-index:4;width:64px;height:64px;isolation:isolate}
+.net-stack-node{position:relative;width:64px;height:64px;border-radius:50%;overflow:hidden;border:1px solid rgba(230,237,243,.28);box-shadow:0 0 0 3px rgba(13,17,23,.68),0 8px 18px rgba(0,0,0,.32);background:#0d1117;cursor:pointer}
 .net-stack-node img{width:100%;height:100%;object-fit:cover;filter:saturate(.9) contrast(1.05);opacity:.82;-webkit-mask-image:radial-gradient(circle at center,#000 55%,rgba(0,0,0,.62) 72%,transparent 90%);mask-image:radial-gradient(circle at center,#000 55%,rgba(0,0,0,.62) 72%,transparent 90%)}
-.net-stack-name{position:absolute;left:7px;right:7px;bottom:7px;min-width:0;max-width:none;background:rgba(48,54,61,.94);border:1px solid rgba(230,237,243,.14);border-radius:5px;padding:3px 5px;font-size:.61rem;line-height:1.05;font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;color:var(--txt)}
-.net-worker{display:flex;align-items:center;gap:5px;min-width:0;max-width:146px;cursor:pointer;z-index:3;filter:drop-shadow(0 7px 10px rgba(0,0,0,.28))}
+.net-stack-name{position:absolute;left:5px;right:5px;bottom:5px;min-width:0;max-width:none;background:rgba(48,54,61,.94);border:1px solid rgba(230,237,243,.14);border-radius:5px;padding:2px 4px;font-size:.55rem;line-height:1.05;font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;color:var(--txt)}
+.net-worker{display:flex;align-items:center;gap:4px;min-width:0;max-width:122px;cursor:pointer;z-index:3;filter:drop-shadow(0 7px 10px rgba(0,0,0,.28))}
 .net-worker.left{flex-direction:row-reverse}.net-worker.left .net-worker-name{text-align:right}
-.worker-avatar{position:relative;width:48px;height:48px;overflow:visible;background:transparent;border:0;flex:0 0 48px}
+.worker-avatar{position:relative;width:34px;height:34px;overflow:visible;background:transparent;border:0;flex:0 0 34px}
 .worker-avatar img{width:100%;height:100%;object-fit:contain;position:static;display:block}
-.net-dot{position:absolute;left:33px;top:-2px;width:22px;height:22px;border-radius:50%;box-shadow:0 0 0 2px #0d1117,0 2px 8px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-size:.6rem;line-height:1;font-weight:900;color:#fff;flex-shrink:0}
-.net-worker.left .net-dot{left:auto;right:33px}
+.net-dot{position:absolute;left:22px;top:-4px;width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 2px #0d1117,0 2px 8px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-size:.54rem;line-height:1;font-weight:900;color:#fff;flex-shrink:0}
+.net-worker.left .net-dot{left:auto;right:22px}
 .net-dot.err{background:var(--red)}.net-dot.warn{background:var(--yel);color:#211300}.net-dot.none{display:none}
-.net-worker-name{display:block;max-width:88px;background:rgba(48,54,61,.88);border:1px solid rgba(230,237,243,.12);border-radius:5px;padding:2px 5px;font-size:.61rem;line-height:1.05;font-weight:750;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.net-worker-name{display:block;max-width:80px;background:rgba(48,54,61,.88);border:1px solid rgba(230,237,243,.12);border-radius:5px;padding:2px 5px;font-size:.57rem;line-height:1.05;font-weight:750;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* EVENTS */
 .card{background:var(--sur);border:1px solid var(--bdr);border-radius:8px}
 .fbtn{background:#21262d;border:1px solid var(--bdr);border-radius:6px;color:var(--mut);cursor:pointer;font-size:.78rem;padding:3px 11px}
@@ -317,6 +308,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     <div class="net-tools">
       <button class="btns" onclick="zoomNetwork(-0.1)">-</button>
       <button class="btns" onclick="zoomNetwork(0.1)">+</button>
+      <button class="btns" onclick="resetNetworkView()">&#8982;</button>
     </div>
     <div class="network-stage" id="network-stage"><div class="empty">Loading network...</div></div>
   </div>
@@ -447,6 +439,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 let _evts=[], _evFilters={severity:'',container:'',server:''};
 let _conns=[], _editId=null, _charEditKey='', _charDraftCharacter='', _charLogoDraft='';
 let _stacks=[], _connLogoDraft='', _networkZoom=1;
+let _networkPan={x:0,y:0,worldKey:'',dragging:false,startX:0,startY:0,originX:0,originY:0};
 let _hbData=new Array(40).fill(0), _hbBucket=0;
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
 let _oracleState={busy:false,summary:null,analysis:'',error:''};
@@ -814,14 +807,18 @@ function renderStackGrid(stacks,targetId,mode){
 }
 
 function zoomNetwork(delta){
-  _networkZoom=Math.min(1.8,Math.max(0.55,_networkZoom+delta));
+  _networkZoom=Math.min(1.8,Math.max(0.35,_networkZoom+delta));
+  applyNetworkTransform();
+}
+function resetNetworkView(){
+  _networkPan.worldKey='';
   renderNetwork(_stacks);
 }
 function networkRand(key,salt){
   return (hashStr(`${key}::${salt}`)%10000)/10000;
 }
 function networkClamp(v,min,max){return Math.max(min,Math.min(max,v));}
-function networkPct(v,total){return `${(v/total*100).toFixed(2)}%`;}
+function networkPx(v){return `${v.toFixed(1)}px`;}
 function stackIssueTotals(stack){
   return stack.containers.reduce((acc,app)=>{const c=issueCounts(app);acc.errors+=c.errors;acc.warnings+=c.warnings;return acc;},{errors:0,warnings:0});
 }
@@ -831,20 +828,20 @@ function issueSeverityFromCounts(counts){
 function layoutNetworkTopology(k){
   const stacks=[...k.stacks].sort((a,b)=>a.name.localeCompare(b.name));
   const totalContainers=stacks.reduce((sum,s)=>sum+(s.containers||[]).length,0);
-  const width=1000;
-  const height=Math.max(560,Math.min(980,470+Math.sqrt(totalContainers)*34+Math.max(0,stacks.length-6)*30));
-  const hub={id:'hub',type:'hub',fixed:true,x:width/2,y:height/2,r:58};
+  const width=1320;
+  const height=Math.max(760,Math.min(1180,660+Math.sqrt(totalContainers)*38+Math.max(0,stacks.length-6)*34));
+  const hub={id:'hub',type:'hub',fixed:true,x:width/2,y:height/2,r:52};
   const nodes=[hub],stackNodes=[],workerNodes=[],links=[];
   const count=Math.max(1,stacks.length);
   const angleOffset=(networkRand(k.server||'network','angle')-.5)*.72;
-  const ringRx=Math.min(width*.38,230+Math.min(150,stacks.length*14+totalContainers*1.4));
-  const ringRy=Math.min(height*.34,170+Math.min(150,stacks.length*12+totalContainers*1.2));
+  const ringRx=Math.min(width*.39,335+Math.min(190,stacks.length*16+totalContainers*1.8));
+  const ringRy=Math.min(height*.36,245+Math.min(180,stacks.length*13+totalContainers*1.5));
   stacks.forEach((stack,i)=>{
     const angle=(-Math.PI/2)+angleOffset+(Math.PI*2*i/count);
     const stagger=count>7&&i%2?.18:0;
     const sx=hub.x+Math.cos(angle)*ringRx*(1+stagger);
     const sy=hub.y+Math.sin(angle)*ringRy*(1+stagger);
-    const stackNode={id:`s${i}`,type:'stack',stack,x:sx,y:sy,targetX:sx,targetY:sy,r:74,angle};
+    const stackNode={id:`s${i}`,type:'stack',stack,x:sx,y:sy,targetX:sx,targetY:sy,r:58,angle};
     nodes.push(stackNode);
     stackNodes.push(stackNode);
     links.push({source:hub,target:stackNode,type:'hub',severity:issueSeverityFromCounts(stackIssueTotals(stack))});
@@ -854,14 +851,14 @@ function layoutNetworkTopology(k){
       const rel=apps.length===1?0:(j-(apps.length-1)/2)/(apps.length-1);
       const appKey=app.full_name||app.name||`${stack.name}:${j}`;
       const fanAngle=angle+rel*spread+(networkRand(appKey,'fan')-.5)*.14;
-      const dist=120+Math.floor(j/5)*38+(apps.length>4?12:0);
+      const dist=142+Math.floor(j/5)*46+(apps.length>4?22:0);
       const workerNode={
         id:`w${i}-${j}`,type:'worker',stack,stackNode,app,
         x:sx+Math.cos(fanAngle)*dist,
         y:sy+Math.sin(fanAngle)*dist*.88,
         targetX:sx+Math.cos(fanAngle)*dist,
         targetY:sy+Math.sin(fanAngle)*dist*.88,
-        r:52,angle:fanAngle
+        r:34,angle:fanAngle
       };
       nodes.push(workerNode);
       workerNodes.push(workerNode);
@@ -873,23 +870,23 @@ function layoutNetworkTopology(k){
       const a=link.source,b=link.target;
       const dx=b.x-a.x,dy=b.y-a.y;
       const d=Math.hypot(dx,dy)||1;
-      const desired=link.type==='hub'?Math.min(310,205+(b.stack?.containers?.length||0)*11):96;
-      const strength=link.type==='hub'?.022:.064;
+      const desired=link.type==='hub'?Math.min(470,315+(b.stack?.containers?.length||0)*13):126;
+      const strength=link.type==='hub'?.026:.072;
       const shift=(d-desired)/d*strength;
       if(!a.fixed){
-        const aw=a.type==='stack'?.32:.5;
+        const aw=a.type==='stack'?.38:.5;
         a.x+=dx*shift*aw;
         a.y+=dy*shift*aw;
       }
       if(!b.fixed){
-        const bw=b.type==='stack'?.7:.82;
+        const bw=b.type==='stack'?.74:.86;
         b.x-=dx*shift*bw;
         b.y-=dy*shift*bw;
       }
     });
     nodes.forEach(node=>{
       if(node.fixed)return;
-      const pull=node.type==='stack'?.028:.045;
+      const pull=node.type==='stack'?.022:.038;
       node.x+=(node.targetX-node.x)*pull;
       node.y+=(node.targetY-node.y)*pull;
     });
@@ -898,7 +895,7 @@ function layoutNetworkTopology(k){
         const a=nodes[i],b=nodes[j];
         let dx=b.x-a.x,dy=b.y-a.y;
         let d=Math.hypot(dx,dy)||.01;
-        const min=a.r+b.r+(a.type===b.type?8:4);
+        const min=a.r+b.r+(a.type===b.type?24:12);
         if(d<min){
           const push=(min-d)/d*.43;
           dx*=push;dy*=push;
@@ -915,80 +912,112 @@ function layoutNetworkTopology(k){
     }
     nodes.forEach(node=>{
       if(node.fixed)return;
-      const padX=node.type==='stack'?92:64;
-      const padY=node.type==='stack'?92:58;
+      const padX=node.type==='stack'?78:46;
+      const padY=node.type==='stack'?78:44;
       node.x=networkClamp(node.x,padX,width-padX);
       node.y=networkClamp(node.y,padY,height-padY);
     });
     hub.x=width/2;hub.y=height/2;
   }
-  const densityPenalty=(Math.max(0,totalContainers-34)*.006)+(Math.max(0,stacks.length-8)*.018);
-  const fieldScale=Math.max(.72,Math.min(1,1-densityPenalty));
-  const heightPx=Math.round(Math.max(560,Math.min(760,height*.72+96)));
-  return {width,height,heightPx,fieldScale:fieldScale.toFixed(2),hub,stacks:stackNodes,workers:workerNodes,links};
+  return {width,height,hub,stacks:stackNodes,workers:workerNodes,links,kingdom:k};
+}
+function layoutNetworkWorld(kingdoms){
+  const layouts=kingdoms.map(k=>layoutNetworkTopology(k));
+  const cols=layouts.length<=2?layouts.length:Math.ceil(Math.sqrt(layouts.length));
+  const gap=180;
+  const cellW=Math.max(...layouts.map(l=>l.width),1000)+gap;
+  const cellH=Math.max(...layouts.map(l=>l.height),760)+gap;
+  const world={width:Math.max(cellW,cols*cellW),height:Math.max(cellH,Math.ceil(layouts.length/cols)*cellH),groups:[],links:[],hubs:[],stacks:[],workers:[]};
+  layouts.forEach((layout,i)=>{
+    const col=i%cols,row=Math.floor(i/cols);
+    const ox=col*cellW+(cellW-layout.width)/2;
+    const oy=row*cellH+(cellH-layout.height)/2;
+    const offsetNode=node=>({...node,x:node.x+ox,y:node.y+oy});
+    const hub={...offsetNode(layout.hub),kingdom:layout.kingdom};
+    const stacks=layout.stacks.map(offsetNode);
+    const workers=layout.workers.map(node=>({...offsetNode(node),stackNode:stacks[layout.stacks.indexOf(node.stackNode)]}));
+    const stackById=Object.fromEntries(stacks.map(n=>[n.id,n]));
+    const workerById=Object.fromEntries(workers.map(n=>[n.id,n]));
+    layout.links.forEach(link=>{
+      const source=link.source.type==='hub'?hub:stackById[link.source.id];
+      const target=link.target.type==='stack'?stackById[link.target.id]:workerById[link.target.id];
+      if(source&&target)world.links.push({...link,source,target});
+    });
+    world.groups.push({...layout,ox,oy,hub,stacks,workers});
+    world.hubs.push(hub);
+    world.stacks.push(...stacks);
+    world.workers.push(...workers);
+  });
+  return world;
+}
+function networkWorldKey(kingdoms){
+  return kingdoms.map(k=>`${k.server}:${k.stacks.length}:${k.stacks.reduce((n,s)=>n+s.containers.length,0)}`).join('|');
+}
+function applyNetworkTransform(){
+  const surface=document.getElementById('net-pan-surface');
+  if(surface)surface.style.transform=`translate(${_networkPan.x}px,${_networkPan.y}px) scale(${_networkZoom})`;
+}
+function centerNetworkWorld(world,stage){
+  const sw=stage.clientWidth||1000,sh=stage.clientHeight||700;
+  const fit=Math.min(1,(sw-40)/world.width,(sh-40)/world.height);
+  _networkZoom=Math.max(.42,Math.min(.82,fit));
+  _networkPan.x=(sw-world.width*_networkZoom)/2;
+  _networkPan.y=(sh-world.height*_networkZoom)/2;
 }
 function renderNetwork(stacks){
   const stage=document.getElementById('network-stage');
   if(!stacks.length){stage.innerHTML='<div class="empty">No stacks found. Add a connection in the Connections tab.</div>';return;}
   const kingdoms=groupKingdoms(stacks);
   if(!kingdoms.length){stage.innerHTML='<div class="empty">No containers found for the configured connections.</div>';return;}
-  const autoScale=kingdoms.length>4?Math.max(0.64,Math.min(1,4.2/kingdoms.length+0.14)):1;
-  const scale=Math.min(_networkZoom,autoScale*_networkZoom);
-  stage.style.transform=`scale(${scale})`;
-  stage.style.width=`${100/scale}%`;
-  stage.innerHTML=kingdoms.map(k=>{
-    const totals=k.stacks.reduce((acc,stack)=>{stack.containers.forEach(app=>{const c=issueCounts(app);acc.errors+=c.errors;acc.warnings+=c.warnings;});return acc;},{errors:0,warnings:0});
-    const kingdomCls=totals.errors>0?'er':totals.warnings>0?'warn':'';
-    const logo=serverLogo(k)||'/assets/kingdoms/castle.png';
-    const layout=layoutNetworkTopology(k);
-    const lineHtml=layout.links.map(link=>{
-      const cls=`${link.type==='hub'?'hub-link':''} ${link.severity}`.trim();
-      return `<line class="${esc(cls)}" x1="${link.source.x.toFixed(1)}" y1="${link.source.y.toFixed(1)}" x2="${link.target.x.toFixed(1)}" y2="${link.target.y.toFixed(1)}"></line>`;
-    }).join('');
-    const hubHtml=`<div class="net-hub" style="--x:${networkPct(layout.hub.x,layout.width)};--y:${networkPct(layout.hub.y,layout.height)}" title="${esc(serverDisplayName(k))}">
-      <img src="${esc(logo)}" alt="">
-      <span class="net-hub-label">${esc(k.server)}</span>
-    </div>`;
-    const stacksHtml=layout.stacks.map(node=>{
-      const stack=node.stack;
-      const charId=selectedCharacterId(stack);
-      const ch=CHARACTER_BY_ID[charId]||CHARACTERS[0];
-      const stackTotals=stackIssueTotals(stack);
-      const severity=stackTotals.errors>0?'error':stackTotals.warnings>0?'warning':'';
-      return `<div class="network-stack" style="--x:${networkPct(node.x,layout.width)};--y:${networkPct(node.y,layout.height)}">
-        <div class="net-stack-node" onclick="jumpToEvents('${esc(stack.server)}','${esc(stack.name)}','${esc(severity)}')" title="${esc(stack.name)}">
-          <img src="${esc(stackLogo(stack)||ch.src)}" alt="${esc(stackFriendlyName(stack))}">
-          <span class="net-stack-name">${esc(stackFriendlyName(stack))}</span>
-        </div>
-      </div>`;
-    }).join('');
-    const workersHtml=layout.workers.map(node=>{
-      const app=node.app;
-      const counts=issueCounts(app);
-      const dot=counts.errors>0?'err':counts.warnings>0?'warn':'none';
-      const dotCount=counts.errors>0?counts.errors:counts.warnings;
-      const dotText=dotCount>99?'99+':String(dotCount);
-      const workerAsset=WORKER_ASSETS[hashStr(app.full_name||app.name)%WORKER_ASSETS.length];
-      const displayName=containerFriendlyName(app);
-      const side=node.x<node.stackNode.x?'left':'right';
-      return `<div class="net-worker ${side}" style="--x:${networkPct(node.x,layout.width)};--y:${networkPct(node.y,layout.height)}" onclick="jumpToEventsFromEl(this)" data-server="${esc(node.stack.server)}" data-container="${esc(app.full_name)}" data-severity="${esc(dot==='err'?'error':dot==='warn'?'warning':'')}" title="${esc(app.full_name)}">
-        <span class="worker-avatar"><img src="${esc(workerAsset)}" alt=""></span>
-        <span class="net-dot ${dot}">${esc(dotText)}</span>
-        <span class="net-worker-name">${esc(displayName)}</span>
-      </div>`;
-    }).join('');
-    return `<section class="network-kingdom ${kingdomCls}" style="--kh:${layout.heightPx}px;--field-scale:${layout.fieldScale}">
-      <div class="network-title"><img src="${esc(logo)}" alt=""><span>${esc(serverDisplayName(k))}</span>${statusCircles(totals.errors,totals.warnings)}</div>
-      <div class="network-field">
-        <div class="net-topology">
-          <svg class="net-backbone" viewBox="0 0 ${layout.width} ${layout.height}" preserveAspectRatio="none" aria-hidden="true">${lineHtml}</svg>
-          ${hubHtml}
-          ${stacksHtml}
-          ${workersHtml}
-        </div>
-      </div>
-    </section>`;
+  const key=networkWorldKey(kingdoms);
+  const world=layoutNetworkWorld(kingdoms);
+  if(_networkPan.worldKey!==key){
+    _networkPan.worldKey=key;
+    centerNetworkWorld(world,stage);
+  }
+  const lineHtml=world.links.map(link=>{
+    const cls=`${link.type==='hub'?'hub-link':''} ${link.severity}`.trim();
+    return `<line class="${esc(cls)}" x1="${link.source.x.toFixed(1)}" y1="${link.source.y.toFixed(1)}" x2="${link.target.x.toFixed(1)}" y2="${link.target.y.toFixed(1)}"></line>`;
   }).join('');
+  const hubHtml=world.hubs.map(node=>`<div class="net-hub" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" title="${esc(serverDisplayName(node.kingdom||{}))}">
+    <img src="/assets/kingdoms/castle.png" alt="">
+    <span class="net-hub-label">${esc(serverDisplayName(node.kingdom||{}))}</span>
+  </div>`).join('');
+  const stacksHtml=world.stacks.map(node=>{
+    const stack=node.stack;
+    const charId=selectedCharacterId(stack);
+    const ch=CHARACTER_BY_ID[charId]||CHARACTERS[0];
+    const stackTotals=stackIssueTotals(stack);
+    const severity=stackTotals.errors>0?'error':stackTotals.warnings>0?'warning':'';
+    return `<div class="network-stack" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}">
+      <div class="net-stack-node" onclick="jumpToEvents('${esc(stack.server)}','${esc(stack.name)}','${esc(severity)}')" title="${esc(stack.name)}">
+        <img src="${esc(ch.src)}" alt="${esc(stackFriendlyName(stack))}">
+        <span class="net-stack-name">${esc(stackFriendlyName(stack))}</span>
+      </div>
+    </div>`;
+  }).join('');
+  const workersHtml=world.workers.map(node=>{
+    const app=node.app;
+    const counts=issueCounts(app);
+    const dot=counts.errors>0?'err':counts.warnings>0?'warn':'none';
+    const dotCount=counts.errors>0?counts.errors:counts.warnings;
+    const dotText=dotCount>99?'99+':String(dotCount);
+    const workerAsset=WORKER_ASSETS[hashStr(app.full_name||app.name)%WORKER_ASSETS.length];
+    const displayName=containerFriendlyName(app);
+    const side=node.x<node.stackNode.x?'left':'right';
+    return `<div class="net-worker ${side}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" onclick="jumpToEventsFromEl(this)" data-server="${esc(node.stack.server)}" data-container="${esc(app.full_name)}" data-severity="${esc(dot==='err'?'error':dot==='warn'?'warning':'')}" title="${esc(app.full_name)}">
+      <span class="worker-avatar"><img src="${esc(workerAsset)}" alt=""></span>
+      <span class="net-dot ${dot}">${esc(dotText)}</span>
+      <span class="net-worker-name">${esc(displayName)}</span>
+    </div>`;
+  }).join('');
+  stage.innerHTML=`<div class="net-pan-surface" id="net-pan-surface" style="width:${world.width}px;height:${world.height}px">
+    <svg class="net-backbone" width="${world.width}" height="${world.height}" viewBox="0 0 ${world.width} ${world.height}" aria-hidden="true">${lineHtml}</svg>
+    ${hubHtml}
+    ${stacksHtml}
+    ${workersHtml}
+  </div>`;
+  applyNetworkTransform();
 }
 
 /* ============================================================
@@ -1340,6 +1369,46 @@ function connectRaven(){
   es.onerror=()=>{document.getElementById('hb-status').textContent='reconnecting…';es.close();setTimeout(connectRaven,5000);};
 }
 
+function setupNetworkPan(){
+  const stage=document.getElementById('network-stage');
+  if(!stage)return;
+  stage.addEventListener('pointerdown',e=>{
+    if(e.button!==0||e.target.closest('.net-tools,.net-worker,.net-stack-node'))return;
+    e.preventDefault();
+    _networkPan.dragging=true;
+    _networkPan.startX=e.clientX;
+    _networkPan.startY=e.clientY;
+    _networkPan.originX=_networkPan.x;
+    _networkPan.originY=_networkPan.y;
+    stage.classList.add('dragging');
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener('pointermove',e=>{
+    if(!_networkPan.dragging)return;
+    _networkPan.x=_networkPan.originX+(e.clientX-_networkPan.startX);
+    _networkPan.y=_networkPan.originY+(e.clientY-_networkPan.startY);
+    applyNetworkTransform();
+  });
+  const stop=e=>{
+    if(!_networkPan.dragging)return;
+    _networkPan.dragging=false;
+    stage.classList.remove('dragging');
+    try{stage.releasePointerCapture(e.pointerId);}catch{}
+  };
+  stage.addEventListener('pointerup',stop);
+  stage.addEventListener('pointercancel',stop);
+  stage.addEventListener('wheel',e=>{
+    if(!stage.closest('.pane.on'))return;
+    e.preventDefault();
+    const rect=stage.getBoundingClientRect();
+    const before={x:(e.clientX-rect.left-_networkPan.x)/_networkZoom,y:(e.clientY-rect.top-_networkPan.y)/_networkZoom};
+    _networkZoom=networkClamp(_networkZoom+(e.deltaY<0?.08:-.08),.35,1.8);
+    _networkPan.x=e.clientX-rect.left-before.x*_networkZoom;
+    _networkPan.y=e.clientY-rect.top-before.y*_networkZoom;
+    applyNetworkTransform();
+  },{passive:false});
+}
+
 function setupInputs(){
   const fLogo=document.getElementById('f-logo');
   if(fLogo)fLogo.addEventListener('change',async e=>{
@@ -1367,6 +1436,7 @@ function setupInputs(){
     window.addEventListener('pointermove',move);
     window.addEventListener('pointerup',up);
   });
+  setupNetworkPan();
 }
 
 /* ============================================================
@@ -1804,7 +1874,7 @@ def poll_now(cid: int) -> dict:
     for ep in endpoints:
         eid = ep["Id"]
         try:
-            containers = client.get_containers(eid)
+            containers = client.get_running_containers(eid)
         except Exception:
             continue
         for container in containers:

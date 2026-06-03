@@ -57,10 +57,19 @@ class PortainerClient:
         r.raise_for_status()
         return r.json()
 
-    def get_containers(self, endpoint_id: int) -> list[dict]:
-        r = self._get(f"/api/endpoints/{endpoint_id}/docker/containers/json", all=True)
+    def get_containers(self, endpoint_id: int, all_containers: bool = True) -> list[dict]:
+        r = self._get(
+            f"/api/endpoints/{endpoint_id}/docker/containers/json",
+            all=all_containers,
+        )
         r.raise_for_status()
         return r.json()
+
+    def get_running_containers(self, endpoint_id: int) -> list[dict]:
+        return [
+            c for c in self.get_containers(endpoint_id, all_containers=False)
+            if c.get("State", "running") == "running"
+        ]
 
     def get_container_logs(self, endpoint_id: int, container_id: str, since: int = 0) -> str:
         params: dict = {"stdout": True, "stderr": True, "timestamps": True, "tail": 200}
