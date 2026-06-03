@@ -26,6 +26,8 @@ class Connection(Base):
     api_token: Mapped[str] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     poll_interval_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    server_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    logo_data: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -87,6 +89,8 @@ def _migrate() -> None:
         "ALTER TABLE observed_events ADD COLUMN IF NOT EXISTS connection_id INTEGER REFERENCES connections(id) ON DELETE SET NULL",
         "ALTER TABLE ingestion_checkpoints ADD COLUMN IF NOT EXISTS connection_id INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE connections ADD COLUMN IF NOT EXISTS poll_interval_seconds INTEGER",
+        "ALTER TABLE connections ADD COLUMN IF NOT EXISTS server_name VARCHAR(128)",
+        "ALTER TABLE connections ADD COLUMN IF NOT EXISTS logo_data TEXT",
     ]
     with engine.begin() as conn:
         for sql in stmts:
