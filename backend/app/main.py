@@ -10,7 +10,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, text as _sa_text
 
 from .config import REDIS_URL, REPO_ROOT
@@ -45,6 +45,10 @@ class ConnectionTestIn(BaseModel):
     api_token: str
 
 
+class OracleReviewIn(BaseModel):
+    friendly_names: dict[str, str] = Field(default_factory=dict)
+
+
 # ---------------------------------------------------------------------------
 # App HTML
 # ---------------------------------------------------------------------------
@@ -75,7 +79,7 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--mut)}
 .dot.ok{background:var(--grn)}.dot.er{background:var(--red)}
 /* Layout */
-.layout{display:grid;grid-template-columns:1fr 292px;flex:1;overflow:hidden}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) var(--aside-width,292px);flex:1;overflow:hidden}
 .main{overflow-y:auto;padding:14px}
 .pane{display:none}.pane.on{display:block}
 /* STACK MAP */
@@ -133,12 +137,15 @@ box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 .char-choice:hover,.char-choice.on{border-color:var(--pur);background:#21262d}
 .char-choice img{display:block;width:100%;aspect-ratio:1.62/1;object-fit:cover;border-radius:5px;margin-bottom:5px}
 .char-choice span{display:block;font-size:.72rem;font-weight:650;text-align:center}
+.logo-choice img{object-fit:contain;background:#0d1117}
 .file-row{display:flex;align-items:center;gap:9px;min-width:0}
 .logo-preview{width:42px;height:42px;border-radius:8px;object-fit:cover;background:#0d1117;border:1px solid var(--bdr);flex-shrink:0}
 .logo-preview.empty{display:none}
 .net-tools{position:absolute;z-index:5;right:14px;top:14px;display:flex;gap:5px;background:rgba(13,17,23,.72);border:1px solid rgba(230,237,243,.12);border-radius:8px;padding:5px}
 .network-stage{position:relative;z-index:1;height:calc(100vh - 118px);min-height:680px;overflow:hidden;cursor:grab;touch-action:none;border-radius:10px}
 .network-stage.dragging{cursor:grabbing}
+.raven-flight{position:absolute;z-index:9;left:0;top:0;width:38px;height:38px;object-fit:contain;pointer-events:none;filter:drop-shadow(0 0 1px rgba(255,255,255,.8)) drop-shadow(0 6px 10px rgba(0,0,0,.5));animation:raven-flight 1.35s ease-out forwards}
+@keyframes raven-flight{0%{opacity:0;transform:translate(calc(var(--x) - 10px),var(--y)) scale(.35) rotate(-12deg);filter:drop-shadow(0 0 1px rgba(255,255,255,.8)) drop-shadow(0 6px 10px rgba(0,0,0,.5)) blur(0)}18%{opacity:1}72%{opacity:.86}100%{opacity:0;transform:translate(calc(var(--x) + var(--tx)),calc(var(--y) + var(--ty))) scale(1.08) rotate(var(--rot));filter:drop-shadow(0 0 5px rgba(230,237,243,.26)) blur(2px)}}
 .net-pan-surface{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .net-backbone{position:absolute;z-index:0;left:0;top:0;overflow:visible;pointer-events:none}
 .net-backbone line{stroke:rgba(139,148,158,.58);stroke-width:4.2;vector-effect:non-scaling-stroke}
@@ -189,7 +196,9 @@ tr:last-child td{border-bottom:none}
 .muted{color:var(--mut)}.small{font-size:.78rem}
 .empty{color:var(--mut);padding:16px 0;font-size:.83rem}
 /* RAVEN */
-.aside{border-left:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;background:var(--sur)}
+.aside{position:relative;border-left:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;background:var(--sur)}
+.aside-width-grip{position:absolute;z-index:12;left:-5px;top:0;bottom:0;width:10px;cursor:col-resize;background:transparent}
+.aside-width-grip::before{content:"";position:absolute;left:4px;top:0;bottom:0;width:1px;background:rgba(230,237,243,.08)}
 .hb-wrap{position:relative;padding:8px 10px 7px;border-bottom:1px solid var(--bdr);flex-shrink:0;background:#12171f}
 .hb-lbl{position:absolute;z-index:2;left:14px;right:14px;top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px;pointer-events:none}
 .hb-title{font-size:.76rem;font-weight:800;letter-spacing:.06em;display:flex;align-items:center;gap:7px;text-shadow:0 2px 5px rgba(0,0,0,.9)}
@@ -225,6 +234,7 @@ canvas{display:block;width:100%;height:58px}
 .oracle-mark{width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid rgba(163,113,247,.35);box-shadow:0 4px 10px rgba(0,0,0,.28);flex-shrink:0}
 .oracle-meta{font-size:.72rem;color:var(--mut);line-height:1.45}
 .oracle-box{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;min-height:108px;flex:1;overflow:auto;font-size:.77rem;line-height:1.45;white-space:pre-wrap}
+.oracle-box strong{color:var(--txt);font-weight:850}
 .oracle-box.busy{color:var(--mut)}
 .oracle-box.error{border-color:rgba(248,81,73,.4);color:var(--red)}
 .oracle-box.empty{color:var(--mut)}
@@ -258,6 +268,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .nav-r .sp:nth-of-type(n+2),.nav-r .small{display:none}
   .layout{grid-template-columns:1fr}
   .aside{display:none}
+  .aside-width-grip{display:none}
   .main{padding:12px}
   #pane-map,#pane-overview,#pane-network{padding:10px}
   .kingdom{padding:8px}
@@ -357,6 +368,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 
 <!-- RAVEN -->
 <aside class="aside">
+  <div class="aside-width-grip" id="aside-width-grip" title="Resize Raven and Oracle panel"></div>
   <div class="hb-wrap">
     <div class="hb-lbl">
       <span class="hb-title"><img class="raven-mark" src="/assets/kingdoms/raven.png" alt="">RAVEN</span>
@@ -425,7 +437,11 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
       <div class="char-grid" id="char-grid"></div>
     </div>
     <div class="fg">
-      <label>Logo</label>
+      <label>Corporate logo</label>
+      <div class="char-grid" id="logo-grid"></div>
+    </div>
+    <div class="fg">
+      <label>Upload logo</label>
       <div class="file-row">
         <img class="logo-preview empty" id="char-logo-preview" alt="">
         <input id="char-logo" type="file" accept="image/*">
@@ -444,7 +460,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
    STATE
    ============================================================ */
 let _evts=[], _evFilters={severity:'',container:'',server:''};
-let _conns=[], _editId=null, _charEditKey='', _charDraftCharacter='', _charLogoDraft='';
+let _conns=[], _editId=null, _charEditKey='', _charDraftCharacter='', _charLogoDraft='', _charDefaultLogo='';
 let _stacks=[], _connLogoDraft='', _networkZoom=1;
 let _networkPan={x:0,y:0,worldKey:'',dragging:false,startX:0,startY:0,originX:0,originY:0,suppressClick:false};
 let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,moved:false};
@@ -472,13 +488,17 @@ const CHARACTERS=[
   {id:'blacksmith',label:'Blacksmith',src:'/assets/characters/blacksmith.png'},
   {id:'shepherd',label:'Shepherd',src:'/assets/characters/shepherd.png'},
   {id:'herder',label:'Herder',src:'/assets/characters/herder.png'},
-  {id:'sorceress',label:'Sorceress',src:'/assets/characters/sorceress.png'},
+  {id:'sorceress',label:'Sorceress',src:'/assets/characters/sorceress.png'}
+];
+const CORPORATE_LOGOS=[
   {id:'corp-db',label:'Database',src:'/assets/characters/corporate-worker-0.png'},
   {id:'corp-worker',label:'Worker App',src:'/assets/characters/corporate-worker-1.png'},
   {id:'corp-redis',label:'Redis',src:'/assets/characters/corporate-worker-2.png'},
   {id:'corp-ui',label:'UI Panel',src:'/assets/characters/corporate-worker-3.png'}
 ];
 const CHARACTER_BY_ID=Object.fromEntries(CHARACTERS.map(c=>[c.id,c]));
+const CORPORATE_LOGO_BY_ID=Object.fromEntries(CORPORATE_LOGOS.map(c=>[c.id,c]));
+const CORPORATE_LOGO_BY_SRC=Object.fromEntries(CORPORATE_LOGOS.map(c=>[c.src,c]));
 const WORKER_ASSETS=[
   '/assets/characters/worker-medieval-0.png',
   '/assets/characters/worker-medieval-1.png',
@@ -489,6 +509,7 @@ const CHARACTER_STORAGE_PREFIX='orc.map.character.';
 const STACK_STORAGE_PREFIX='orc.stack.';
 const CONTAINER_NAME_PREFIX='orc.container.name.';
 const RAVEN_FEED_HEIGHT_KEY='orc.raven.feed.height';
+const ASIDE_WIDTH_KEY='orc.aside.width';
 const MT_ZONE='America/Denver';
 const DATE_FMT=new Intl.DateTimeFormat('en-US',{timeZone:MT_ZONE,year:'numeric',month:'short',day:'2-digit',hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
 const TIME_FMT=new Intl.DateTimeFormat('en-US',{timeZone:MT_ZONE,hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
@@ -522,16 +543,31 @@ function defaultCharacterId(stack){
   if(stack&&CHARACTER_BY_ID[stack.character])return stack.character;
   return CHARACTERS[hashStr(stackCharacterKey(stack))%CHARACTERS.length].id;
 }
+function legacyCorporateLogoForKey(key){
+  const saved=stackSetting(key,'Character')||storageGet(CHARACTER_STORAGE_PREFIX+key);
+  return CORPORATE_LOGO_BY_ID[saved]?.src||'';
+}
 function selectedCharacterId(stack){
   const key=stackCharacterKey(stack);
   const saved=stackSetting(key,'Character')||storageGet(CHARACTER_STORAGE_PREFIX+key);
   return CHARACTER_BY_ID[saved]?saved:defaultCharacterId(stack);
 }
+function defaultCorporateLogo(stack){
+  const text=`${stack?.name||''} ${(stack?.containers||[]).map(c=>`${c.name||''} ${c.full_name||''} ${c.type||''}`).join(' ')}`.toLowerCase();
+  if(/\b(redis|cache)\b/.test(text))return CORPORATE_LOGO_BY_ID['corp-redis'];
+  if(/\b(db|database|postgres|postgresql|mysql|mariadb|mongo|sql)\b/.test(text))return CORPORATE_LOGO_BY_ID['corp-db'];
+  if(/\b(ui|web|front|frontend|portal|dashboard|homepage|nginx)\b/.test(text))return CORPORATE_LOGO_BY_ID['corp-ui'];
+  return CORPORATE_LOGO_BY_ID['corp-worker'];
+}
 function stackFriendlyName(stack){
   return stackSetting(stackCharacterKey(stack),'FriendlyName')||stack.name;
 }
 function stackLogo(stack){
-  return stackSetting(stackCharacterKey(stack),'Logo');
+  const key=stackCharacterKey(stack);
+  return stackSetting(key,'Logo')||legacyCorporateLogoForKey(key);
+}
+function selectedStackLogo(stack){
+  return stackLogo(stack)||defaultCorporateLogo(stack).src;
 }
 function containerFriendlyName(app){
   return storageGet(CONTAINER_NAME_PREFIX+(app.full_name||app.name))||app.name;
@@ -565,11 +601,12 @@ function setWindowHours(v,refresh=true){
   }
 }
 function countLabel(n){return n>99?'99+':String(n);}
-function statusCircles(errors,warnings){
+function statusCircles(errors,warnings,showOk=true){
   const dots=[];
   if(errors>0)dots.push(`<span class="status-dot b-err" title="${errors} error${errors!==1?'s':''}">${esc(countLabel(errors))}</span>`);
   if(warnings>0)dots.push(`<span class="status-dot b-warn" title="${warnings} warning${warnings!==1?'s':''}">${esc(countLabel(warnings))}</span>`);
-  if(!dots.length)dots.push('<span class="status-dot b-ok" title="No recent errors or warnings">0</span>');
+  if(!dots.length&&showOk)dots.push('<span class="status-dot b-ok" title="No recent errors or warnings">0</span>');
+  if(!dots.length)return '';
   return `<div class="status-circles">${dots.join('')}</div>`;
 }
 function newIssueCounts(msg){
@@ -578,18 +615,29 @@ function newIssueCounts(msg){
     warnings:Number(msg.warnings||0)
   };
 }
+function findStackByKey(key){
+  return _stacks.find(stack=>stackCharacterKey(stack)===key)||null;
+}
 function openCharDlg(btn){
   _charEditKey=btn.dataset.stackKey||'';
-  _charDraftCharacter=stackSetting(_charEditKey,'Character')||storageGet(CHARACTER_STORAGE_PREFIX+_charEditKey)||btn.dataset.character||CHARACTERS[0].id;
-  _charLogoDraft=stackSetting(_charEditKey,'Logo');
+  const stack=findStackByKey(_charEditKey);
+  _charDraftCharacter=selectedCharacterId(stack||{server:'',name:''});
+  _charLogoDraft=stackSetting(_charEditKey,'Logo')||legacyCorporateLogoForKey(_charEditKey);
+  _charDefaultLogo=stack?defaultCorporateLogo(stack).src:CORPORATE_LOGOS[0].src;
   document.getElementById('char-dlg-t').textContent=`${btn.dataset.stackName||'Stack'} Settings`;
   document.getElementById('char-friendly').value=stackSetting(_charEditKey,'FriendlyName')||'';
-  showLogoPreview('char-logo-preview',_charLogoDraft);
   document.getElementById('char-logo').value='';
   document.getElementById('char-grid').innerHTML=CHARACTERS.map(c=>`
-    <button class="char-choice ${c.id===_charDraftCharacter?'on':''}" type="button" onclick="chooseStackCharacter('${esc(c.id)}')">
+    <button class="char-choice ${c.id===_charDraftCharacter?'on':''}" data-character-id="${esc(c.id)}" type="button" onclick="chooseStackCharacter('${esc(c.id)}')">
       <img src="${esc(c.src)}" alt="${esc(c.label)}"><span>${esc(c.label)}</span>
     </button>`).join('');
+  document.getElementById('logo-grid').innerHTML=CORPORATE_LOGOS.map(c=>{
+    const active=(_charLogoDraft||_charDefaultLogo)===c.src;
+    return `<button class="char-choice logo-choice ${active?'on':''}" data-logo-src="${esc(c.src)}" type="button" onclick="chooseStackLogo('${esc(c.src)}')">
+      <img src="${esc(c.src)}" alt="${esc(c.label)}"><span>${esc(c.label)}</span>
+    </button>`;
+  }).join('');
+  showLogoPreview('char-logo-preview',_charLogoDraft||_charDefaultLogo);
   document.getElementById('char-dlg').showModal();
 }
 function closeCharDlg(){document.getElementById('char-dlg').close();}
@@ -597,7 +645,17 @@ function chooseStackCharacter(id){
   const ch=CHARACTER_BY_ID[id];
   if(!ch||!_charEditKey)return;
   _charDraftCharacter=ch.id;
-  document.querySelectorAll('.char-choice').forEach(b=>b.classList.toggle('on',b.textContent.trim()===ch.label));
+  document.querySelectorAll('.char-choice[data-character-id]').forEach(b=>b.classList.toggle('on',b.dataset.characterId===ch.id));
+}
+function setStackLogoDraft(src){
+  _charLogoDraft=src||'';
+  showLogoPreview('char-logo-preview',_charLogoDraft||_charDefaultLogo);
+  document.querySelectorAll('.logo-choice').forEach(b=>b.classList.toggle('on',(_charLogoDraft||_charDefaultLogo)===b.dataset.logoSrc));
+}
+function chooseStackLogo(src){
+  if(!_charEditKey)return;
+  setStackLogoDraft(src);
+  document.getElementById('char-logo').value='';
 }
 function saveStackSettings(){
   if(!_charEditKey)return;
@@ -608,9 +666,8 @@ function saveStackSettings(){
   renderVisualViews();
 }
 function clearStackLogo(){
-  _charLogoDraft='';
+  setStackLogoDraft('');
   document.getElementById('char-logo').value='';
-  showLogoPreview('char-logo-preview','');
 }
 function showLogoPreview(id,src){
   const img=document.getElementById(id);
@@ -642,6 +699,22 @@ function renderVisualViews(){
 function jumpToEventsFromEl(el){
   jumpToEvents(el.dataset.server||'',el.dataset.container||'',el.dataset.severity||'');
 }
+function oracleNamesPayload(){
+  const friendly_names={};
+  _stacks.forEach(stack=>{
+    friendly_names[stack.name]=stackFriendlyName(stack);
+    (stack.containers||[]).forEach(app=>{
+      const friendly=containerFriendlyName(app);
+      if(app.full_name)friendly_names[app.full_name]=friendly;
+      if(app.name)friendly_names[app.name]=friendly;
+    });
+  });
+  return {friendly_names};
+}
+function oracleAnalysisHtml(text){
+  const parts=esc(text||'').split('**');
+  return parts.map((part,i)=>i%2&&i<parts.length-1?`<strong>${part}</strong>`:part).join('');
+}
 function renderOracle(){
   const box=document.getElementById('oracle-box');
   const summary=document.getElementById('oracle-summary');
@@ -669,7 +742,7 @@ function renderOracle(){
   }
   if(_oracleState.analysis){
     box.className='oracle-box';
-    box.textContent=_oracleState.analysis;
+    box.innerHTML=oracleAnalysisHtml(_oracleState.analysis);
     return;
   }
   box.className='oracle-box empty';
@@ -679,7 +752,7 @@ async function runOracle(){
   _oracleState={busy:true,summary:_oracleState.summary,analysis:'',error:''};
   renderOracle();
   try{
-    const r=await fetch('/oracle/review',{method:'POST'});
+    const r=await fetch('/oracle/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(oracleNamesPayload())});
     const d=await r.json();
     if(!r.ok)throw new Error(d.detail||'Oracle request failed.');
     _oracleState={busy:false,summary:d.summary||null,analysis:d.analysis||'No recommendation returned.',error:''};
@@ -764,8 +837,7 @@ function renderStackGrid(stacks,targetId,mode){
       const ch=CHARACTER_BY_ID[charId]||CHARACTERS[0];
       const key=stackCharacterKey(stack);
       const friendly=stackFriendlyName(stack);
-      const logo=stackLogo(stack);
-      const art=corporate?(logo||serverLogo(k)||ch.src):ch.src;
+      const art=corporate?selectedStackLogo(stack):ch.src;
       const subRows=stack.containers.map(app=>{
         const counts=issueCounts(app);
         const subErr=counts.errors>0, subWarn=counts.warnings>0;
@@ -776,7 +848,7 @@ function renderStackGrid(stacks,targetId,mode){
           title="${esc(app.full_name)}">
           <span class="sub-name">${esc(displayName)}</span>
           <span class="sub-type">${esc(app.type)}</span>
-          ${statusCircles(counts.errors,counts.warnings)}
+          ${statusCircles(counts.errors,counts.warnings,false)}
         </div>`;
       }).join('');
       return `<div class="stack-card ${cardCls}" data-stack-key="${esc(key)}">
@@ -788,7 +860,7 @@ function renderStackGrid(stacks,targetId,mode){
         title="View events for ${esc(stack.name)}">
         <img class="char-img" src="${esc(art)}" alt="${esc(friendly)}">
         <span class="stack-banner">${esc(friendly)}</span>
-        ${statusCircles(stackTotals.errors,stackTotals.warnings)}
+        ${statusCircles(stackTotals.errors,stackTotals.warnings,false)}
       </button>
       <div class="stack-meta">
         <div class="stack-copy">
@@ -807,7 +879,7 @@ function renderStackGrid(stacks,targetId,mode){
             <div class="kingdom-sub" title="${esc(stackList)}">${k.stacks.length} stack${k.stacks.length!==1?'s':''} - ${esc(stackList)}</div>
           </div>
         </div>
-        <div class="kingdom-score">${statusCircles(totals.errors,totals.warnings)}</div>
+        <div class="kingdom-score">${statusCircles(totals.errors,totals.warnings,false)}</div>
       </div>
       <div class="kingdom-stacks">${stackCards}</div>
     </section>`;
@@ -1099,6 +1171,35 @@ function renderNetwork(stacks){
   </div>`;
   applyNetworkTransform();
 }
+function launchRavenFromContainer(server,container){
+  const pane=document.getElementById('pane-network');
+  const stage=document.getElementById('network-stage');
+  if(!pane?.classList.contains('on')||!stage||!container)return;
+  const node=[...stage.querySelectorAll('.net-worker')].find(el=>
+    (el.dataset.container||'')===container&&(!server||(el.dataset.server||'')===server)
+  );
+  if(!node)return;
+  const r=node.getBoundingClientRect();
+  const sr=stage.getBoundingClientRect();
+  const x=r.left+r.width/2-sr.left;
+  const y=r.top+r.height/2-sr.top;
+  const bird=document.createElement('img');
+  bird.className='raven-flight';
+  bird.src='/assets/kingdoms/raven.png';
+  bird.alt='';
+  const dir=hashStr(`${server}:${container}:${Date.now()}`)%2?-1:1;
+  const tx=dir*(90+Math.random()*90);
+  const ty=-110-Math.random()*80;
+  const rot=dir*(12+Math.random()*12);
+  bird.style.setProperty('--x',`${x.toFixed(1)}px`);
+  bird.style.setProperty('--y',`${y.toFixed(1)}px`);
+  bird.style.setProperty('--tx',`${tx.toFixed(1)}px`);
+  bird.style.setProperty('--ty',`${ty.toFixed(1)}px`);
+  bird.style.setProperty('--rot',`${rot.toFixed(1)}deg`);
+  stage.appendChild(bird);
+  bird.addEventListener('animationend',()=>bird.remove(),{once:true});
+  setTimeout(()=>bird.remove(),1800);
+}
 
 /* ============================================================
    EVENTS
@@ -1385,7 +1486,10 @@ function handleRaven(msg){
   switch(msg.type){
     case 'no_connections': setStatus('—','No connections configured.',false); break;
     case 'queue_ready':{const iv=msg.interval?` · ${msg.interval}s/ctr`:'';setStatus('▶',`Scanning ${msg.containers} containers${iv}`,true);break;}
-    case 'container_checking': setStatus('🔍',`Checking ${msg.container} on ${msg.server}`,true); break;
+    case 'container_checking':
+      setStatus('🔍',`Checking ${msg.container} on ${msg.server}`,true);
+      launchRavenFromContainer(msg.server||'',msg.container||'');
+      break;
     case 'issue_event':{
       const sev=msg.severity||'error';
       _hbBucket+=1;
@@ -1528,6 +1632,39 @@ function setupNetworkPan(){
   },{passive:false});
 }
 
+function applyAsideWidth(width){
+  const n=networkClamp(Number(width)||292,260,620);
+  document.documentElement.style.setProperty('--aside-width',`${n}px`);
+  resizeCanvas();
+  drawHb();
+  return n;
+}
+function setupAsideWidth(){
+  const saved=storageGet(ASIDE_WIDTH_KEY);
+  if(saved)applyAsideWidth(saved);
+  const grip=document.getElementById('aside-width-grip');
+  if(!grip)return;
+  grip.addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    const startX=e.clientX;
+    const start=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--aside-width'))||292;
+    grip.setPointerCapture(e.pointerId);
+    const move=ev=>{
+      const next=applyAsideWidth(start-(ev.clientX-startX));
+      storageSet(ASIDE_WIDTH_KEY,String(next));
+    };
+    const up=ev=>{
+      grip.releasePointerCapture(ev.pointerId);
+      grip.removeEventListener('pointermove',move);
+      grip.removeEventListener('pointerup',up);
+      grip.removeEventListener('pointercancel',up);
+    };
+    grip.addEventListener('pointermove',move);
+    grip.addEventListener('pointerup',up);
+    grip.addEventListener('pointercancel',up);
+  });
+}
+
 function setupInputs(){
   const fLogo=document.getElementById('f-logo');
   if(fLogo)fLogo.addEventListener('change',async e=>{
@@ -1536,8 +1673,7 @@ function setupInputs(){
   });
   const cLogo=document.getElementById('char-logo');
   if(cLogo)cLogo.addEventListener('change',async e=>{
-    _charLogoDraft=await readImageFile(e.target.files?.[0]);
-    showLogoPreview('char-logo-preview',_charLogoDraft);
+    setStackLogoDraft(await readImageFile(e.target.files?.[0]));
   });
   const savedFeed=storageGet(RAVEN_FEED_HEIGHT_KEY);
   if(savedFeed)document.documentElement.style.setProperty('--raven-feed-height',savedFeed+'px');
@@ -1556,6 +1692,7 @@ function setupInputs(){
     window.addEventListener('pointerup',up);
   });
   setupNetworkPan();
+  setupAsideWidth();
 }
 
 /* ============================================================
@@ -1654,7 +1791,8 @@ def health() -> dict:
     return {"status": "ok", "service": "orc-api", "connections": {"total": total, "ok": ok, "error": err}}
 
 
-def _oracle_summary(window_hours: int = 1) -> dict:
+def _oracle_summary(window_hours: int = 1, friendly_names: dict[str, str] | None = None) -> dict:
+    friendly_names = friendly_names or {}
     cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
     with SessionLocal() as s:
         rows = (
@@ -1676,6 +1814,7 @@ def _oracle_summary(window_hours: int = 1) -> dict:
     for event, conn in rows:
         server = conn.name if conn else "Unknown server"
         stack = event.stack_name or _infer_stack(event.container_name)
+        friendly_name = friendly_names.get(event.container_name) or event.container_name
         stack_key = (server, stack)
         key = (server, stack, event.container_name)
         bucket = container_rollup.setdefault(
@@ -1684,6 +1823,7 @@ def _oracle_summary(window_hours: int = 1) -> dict:
                 "server": server,
                 "stack": stack,
                 "container": event.container_name,
+                "friendly_name": friendly_name,
                 "errors": 0,
                 "warnings": 0,
                 "latest_at": event.occurred_at.isoformat(),
@@ -1720,6 +1860,7 @@ def _oracle_summary(window_hours: int = 1) -> dict:
                 "server": server,
                 "stack": stack,
                 "container": event.container_name,
+                "friendly_name": friendly_name,
                 "pattern": pattern,
                 "count": 0,
                 "errors": 0,
@@ -1744,6 +1885,7 @@ def _oracle_summary(window_hours: int = 1) -> dict:
                 "server": item["server"],
                 "stack": item["stack"],
                 "container": item["container"],
+                "friendly_name": item["friendly_name"],
                 "errors": item["errors"],
                 "warnings": item["warnings"],
                 "latest_at": item["latest_at"],
@@ -1768,21 +1910,40 @@ def _oracle_summary(window_hours: int = 1) -> dict:
         )[:12]
     ]
 
+    top_pattern_items = sorted(
+        pattern_rollup.values(),
+        key=lambda x: (-x["errors"], -x["warnings"], -x["count"], x["container"].lower()),
+    )
+
     top_patterns = [
         {
             "server": item["server"],
             "stack": item["stack"],
             "container": item["container"],
+            "friendly_name": item["friendly_name"],
             "pattern": item["pattern"],
             "count": item["count"],
             "errors": item["errors"],
             "warnings": item["warnings"],
             "example": item["examples"].most_common(1)[0][0],
         }
-        for item in sorted(
-            pattern_rollup.values(),
-            key=lambda x: (-x["errors"], -x["warnings"], -x["count"], x["container"].lower()),
-        )[:20]
+        for item in top_pattern_items[:20]
+    ]
+
+    top_issues = [
+        {
+            "rank": idx,
+            "server": item["server"],
+            "stack": item["stack"],
+            "container": item["container"],
+            "friendly_name": item["friendly_name"],
+            "pattern": item["pattern"],
+            "events": item["count"],
+            "errors": item["errors"],
+            "warnings": item["warnings"],
+            "example": item["examples"].most_common(1)[0][0],
+        }
+        for idx, item in enumerate(top_pattern_items[:3], start=1)
     ]
 
     return {
@@ -1796,6 +1957,7 @@ def _oracle_summary(window_hours: int = 1) -> dict:
         "stacks": stacks,
         "top_containers": top_containers,
         "top_patterns": top_patterns,
+        "top_issues": top_issues,
     }
 
 
@@ -1811,22 +1973,14 @@ def _oracle_prompt(summary: dict) -> list[dict[str, str]]:
     system_prompt = (
         "You are The Oracle inside ORC, an operations advisor reviewing the last hour "
         "of container warnings and errors collected from Portainer-managed applications. "
-        "Prioritize only the top three problems worth researching and fixing first. "
-        "Use the stack, container, message patterns, and event frequencies in the summary. "
-        "Do not try to solve every issue in the data. Respond in plain text with exactly this format:\n"
-        "Top 3 observations\n"
-        "1. <stack / container / pattern / why it matters>\n"
-        "2. <...>\n"
-        "3. <...>\n\n"
-        "Possible root cause\n"
-        "1. <most likely cause for observation 1>\n"
-        "2. <most likely cause for observation 2>\n"
-        "3. <most likely cause for observation 3>\n\n"
-        "What you should do to fix it\n"
-        "1. <first action>\n"
-        "2. <second action>\n"
-        "3. <third action>\n"
-        "Keep each line specific and short."
+        "Use only summary.top_issues and show at most three issues. "
+        "Each issue must include the friendly_name, falling back to the container if needed. "
+        "Respond in plain text using Markdown bold for important information. "
+        "Use exactly this compact format for each issue:\n"
+        "1. **<friendly_name>** (`<container>`) - **Issue:** <brief issue summary and frequency>.\n"
+        "   **Possible root cause:** <most likely cause>.\n"
+        "   **What I should do:** <specific fix action>.\n"
+        "Do not add sections, preambles, or extra issues. Keep each issue brief and specific."
     )
     return [
         {"role": "system", "content": system_prompt},
@@ -1843,18 +1997,8 @@ def _oracle_prompt(summary: dict) -> list[dict[str, str]]:
 def _oracle_review(summary: dict) -> str:
     if not summary["total_events"]:
         return (
-            "Top 3 observations\n"
-            "1. No warnings or errors were found in the last hour.\n"
-            "2. There is no active stack or container pattern to prioritize.\n"
-            "3. The environment looked quiet during this review window.\n\n"
-            "Possible root cause\n"
-            "1. Systems may be healthy.\n"
-            "2. Activity may have been low during the last hour.\n"
-            "3. There may be nothing urgent to research right now.\n\n"
-            "What you should do to fix it\n"
-            "1. Keep monitoring.\n"
-            "2. Re-run the Oracle when fresh issues appear.\n"
-            "3. Use the Events tab for a manual spot check if needed."
+            "**No issues found in the last hour.**\n\n"
+            "**What I should do:** Keep monitoring and re-run the Oracle when Raven captures fresh warnings or errors."
         )
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
@@ -2123,8 +2267,9 @@ def get_events(
 
 
 @app.post("/oracle/review")
-def review_with_oracle() -> dict:
-    summary = _oracle_summary(window_hours=1)
+def review_with_oracle(body: OracleReviewIn | None = None) -> dict:
+    friendly_names = body.friendly_names if body else {}
+    summary = _oracle_summary(window_hours=1, friendly_names=friendly_names)
     analysis = _oracle_review(summary)
     return {
         "summary": {
