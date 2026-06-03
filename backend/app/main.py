@@ -1215,7 +1215,8 @@ function renderTopology(stacks,stageId,artMode='character'){
     const dot=counts.errors>0?'err':counts.warnings>0?'warn':'none';
     const dotCount=counts.errors>0?counts.errors:counts.warnings;
     const dotText=dotCount>99?'99+':String(dotCount);
-    const workerAsset=WORKER_ASSETS[hashStr(app.full_name||app.name)%WORKER_ASSETS.length];
+    const workerPool=artMode==='logo'?CORPORATE_LOGOS.map(c=>c.src):WORKER_ASSETS;
+    const workerAsset=workerPool[hashStr(app.full_name||app.name)%workerPool.length];
     const displayName=containerFriendlyName(app);
     const side=node.x<node.stackNode.x?'left':'right';
     const containerName=app.full_name||app.name||'';
@@ -2123,7 +2124,6 @@ def _oracle_review(summary: dict) -> str:
     model = os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
     payload = {
         "model": model,
-        "temperature": 0.2,
         "messages": _oracle_prompt(summary),
     }
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
