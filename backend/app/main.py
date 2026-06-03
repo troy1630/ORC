@@ -49,7 +49,9 @@ _HTML = """<!doctype html>
 body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 /* NAV */
 .nav{background:var(--sur);border-bottom:1px solid var(--bdr);padding:0 16px;display:flex;align-items:center;gap:10px;height:48px;flex-shrink:0}
-.brand{font-weight:700;font-size:1rem;margin-right:4px}
+.brand{font-weight:700;font-size:1rem;margin-right:4px;display:flex;align-items:center;gap:7px}
+.brand-mark{width:30px;height:30px;border-radius:50%;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;background:#0d1117;border:1px solid rgba(230,237,243,.2);box-shadow:0 0 0 1px rgba(0,0,0,.55) inset;flex-shrink:0}
+.brand-mark img{width:135%;height:135%;object-fit:cover;object-position:center 38%;filter:saturate(.92) contrast(1.04);-webkit-mask-image:radial-gradient(circle at center,#000 48%,rgba(0,0,0,.72) 62%,transparent 82%);mask-image:radial-gradient(circle at center,#000 48%,rgba(0,0,0,.72) 62%,transparent 82%)}
 .tabs{display:flex;height:100%}
 .tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--mut);cursor:pointer;padding:0 12px;font-size:.88rem;font-weight:500;height:100%}
 .tab:hover{color:var(--txt)}.tab.on{color:var(--txt);border-bottom-color:var(--pur)}
@@ -63,7 +65,20 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
 .main{overflow-y:auto;padding:16px}
 .pane{display:none}.pane.on{display:block}
 /* STACK MAP */
-.map-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;align-items:start}
+#pane-map{position:relative;min-height:calc(100vh - 80px);isolation:isolate}
+#pane-map::before{content:"";position:absolute;inset:-16px;background:url('/assets/kingdoms/pale-strategy-map.png') center/cover no-repeat;opacity:.12;filter:saturate(.6);pointer-events:none;z-index:-1}
+.map-grid{display:flex;flex-direction:column;gap:14px}
+.kingdom{border:1px solid rgba(163,113,247,.36);border-radius:10px;padding:12px;background:rgba(13,17,23,.78);box-shadow:0 12px 30px rgba(0,0,0,.18);backdrop-filter:blur(1px)}
+.kingdom.er{border-color:rgba(248,81,73,.68)}
+.kingdom.warn{border-color:rgba(210,153,34,.7)}
+.kingdom-hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;min-width:0}
+.kingdom-title{display:flex;align-items:center;gap:10px;min-width:0}
+.kingdom-castle{width:48px;height:48px;object-fit:contain;filter:drop-shadow(0 3px 5px rgba(0,0,0,.45));flex-shrink:0}
+.kingdom-copy{min-width:0}
+.kingdom-name{font-size:1rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kingdom-sub{font-size:.72rem;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kingdom-score{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.kingdom-apps{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;align-items:start}
 .app-card{position:relative;background:var(--sur);border:1px solid var(--bdr);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0;transition:border-color .2s}
 .app-card:hover{border-color:var(--pur)}
 .app-card.er{border-color:var(--red)}
@@ -71,7 +86,9 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
 .char-frame{position:relative;display:flex;align-items:center;justify-content:center;width:100%;aspect-ratio:1.62/1;background:#0d1117;border:1px solid #21262d;border-radius:6px;overflow:hidden;cursor:pointer;padding:0;color:inherit;font:inherit}
 .char-frame:hover{border-color:var(--pur)}
 .char-img{display:block;width:100%;height:100%;object-fit:contain}
-.app-badge{position:absolute;top:7px;right:7px;min-width:32px;height:20px;border-radius:10px;font-size:.68rem;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 7px;border:1px solid rgba(0,0,0,.55)}
+.status-circles{position:absolute;top:7px;right:7px;display:flex;gap:5px}
+.kingdom-score .status-circles{position:static}
+.status-dot{width:25px;height:25px;border-radius:50%;font-size:.62rem;font-weight:800;display:flex;align-items:center;justify-content:center;border:1px solid rgba(0,0,0,.58);box-shadow:0 1px 5px rgba(0,0,0,.42);line-height:1}
 .b-ok{background:var(--grn);color:#000}
 .b-warn{background:var(--yel);color:#000}
 .b-err{background:var(--red);color:#fff}
@@ -150,20 +167,25 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 .tr-no{background:#21262d;color:var(--mut);border:1px solid var(--bdr)}
 @media (max-width:700px){
   .nav{padding:0 8px;gap:6px;height:52px}
-  .brand{font-size:.9rem;line-height:1.05;max-width:48px}
+  .brand{font-size:.9rem;line-height:1.05;max-width:78px}
+  .brand-mark{width:26px;height:26px}
   .tab{padding:0 9px}
   .nav-r{gap:4px}
   .nav-r .sp:nth-of-type(n+2),.nav-r .small{display:none}
   .layout{grid-template-columns:1fr}
   .aside{display:none}
   .main{padding:12px}
-  .map-grid{grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+  #pane-map::before{inset:-12px}
+  .kingdom{padding:10px}
+  .kingdom-hdr{align-items:flex-start}
+  .kingdom-castle{width:38px;height:38px}
+  .kingdom-apps{grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
 }
 </style>
 </head>
 <body>
 <nav class="nav">
-  <span class="brand">&#9876; ORC</span>
+  <span class="brand"><span class="brand-mark"><img src="/assets/characters/orc.png" alt=""></span><span>ORC</span></span>
   <div class="tabs">
     <button class="tab on" id="tab-map" onclick="showTab('map')">Map</button>
     <button class="tab" id="tab-events" onclick="showTab('events')">Events</button>
@@ -282,7 +304,6 @@ const MAX_ISSUE_PILLS=20;
    ============================================================ */
 const CHARACTERS=[
   {id:'wizard',label:'Wizard',src:'/assets/characters/wizard.png'},
-  {id:'orc',label:'Orc',src:'/assets/characters/orc.png'},
   {id:'elf',label:'Elf',src:'/assets/characters/elf.png'},
   {id:'warrior',label:'Warrior',src:'/assets/characters/warrior.png'},
   {id:'fighter',label:'Fighter',src:'/assets/characters/fighter.png'},
@@ -327,6 +348,20 @@ function selectedCharacterId(app){
 function charOptions(selected){
   return CHARACTERS.map(c=>`<option value="${esc(c.id)}"${c.id===selected?' selected':''}>${esc(c.label)}</option>`).join('');
 }
+function issueCounts(app){
+  return {
+    errors:Number(app.errors_24h ?? app.errors_1h ?? app.errors ?? 0),
+    warnings:Number(app.warnings_24h ?? app.warnings_1h ?? app.warnings ?? 0)
+  };
+}
+function countLabel(n){return n>99?'99+':String(n);}
+function statusCircles(errors,warnings){
+  const dots=[];
+  if(errors>0)dots.push(`<span class="status-dot b-err" title="${errors} error${errors!==1?'s':''}">${esc(countLabel(errors))}</span>`);
+  if(warnings>0)dots.push(`<span class="status-dot b-warn" title="${warnings} warning${warnings!==1?'s':''}">${esc(countLabel(warnings))}</span>`);
+  if(!dots.length)dots.push('<span class="status-dot b-ok" title="No recent errors or warnings">0</span>');
+  return `<div class="status-circles">${dots.join('')}</div>`;
+}
 function setAppCharacter(sel){
   const ch=CHARACTER_BY_ID[sel.value];
   if(!ch)return;
@@ -370,14 +405,26 @@ async function loadMap(){
 function renderMap(stacks){
   const grid=document.getElementById('map-grid');
   if(!stacks.length){grid.innerHTML='<div class="empty">No stacks found. Add a connection in the Connections tab.</div>';return;}
-  const apps=stacks.flatMap(s=>s.containers.map(c=>({...c,stack:s.name,server:s.server})));
-  if(!apps.length){grid.innerHTML='<div class="empty">No containers found for the configured connections.</div>';return;}
-  grid.innerHTML=apps.map(app=>{
-    const hasErr=app.errors_1h>0, hasWarn=app.warnings_1h>0;
+  const kingdomMap=new Map();
+  stacks.forEach(s=>{
+    const key=s.server||'Unknown server';
+    if(!kingdomMap.has(key))kingdomMap.set(key,{server:key,stacks:new Set(),apps:[]});
+    const kingdom=kingdomMap.get(key);
+    kingdom.stacks.add(s.name);
+    s.containers.forEach(c=>kingdom.apps.push({...c,stack:s.name,server:key}));
+  });
+  const kingdoms=[...kingdomMap.values()].filter(k=>k.apps.length).sort((a,b)=>a.server.localeCompare(b.server));
+  if(!kingdoms.length){grid.innerHTML='<div class="empty">No containers found for the configured connections.</div>';return;}
+  grid.innerHTML=kingdoms.map(k=>{
+    k.apps.sort((a,b)=>a.stack.localeCompare(b.stack)||a.type.localeCompare(b.type)||a.name.localeCompare(b.name));
+    const totals=k.apps.reduce((acc,app)=>{const c=issueCounts(app);acc.errors+=c.errors;acc.warnings+=c.warnings;return acc;},{errors:0,warnings:0});
+    const kingdomCls=totals.errors>0?'er':totals.warnings>0?'warn':'';
+    const stackList=[...k.stacks].sort().join(', ');
+    const apps=k.apps.map(app=>{
+    const counts=issueCounts(app);
+    const hasErr=counts.errors>0, hasWarn=counts.warnings>0;
     const severity=hasErr?'error':hasWarn?'warning':'';
     const cardCls=hasErr?'er':hasWarn?'warn':'';
-    const badgeCls=hasErr?'b-err':hasWarn?'b-warn':'b-ok';
-    const badgeTxt=hasErr?`${app.errors_1h} err`:hasWarn?`${app.warnings_1h} warn`:'ok';
     const charId=selectedCharacterId(app);
     const ch=CHARACTER_BY_ID[charId]||CHARACTERS[0];
     const key=appCharacterKey(app);
@@ -386,7 +433,7 @@ function renderMap(stacks){
         data-server="${esc(app.server)}" data-container="${esc(app.full_name)}" data-severity="${esc(severity)}"
         title="View events for ${esc(app.full_name)}">
         <img class="char-img" src="${esc(ch.src)}" alt="${esc(ch.label)}">
-        <span class="app-badge ${badgeCls}">${esc(badgeTxt)}</span>
+        ${statusCircles(counts.errors,counts.warnings)}
       </button>
       <div class="app-meta">
         <div class="app-copy">
@@ -399,6 +446,20 @@ function renderMap(stacks){
         ${charOptions(charId)}
       </select>
     </div>`;
+    }).join('');
+    return `<section class="kingdom ${kingdomCls}">
+      <div class="kingdom-hdr">
+        <div class="kingdom-title">
+          <img class="kingdom-castle" src="/assets/kingdoms/castle.png" alt="">
+          <div class="kingdom-copy">
+            <div class="kingdom-name" title="${esc(k.server)}">${esc(k.server)}</div>
+            <div class="kingdom-sub" title="${esc(stackList)}">${k.apps.length} container${k.apps.length!==1?'s':''} - ${esc(stackList)}</div>
+          </div>
+        </div>
+        <div class="kingdom-score">${statusCircles(totals.errors,totals.warnings)}</div>
+      </div>
+      <div class="kingdom-apps">${apps}</div>
+    </section>`;
   }).join('');
 }
 
@@ -995,27 +1056,27 @@ def _stack_character(name: str) -> str:
 
 @app.get("/overview")
 def get_overview() -> dict:
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     with SessionLocal() as s:
         connections = s.query(Connection).filter_by(enabled=True).all()
         err_rows = s.query(
-            ObservedEvent.connection_id, ObservedEvent.container_name,
+            ObservedEvent.connection_id, ObservedEvent.container_id,
             func.count(ObservedEvent.id).label("n")
         ).filter(
             ObservedEvent.occurred_at >= cutoff,
             ObservedEvent.severity.in_(["error", "critical"])
-        ).group_by(ObservedEvent.connection_id, ObservedEvent.container_name).all()
+        ).group_by(ObservedEvent.connection_id, ObservedEvent.container_id).all()
 
         warn_rows = s.query(
-            ObservedEvent.connection_id, ObservedEvent.container_name,
+            ObservedEvent.connection_id, ObservedEvent.container_id,
             func.count(ObservedEvent.id).label("n")
         ).filter(
             ObservedEvent.occurred_at >= cutoff,
             ObservedEvent.severity == "warning"
-        ).group_by(ObservedEvent.connection_id, ObservedEvent.container_name).all()
+        ).group_by(ObservedEvent.connection_id, ObservedEvent.container_id).all()
 
-    errs  = {(r.connection_id, r.container_name): int(r.n) for r in err_rows}
-    warns = {(r.connection_id, r.container_name): int(r.n) for r in warn_rows}
+    errs  = {(r.connection_id, r.container_id): int(r.n) for r in err_rows}
+    warns = {(r.connection_id, r.container_id): int(r.n) for r in warn_rows}
 
     stacks_out = []
     for conn in connections:
@@ -1036,9 +1097,10 @@ def get_overview() -> dict:
                     stacks.setdefault(stack_name, []).append({
                         "name": service,
                         "full_name": cname,
+                        "container_id": cid,
                         "type": _container_type(service),
-                        "errors_1h":   errs.get((conn.id, cname), 0),
-                        "warnings_1h": warns.get((conn.id, cname), 0),
+                        "errors_24h":   errs.get((conn.id, cid), 0),
+                        "warnings_24h": warns.get((conn.id, cid), 0),
                     })
             except Exception:
                 continue
