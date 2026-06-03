@@ -2,13 +2,14 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func
 
-from .config import REPO_ROOT
+from .config import REDIS_URL, REPO_ROOT
 from .db import Connection, ObservedEvent, SessionLocal, init_db
+from .hermes import CHANNEL
 from .portainer import PortainerClient
 from .registry import load_registry
 
@@ -43,53 +44,75 @@ _HTML = """<!doctype html>
 <style>
 :root{--bg:#0d1117;--sur:#161b22;--bdr:#30363d;--txt:#e6edf3;--mut:#8b949e;--grn:#3fb950;--red:#f85149;--yel:#d29922;--blu:#58a6ff;--pur:#a371f7}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px}
-.nav{background:var(--sur);border-bottom:1px solid var(--bdr);padding:0 20px;display:flex;align-items:center;gap:16px;height:52px}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.nav{background:var(--sur);border-bottom:1px solid var(--bdr);padding:0 20px;display:flex;align-items:center;gap:16px;height:52px;flex-shrink:0}
 .brand{font-weight:700;font-size:1rem;margin-right:8px}
 .tabs{display:flex;height:100%}
 .tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--mut);cursor:pointer;padding:0 14px;font-size:.9rem;font-weight:500;height:100%}
 .tab:hover{color:var(--txt)}.tab.on{color:var(--txt);border-bottom-color:var(--pur)}
 .nav-r{margin-left:auto;display:flex;align-items:center;gap:10px}
+.layout{display:grid;grid-template-columns:1fr 300px;flex:1;overflow:hidden}
+.main{overflow-y:auto;padding:20px}
+.aside{border-left:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;background:var(--sur)}
+.hb-wrap{padding:12px 14px 10px;border-bottom:1px solid var(--bdr);flex-shrink:0}
+.hb-lbl{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.hb-title{font-size:.78rem;font-weight:600;letter-spacing:.04em;color:var(--txt)}
+.hb-status{font-size:.7rem;color:var(--mut)}
+canvas{display:block;width:100%;height:52px}
+.feed{flex:1;overflow-y:auto;padding:10px 10px 16px}
+.pill{margin-bottom:8px;border-radius:14px;padding:9px 12px;font-size:.78rem;border:1px solid transparent;animation:fadein .3s ease}
+@keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.p-start{background:#161f2e;border-color:#1d2d45;color:var(--blu)}
+.p-error{background:#2a1515;border-color:#4a2020;color:var(--red)}
+.p-warn{background:#2a2000;border-color:#4a3800;color:var(--yel)}
+.p-ok{background:#152215;border-color:#1f3d1f;color:var(--grn)}
+.p-clean{background:#161b22;border-color:var(--bdr);color:var(--mut)}
+.p-done{background:#1c1529;border-color:#2d2040;color:var(--pur);font-size:.75rem}
+.ph{color:var(--mut);font-size:.82rem;text-align:center;padding:24px 0}
+.pill-hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
+.pill-cn{font-family:monospace;font-weight:600;font-size:.8rem}
+.pill-sv{font-size:.7rem;opacity:.75}
+.pill-ts{font-size:.7rem;opacity:.6;text-align:right;margin-top:2px}
 .card{background:var(--sur);border:1px solid var(--bdr);border-radius:8px}
-.pane{padding:20px;display:none}.pane.on{display:block}
-.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
-.stat-card{padding:16px}
-.lbl{font-size:.75rem;color:var(--mut);margin-bottom:4px}
-.val{font-size:1.75rem;font-weight:700}
-.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;background:var(--mut)}
-.dot.ok{background:var(--grn)}.dot.err{background:var(--red)}
-.fbtn{background:#21262d;border:1px solid var(--bdr);border-radius:6px;color:var(--mut);cursor:pointer;font-size:.8rem;padding:4px 12px}
+.pane{display:none}.pane.on{display:block}
+.sg{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+.sc{padding:14px}
+.lbl{font-size:.72rem;color:var(--mut);margin-bottom:4px}
+.val{font-size:1.6rem;font-weight:700}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle;background:var(--mut)}
+.dot.ok{background:var(--grn)}.dot.er{background:var(--red)}
+.fbtn{background:#21262d;border:1px solid var(--bdr);border-radius:6px;color:var(--mut);cursor:pointer;font-size:.78rem;padding:3px 11px}
 .fbtn:hover{color:var(--txt)}.fbtn.on{background:var(--bdr);color:var(--txt)}
 .btn{background:#21262d;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);cursor:pointer;font-size:.85rem;padding:5px 12px}
 .btn:hover{background:var(--bdr)}
-.btn-p{background:var(--pur);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:.85rem;padding:6px 16px;font-weight:500}
-.btn-p:hover{filter:brightness(1.1)}
-.btn-d{background:#da3633;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:.8rem;padding:4px 10px}
-.btn-s{background:#21262d;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);cursor:pointer;font-size:.8rem;padding:4px 10px}
-.btn-s:hover{background:var(--bdr)}
+.btnp{background:var(--pur);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:.85rem;padding:6px 16px;font-weight:500}
+.btnp:hover{filter:brightness(1.1)}
+.btnd{background:#da3633;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:.78rem;padding:4px 10px}
+.btns{background:#21262d;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);cursor:pointer;font-size:.78rem;padding:4px 10px}
+.btns:hover{background:var(--bdr)}
 table{width:100%;border-collapse:collapse}
-th{color:var(--mut);font-weight:500;padding:7px 10px;border-bottom:1px solid var(--bdr);text-align:left;font-size:.8rem}
-td{padding:7px 10px;border-bottom:1px solid #21262d;font-size:.85rem;vertical-align:middle}
+th{color:var(--mut);font-weight:500;padding:6px 10px;border-bottom:1px solid var(--bdr);text-align:left;font-size:.78rem}
+td{padding:6px 10px;border-bottom:1px solid #21262d;font-size:.82rem;vertical-align:middle}
 tr:last-child td{border-bottom:none}
-.sc{color:var(--red);font-weight:700}.se{color:var(--red)}.sw{color:var(--yel)}.si{color:var(--mut)}
-.scroll{max-height:500px;overflow-y:auto}
-.msg{max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mono{font-family:monospace;font-size:.8rem}
-.muted{color:var(--mut)}.small{font-size:.8rem}
-.empty{color:var(--mut);padding:16px 0;font-size:.85rem}
+.sc2{color:var(--red);font-weight:700}.se2{color:var(--red)}.sw2{color:var(--yel)}.si2{color:var(--mut)}
+.scroll{max-height:440px;overflow-y:auto}
+.msg{max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mono{font-family:monospace;font-size:.78rem}
+.muted{color:var(--mut)}.small{font-size:.78rem}
+.empty{color:var(--mut);padding:16px 0;font-size:.83rem}
 .st-ok{color:var(--grn)}.st-er{color:var(--red)}.st-no{color:var(--mut)}
 dialog{background:var(--sur);border:1px solid var(--bdr);border-radius:10px;color:var(--txt);padding:0;width:500px;max-width:96vw}
 dialog::backdrop{background:rgba(0,0,0,.75)}
-.mhdr{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--bdr);font-weight:600}
-.mclose{background:none;border:none;color:var(--mut);cursor:pointer;font-size:1.3rem;line-height:1}
-.mclose:hover{color:var(--txt)}
-.mbody{padding:20px;display:flex;flex-direction:column;gap:14px}
-.mftr{padding:14px 20px;border-top:1px solid var(--bdr);display:flex;justify-content:flex-end;gap:8px}
-.fg{display:flex;flex-direction:column;gap:5px}
-.fg label{font-size:.8rem;color:var(--mut)}
-.fg input,.fg select{background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.9rem;padding:7px 10px;outline:none;width:100%}
+.mh{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--bdr);font-weight:600}
+.mx{background:none;border:none;color:var(--mut);cursor:pointer;font-size:1.3rem;line-height:1}
+.mx:hover{color:var(--txt)}
+.mb{padding:18px 20px;display:flex;flex-direction:column;gap:13px}
+.mf{padding:12px 20px;border-top:1px solid var(--bdr);display:flex;justify-content:flex-end;gap:8px}
+.fg{display:flex;flex-direction:column;gap:4px}
+.fg label{font-size:.78rem;color:var(--mut)}
+.fg input,.fg select{background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.88rem;padding:6px 10px;outline:none;width:100%}
 .fg input:focus,.fg select:focus{border-color:var(--pur)}
-.tr{border-radius:6px;font-size:.85rem;padding:8px 12px;margin-top:4px}
+.tr{border-radius:6px;font-size:.83rem;padding:7px 11px}
 .tr-ok{background:#1a3a1a;color:var(--grn);border:1px solid #2d5a2d}
 .tr-er{background:#3a1a1a;color:var(--red);border:1px solid #5a2d2d}
 .tr-no{background:#21262d;color:var(--mut);border:1px solid var(--bdr)}
@@ -108,100 +131,99 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   </div>
 </nav>
 
-<!-- DASHBOARD -->
-<div class="pane on" id="pane-dash">
-  <div class="stat-grid">
-    <div class="card stat-card">
-      <div class="lbl">API</div>
-      <span class="dot" id="api-dot"></span><span id="api-txt">—</span>
-    </div>
-    <div class="card stat-card">
-      <div class="lbl">Servers</div>
-      <div class="val" id="srv-txt">—</div>
-    </div>
-    <div class="card stat-card">
-      <div class="lbl">Errors (24 h)</div>
-      <div class="val se" id="err-cnt">—</div>
-    </div>
-    <div class="card stat-card">
-      <div class="lbl">Warnings (24 h)</div>
-      <div class="val sw" id="warn-cnt">—</div>
-    </div>
-  </div>
-  <div class="card" style="padding:20px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <div style="font-weight:600">Events</div>
-      <div style="display:flex;gap:6px">
-        <button class="fbtn on" id="f-all" onclick="setFilter('')">All</button>
-        <button class="fbtn" id="f-critical" onclick="setFilter('critical')">Critical</button>
-        <button class="fbtn" id="f-error" onclick="setFilter('error')">Errors</button>
-        <button class="fbtn" id="f-warning" onclick="setFilter('warning')">Warnings</button>
+<div class="layout">
+  <!-- MAIN CONTENT -->
+  <div class="main">
+
+    <!-- DASHBOARD -->
+    <div class="pane on" id="pane-dash">
+      <div class="sg">
+        <div class="card sc"><div class="lbl">API</div><span class="dot" id="api-dot"></span><span id="api-txt">—</span></div>
+        <div class="card sc"><div class="lbl">Servers</div><div class="val" id="srv-txt">—</div></div>
+        <div class="card sc"><div class="lbl">Errors (24 h)</div><div class="val se2" id="err-cnt">—</div></div>
+        <div class="card sc"><div class="lbl">Warnings (24 h)</div><div class="val sw2" id="warn-cnt">—</div></div>
+      </div>
+      <div class="card" style="padding:18px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div style="font-weight:600">Events</div>
+          <div style="display:flex;gap:5px">
+            <button class="fbtn on" id="f-all" onclick="setFilter('')">All</button>
+            <button class="fbtn" id="f-critical" onclick="setFilter('critical')">Critical</button>
+            <button class="fbtn" id="f-error" onclick="setFilter('error')">Errors</button>
+            <button class="fbtn" id="f-warning" onclick="setFilter('warning')">Warnings</button>
+          </div>
+        </div>
+        <div id="ev-body"><div class="empty">Loading…</div></div>
       </div>
     </div>
-    <div id="ev-body"><div class="empty">Loading…</div></div>
-  </div>
-</div>
 
-<!-- CONNECTIONS -->
-<div class="pane" id="pane-conn">
-  <div class="card" style="padding:20px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <div style="font-weight:600">Portainer Connections</div>
-      <button class="btn-p" onclick="openModal()">+ Add Connection</button>
+    <!-- CONNECTIONS -->
+    <div class="pane" id="pane-conn">
+      <div class="card" style="padding:18px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div style="font-weight:600">Portainer Connections</div>
+          <button class="btnp" onclick="openModal()">+ Add Connection</button>
+        </div>
+        <div id="conn-body"><div class="empty">Loading…</div></div>
+      </div>
     </div>
-    <div id="conn-body"><div class="empty">Loading…</div></div>
-  </div>
+
+  </div><!-- /main -->
+
+  <!-- HERMES SIDEBAR -->
+  <aside class="aside">
+    <div class="hb-wrap">
+      <div class="hb-lbl">
+        <span class="hb-title">HERMES</span>
+        <span class="hb-status" id="hb-status">connecting…</span>
+      </div>
+      <canvas id="hb-cv" height="52"></canvas>
+    </div>
+    <div class="feed" id="feed">
+      <div class="ph">Waiting for activity…</div>
+    </div>
+  </aside>
 </div>
 
 <!-- MODAL -->
 <dialog id="dlg">
-  <div class="mhdr">
-    <span id="dlg-title">Add Connection</span>
-    <button class="mclose" onclick="closeDlg()">&#215;</button>
-  </div>
-  <div class="mbody">
-    <div class="fg"><label>Name</label>
-      <input id="f-name" type="text" placeholder="Production Server 1" required></div>
-    <div class="fg"><label>Type</label>
-      <select id="f-type"><option value="portainer">Portainer</option></select></div>
-    <div class="fg"><label>URL</label>
-      <input id="f-url" type="text" placeholder="https://portainer.example.com" required></div>
-    <div class="fg"><label id="f-token-lbl">API Token</label>
-      <input id="f-token" type="password" placeholder="API token"></div>
-    <div class="fg"><label style="display:flex;align-items:center;gap:8px;color:var(--txt)">
-      <input id="f-enabled" type="checkbox" checked> Enabled</label></div>
+  <div class="mh"><span id="dlg-t">Add Connection</span><button class="mx" onclick="closeDlg()">&#215;</button></div>
+  <div class="mb">
+    <div class="fg"><label>Name</label><input id="f-name" type="text" placeholder="Production Server 1" required></div>
+    <div class="fg"><label>Type</label><select id="f-type"><option value="portainer">Portainer</option></select></div>
+    <div class="fg"><label>URL</label><input id="f-url" type="text" placeholder="https://portainer.example.com" required></div>
+    <div class="fg"><label id="f-tl">API Token</label><input id="f-tok" type="password" placeholder="API token"></div>
+    <div class="fg"><label style="display:flex;align-items:center;gap:8px;color:var(--txt)"><input id="f-en" type="checkbox" checked> Enabled</label></div>
     <div id="tr" style="display:none"></div>
   </div>
-  <div class="mftr">
-    <button class="btn-s" onclick="closeDlg()">Cancel</button>
-    <button class="btn-s" onclick="testDlg()">Test Connection</button>
-    <button class="btn-p" onclick="saveDlg()">Save</button>
+  <div class="mf">
+    <button class="btns" onclick="closeDlg()">Cancel</button>
+    <button class="btns" onclick="testDlg()">Test Connection</button>
+    <button class="btnp" onclick="saveDlg()">Save</button>
   </div>
 </dialog>
 
 <script>
+/* ---- state ---- */
 let _evts=[], _filter='', _conns=[], _editId=null;
+let _pills=[], _hbData=new Array(40).fill(0), _hbBucket=0;
+const MAX_PILLS=60;
 
+/* ---- tabs ---- */
 function showTab(id){
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   document.getElementById('pane-'+id).classList.add('on');
   document.getElementById('tab-'+id).classList.add('on');
-  if(id==='conn') loadConns();
+  if(id==='conn')loadConns();
 }
 
-function setFilter(s){
-  _filter=s;
-  ['all','critical','error','warning'].forEach(k=>{
-    document.getElementById('f-'+k).classList.toggle('on', k===(s||'all'));
-  });
-  renderEvts();
-}
-
+/* ---- utils ---- */
 function fmt(iso){const d=new Date(iso);return d.toLocaleDateString()+' '+d.toLocaleTimeString();}
-function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function fmtShort(iso){return new Date(iso).toLocaleTimeString();}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
-/* --- DASHBOARD --- */
+/* ---- dashboard ---- */
 async function loadStatus(){
   try{
     const d=await fetch('/health').then(r=>r.json());
@@ -211,35 +233,34 @@ async function loadStatus(){
     document.getElementById('srv-txt').textContent=c.total?`${c.ok}/${c.total}`:'—';
   }catch{
     document.getElementById('api-txt').textContent='Error';
-    document.getElementById('api-dot').className='dot err';
+    document.getElementById('api-dot').className='dot er';
   }
 }
-
 async function loadEvts(){
   try{
     const d=await fetch('/events?limit=200').then(r=>r.json());
     document.getElementById('err-cnt').textContent=d.err_24h??0;
     document.getElementById('warn-cnt').textContent=d.warn_24h??0;
-    _evts=d.items;
-    renderEvts();
-  }catch{
-    document.getElementById('ev-body').innerHTML='<div class="empty">Could not load events.</div>';
-  }
+    _evts=d.items; renderEvts();
+  }catch{document.getElementById('ev-body').innerHTML='<div class="empty">Could not load events.</div>';}
 }
-
+function setFilter(s){
+  _filter=s;
+  ['all','critical','error','warning'].forEach(k=>document.getElementById('f-'+k).classList.toggle('on',k===(s||'all')));
+  renderEvts();
+}
 function renderEvts(){
-  const SEV={critical:'sc',error:'se',warning:'sw',info:'si',debug:'si'};
+  const S={critical:'sc2',error:'se2',warning:'sw2',info:'si2',debug:'si2'};
   const items=_filter?_evts.filter(e=>e.severity===_filter):_evts;
   if(!items.length){
-    document.getElementById('ev-body').innerHTML=
-      `<div class="empty">${_evts.length?'No events match this filter.':'No events yet — worker polls Portainer every 60 s after a connection is configured.'}</div>`;
+    document.getElementById('ev-body').innerHTML=`<div class="empty">${_evts.length?'No events match this filter.':'No events yet — worker polls each connection in turn.'}</div>`;
     return;
   }
   const rows=items.map(e=>`<tr>
     <td class="mono muted">${fmt(e.occurred_at)}</td>
-    <td style="color:var(--pur);font-size:.82rem">${esc(e.server)}</td>
+    <td style="color:var(--pur);font-size:.78rem">${esc(e.server)}</td>
     <td class="mono" style="color:var(--blu)">${esc(e.container_name)}</td>
-    <td><span class="${SEV[e.severity]||'si'}">${e.severity}</span></td>
+    <td><span class="${S[e.severity]||'si2'}">${e.severity}</span></td>
     <td class="msg" title="${esc(e.message)}">${esc(e.message)}</td>
   </tr>`).join('');
   document.getElementById('ev-body').innerHTML=`<div class="scroll"><table>
@@ -247,125 +268,178 @@ function renderEvts(){
     <tbody>${rows}</tbody></table></div>`;
 }
 
-/* --- CONNECTIONS --- */
+/* ---- connections ---- */
 async function loadConns(){
   try{
     _conns=await fetch('/connections').then(r=>r.json());
-    if(!_conns.length){
-      document.getElementById('conn-body').innerHTML=
-        '<div class="empty">No connections yet. Add a Portainer server to start ingesting logs.</div>';
-      return;
-    }
+    if(!_conns.length){document.getElementById('conn-body').innerHTML='<div class="empty">No connections yet. Add a Portainer server to start ingesting logs.</div>';return;}
     const rows=_conns.map(c=>{
-      const st=c.last_status==='ok'
-        ?'<span class="st-ok">&#10003; OK</span>'
-        :c.last_status==='error'
-        ?`<span class="st-er" title="${esc(c.last_error||'')}">&#10007; Error</span>`
-        :'<span class="st-no">—</span>';
-      const dis=c.enabled?'':' style="opacity:.5"';
-      return `<tr${dis}>
+      const st=c.last_status==='ok'?'<span class="st-ok">&#10003; OK</span>':c.last_status==='error'?`<span class="st-er" title="${esc(c.last_error||'')}">&#10007; Error</span>`:'<span class="st-no">—</span>';
+      return `<tr${c.enabled?'':' style="opacity:.5"'}>
         <td style="font-weight:500">${esc(c.name)}</td>
-        <td class="mono muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.base_url)}</td>
-        <td>${c.type}</td>
-        <td>${st}</td>
+        <td class="mono muted" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.base_url)}</td>
+        <td>${c.type}</td><td>${st}</td>
         <td class="muted small">${c.last_polled_at?fmt(c.last_polled_at):'Never'}</td>
-        <td><div style="display:flex;gap:6px">
-          <button class="btn-s" onclick="testExisting(${c.id},this)">Test</button>
-          <button class="btn-s" onclick="openModal(${c.id})">Edit</button>
-          <button class="btn-d" onclick="delConn(${c.id})">Delete</button>
+        <td><div style="display:flex;gap:5px">
+          <button class="btns" onclick="testEx(${c.id},this)">Test</button>
+          <button class="btns" onclick="openModal(${c.id})">Edit</button>
+          <button class="btnd" onclick="delConn(${c.id})">Delete</button>
         </div></td>
       </tr>`;
     }).join('');
-    document.getElementById('conn-body').innerHTML=`<table>
-      <thead><tr><th>Name</th><th>URL</th><th>Type</th><th>Status</th><th>Last Polled</th><th>Actions</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
-  }catch{
-    document.getElementById('conn-body').innerHTML='<div class="empty">Could not load connections.</div>';
-  }
+    document.getElementById('conn-body').innerHTML=`<table><thead><tr><th>Name</th><th>URL</th><th>Type</th><th>Status</th><th>Last Polled</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }catch{document.getElementById('conn-body').innerHTML='<div class="empty">Could not load connections.</div>';}
 }
-
 function openModal(id){
   _editId=id||null;
   const c=id?_conns.find(x=>x.id===id):null;
-  document.getElementById('dlg-title').textContent=c?'Edit Connection':'Add Connection';
+  document.getElementById('dlg-t').textContent=c?'Edit Connection':'Add Connection';
   document.getElementById('f-name').value=c?c.name:'';
   document.getElementById('f-type').value=c?c.type:'portainer';
   document.getElementById('f-url').value=c?c.base_url:'';
-  document.getElementById('f-token').value='';
-  document.getElementById('f-token').placeholder=c?'Leave blank to keep existing token':'API token';
-  document.getElementById('f-enabled').checked=c?c.enabled:true;
+  document.getElementById('f-tok').value='';
+  document.getElementById('f-tok').placeholder=c?'Leave blank to keep existing token':'API token';
+  document.getElementById('f-en').checked=c?c.enabled:true;
   document.getElementById('tr').style.display='none';
   document.getElementById('dlg').showModal();
 }
-
 function closeDlg(){document.getElementById('dlg').close();}
-
 function showTr(ok,msg){
   const el=document.getElementById('tr');
   el.style.display='block';
   el.className='tr '+(ok===true?'tr-ok':ok===false?'tr-er':'tr-no');
   el.textContent=(ok===true?'✓ ':ok===false?'✗ ':'')+msg;
 }
-
 async function testDlg(){
-  const url=document.getElementById('f-url').value.trim();
-  const token=document.getElementById('f-token').value;
+  const url=document.getElementById('f-url').value.trim(), tok=document.getElementById('f-tok').value;
   if(!url){showTr(false,'Enter a URL first.');return;}
-  if(!token&&!_editId){showTr(false,'Enter an API token first.');return;}
   showTr(null,'Testing…');
   try{
     let d;
-    if(token){
-      d=await fetch('/connections/test-url',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({base_url:url,api_token:token})}).then(r=>r.json());
-    }else{
-      d=await fetch(`/connections/${_editId}/test`,{method:'POST'}).then(r=>r.json());
-    }
-    showTr(d.ok, d.ok?'Connection successful!':(d.error||'Connection failed'));
+    if(tok){d=await fetch('/connections/test-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_url:url,api_token:tok})}).then(r=>r.json());}
+    else if(_editId){d=await fetch(`/connections/${_editId}/test`,{method:'POST'}).then(r=>r.json());}
+    else{showTr(false,'Enter an API token first.');return;}
+    showTr(d.ok,d.ok?'Connection successful!':(d.error||'Connection failed'));
   }catch(e){showTr(false,'Request failed: '+e.message);}
 }
-
 async function saveDlg(){
-  const name=document.getElementById('f-name').value.trim();
-  const url=document.getElementById('f-url').value.trim();
-  const token=document.getElementById('f-token').value;
+  const name=document.getElementById('f-name').value.trim(), url=document.getElementById('f-url').value.trim(), tok=document.getElementById('f-tok').value;
   if(!name||!url){showTr(false,'Name and URL are required.');return;}
-  if(!_editId&&!token){showTr(false,'API token is required for new connections.');return;}
-  const body={name,type:document.getElementById('f-type').value,base_url:url,
-    api_token:token,enabled:document.getElementById('f-enabled').checked};
+  if(!_editId&&!tok){showTr(false,'API token is required.');return;}
+  const body={name,type:document.getElementById('f-type').value,base_url:url,api_token:tok,enabled:document.getElementById('f-en').checked};
   try{
-    const r=await fetch(_editId?`/connections/${_editId}`:'/connections',
-      {method:_editId?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const r=await fetch(_editId?`/connections/${_editId}`:'/connections',{method:_editId?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!r.ok)throw new Error(await r.text());
-    closeDlg();
-    await loadConns();
+    closeDlg(); await loadConns();
   }catch(e){showTr(false,'Save failed: '+e.message);}
 }
-
-async function testExisting(id,btn){
-  const orig=btn.textContent;
-  btn.textContent='…';btn.disabled=true;
-  try{
-    const d=await fetch(`/connections/${id}/test`,{method:'POST'}).then(r=>r.json());
-    alert(d.ok?'✓ Connection successful!':'✗ '+(d.error||'Failed'));
-    await loadConns();
-  }finally{btn.textContent=orig;btn.disabled=false;}
+async function testEx(id,btn){
+  const orig=btn.textContent; btn.textContent='…'; btn.disabled=true;
+  try{const d=await fetch(`/connections/${id}/test`,{method:'POST'}).then(r=>r.json());alert(d.ok?'✓ Connection successful!':'✗ '+(d.error||'Failed'));await loadConns();}
+  finally{btn.textContent=orig;btn.disabled=false;}
 }
-
 async function delConn(id){
-  if(!confirm('Delete this connection? Existing events will be preserved.'))return;
-  await fetch(`/connections/${id}`,{method:'DELETE'});
-  await loadConns();
+  if(!confirm('Delete this connection? Events will be preserved.'))return;
+  await fetch(`/connections/${id}`,{method:'DELETE'}); await loadConns();
 }
 
+/* ---- hermes / activity feed ---- */
+function addPill(msg){
+  _pills.unshift(msg);
+  if(_pills.length>MAX_PILLS)_pills.pop();
+  renderFeed();
+}
+
+function renderFeed(){
+  if(!_pills.length){document.getElementById('feed').innerHTML='<div class="ph">Waiting for activity…</div>';return;}
+  const html=_pills.map(msg=>{
+    const ts=msg.ts?fmtShort(msg.ts):'';
+    if(msg.type==='poll_start')
+      return `<div class="pill p-start">&#9656; Polling <strong>${esc(msg.server)}</strong></div>`;
+    if(msg.type==='poll_error')
+      return `<div class="pill p-error">&#10007; <strong>${esc(msg.server)}</strong><br><span style="opacity:.8">${esc(msg.error||'')}</span></div>`;
+    if(msg.type==='poll_complete')
+      return `<div class="pill p-done">&#10003; <strong>${esc(msg.server)}</strong> — ${msg.containers} container${msg.containers!==1?'s':''}, ${msg.total_events} event${msg.total_events!==1?'s':''} <span style="opacity:.6">${ts}</span></div>`;
+    if(msg.type==='container_result'){
+      let cls='p-clean', detail='clean';
+      if(msg.errors>0){cls='p-error';detail=`${msg.errors} error${msg.errors>1?'s':''}${msg.warnings>0?`, ${msg.warnings} warning${msg.warnings>1?'s':''}`:''}`;}
+      else if(msg.warnings>0){cls='p-warn';detail=`${msg.warnings} warning${msg.warnings>1?'s':''}`;}
+      else if(msg.events>0){cls='p-ok';detail=`${msg.events} new event${msg.events>1?'s':''}`;}
+      return `<div class="pill ${cls}">
+        <div class="pill-hdr"><span class="pill-cn">${esc(msg.container)}</span><span class="pill-sv">${esc(msg.server)}</span></div>
+        <div>${detail}</div>
+        <div class="pill-ts">${ts}</div>
+      </div>`;
+    }
+    return '';
+  }).join('');
+  document.getElementById('feed').innerHTML=html;
+}
+
+/* ---- heartbeat chart ---- */
+function resizeCanvas(){
+  const cv=document.getElementById('hb-cv');
+  if(cv)cv.width=cv.offsetWidth||280;
+}
+function drawHb(){
+  const cv=document.getElementById('hb-cv');
+  if(!cv)return;
+  const ctx=cv.getContext('2d'), w=cv.width, h=cv.height;
+  ctx.clearRect(0,0,w,h);
+  const d=_hbData, max=Math.max(...d,1), step=w/(d.length-1);
+  // fill
+  ctx.beginPath();
+  d.forEach((v,i)=>{const x=i*step,y=h-(v/max)*(h-6)-3;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
+  ctx.lineTo((d.length-1)*step,h);ctx.lineTo(0,h);ctx.closePath();
+  ctx.fillStyle='rgba(63,185,80,0.12)';ctx.fill();
+  // line
+  ctx.beginPath();
+  d.forEach((v,i)=>{const x=i*step,y=h-(v/max)*(h-6)-3;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
+  ctx.strokeStyle='#3fb950';ctx.lineWidth=1.5;ctx.stroke();
+  // label
+  const cur=d[d.length-1];
+  ctx.fillStyle=cur>0?'#3fb950':'#8b949e';
+  ctx.font='10px monospace';ctx.textAlign='right';
+  ctx.fillText(cur>0?`${cur} evt/5s`:'idle',w-4,12);
+}
+function tickHb(){
+  _hbData.push(_hbBucket); _hbBucket=0;
+  if(_hbData.length>40)_hbData.shift();
+  drawHb();
+}
+setInterval(tickHb,5000);
+
+/* ---- SSE ---- */
+function connectHermes(){
+  const es=new EventSource('/hermes/stream');
+  document.getElementById('hb-status').textContent='connecting…';
+  es.onopen=()=>document.getElementById('hb-status').textContent='live';
+  es.onmessage=e=>{
+    try{
+      const msg=JSON.parse(e.data);
+      if(msg.type==='connected'){document.getElementById('hb-status').textContent='live';return;}
+      if(msg.type==='container_result')_hbBucket+=msg.events;
+      addPill(msg);
+    }catch{}
+  };
+  es.onerror=()=>{
+    document.getElementById('hb-status').textContent='reconnecting…';
+    es.close(); setTimeout(connectHermes,5000);
+  };
+}
+
+/* ---- init ---- */
 async function loadAll(){
   await Promise.all([loadStatus(),loadEvts()]);
   if(document.getElementById('pane-conn').classList.contains('on'))await loadConns();
   document.getElementById('upd').textContent='Updated '+new Date().toLocaleTimeString();
 }
 
+window.addEventListener('resize',()=>{resizeCanvas();drawHb();});
+resizeCanvas(); drawHb();
 loadAll();
 setInterval(loadAll,30000);
+connectHermes();
 </script>
 </body>
 </html>"""
@@ -385,13 +459,49 @@ app = FastAPI(title="ORC API", version="0.1.0", lifespan=lifespan)
 
 
 # ---------------------------------------------------------------------------
-# Routes
+# Routes — UI
 # ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def dashboard() -> str:
     return _HTML
 
+
+# ---------------------------------------------------------------------------
+# Routes — Hermes SSE stream
+# ---------------------------------------------------------------------------
+
+@app.get("/hermes/stream")
+async def hermes_stream(request: Request) -> StreamingResponse:
+    from redis.asyncio import Redis as ARedis
+
+    async def _gen():
+        r = ARedis.from_url(REDIS_URL, decode_responses=True)
+        ps = r.pubsub()
+        await ps.subscribe(CHANNEL)
+        try:
+            yield 'data: {"type":"connected"}\n\n'
+            async for msg in ps.listen():
+                if await request.is_disconnected():
+                    break
+                if msg["type"] == "message":
+                    yield f'data: {msg["data"]}\n\n'
+        except Exception:
+            pass
+        finally:
+            await ps.unsubscribe(CHANNEL)
+            await r.aclose()
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes — Health
+# ---------------------------------------------------------------------------
 
 @app.get("/health")
 def health() -> dict:
@@ -401,6 +511,10 @@ def health() -> dict:
         err = s.query(func.count(Connection.id)).filter(Connection.last_status == "error").scalar() or 0
     return {"status": "ok", "service": "orc-api", "connections": {"total": total, "ok": ok, "error": err}}
 
+
+# ---------------------------------------------------------------------------
+# Routes — Connections
+# ---------------------------------------------------------------------------
 
 @app.get("/connections")
 def list_connections() -> list:
@@ -465,6 +579,10 @@ def test_connection(cid: int) -> dict:
     ok = PortainerClient(url, token).health_check()
     return {"ok": ok, "error": None if ok else "Could not reach Portainer API"}
 
+
+# ---------------------------------------------------------------------------
+# Routes — Registry + Events
+# ---------------------------------------------------------------------------
 
 @app.get("/registry/agents")
 def registry_agents() -> dict:
