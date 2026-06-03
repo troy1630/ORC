@@ -59,6 +59,7 @@ _HTML = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ORC</title>
+<link rel="icon" href="/assets/favicon.ico" sizes="any">
 <style>
 :root{--bg:#0d1117;--sur:#161b22;--bdr:#30363d;--txt:#e6edf3;--mut:#8b949e;--grn:#3fb950;--red:#f85149;--yel:#d29922;--blu:#58a6ff;--pur:#a371f7}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -585,8 +586,10 @@ const CHARACTERS=[
 ];
 const BLACK_LOGO_SRC='/assets/characters/black-hd-logo.png';
 const BLACK_LOGO={id:'corp-black-hd',label:'Black HD Logo',src:BLACK_LOGO_SRC};
+const FAVICON_LOGO={id:'corp-favicon',label:'Favicon',src:'/assets/favicon.ico'};
 const CORPORATE_LOGOS=[
   BLACK_LOGO,
+  FAVICON_LOGO,
   {id:'corp-db',label:'Database',src:'/assets/characters/corporate-worker-0.png'},
   {id:'corp-worker',label:'Worker App',src:'/assets/characters/corporate-worker-1.png'},
   {id:'corp-redis',label:'Redis',src:'/assets/characters/corporate-worker-2.png'},
