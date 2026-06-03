@@ -78,28 +78,39 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
 .kingdom-name{font-size:1rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .kingdom-sub{font-size:.72rem;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .kingdom-score{display:flex;align-items:center;gap:5px;flex-shrink:0}
-.kingdom-apps{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;align-items:start}
-.app-card{position:relative;background:var(--sur);border:1px solid var(--bdr);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0;transition:border-color .2s}
-.app-card:hover{border-color:var(--pur)}
-.app-card.er{border-color:var(--red)}
-.app-card.warn{border-color:var(--yel)}
+.kingdom-stacks{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;align-items:start}
+.stack-card{position:relative;background:var(--sur);border:1px solid var(--bdr);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0;transition:border-color .2s}
+.stack-card:hover{border-color:var(--pur)}
+.stack-card.er{border-color:var(--red)}
+.stack-card.warn{border-color:var(--yel)}
 .char-frame{position:relative;display:flex;align-items:center;justify-content:center;width:100%;aspect-ratio:1.62/1;background:#0d1117;border:1px solid #21262d;border-radius:6px;overflow:hidden;cursor:pointer;padding:0;color:inherit;font:inherit}
 .char-frame:hover{border-color:var(--pur)}
 .char-img{display:block;width:100%;height:100%;object-fit:contain}
-.status-circles{position:absolute;top:7px;right:7px;display:flex;gap:5px}
+.status-circles{position:absolute;top:7px;left:7px;display:flex;gap:5px}
 .kingdom-score .status-circles{position:static}
 .status-dot{width:25px;height:25px;border-radius:50%;font-size:.62rem;font-weight:800;display:flex;align-items:center;justify-content:center;border:1px solid rgba(0,0,0,.58);box-shadow:0 1px 5px rgba(0,0,0,.42);line-height:1}
 .b-ok{background:var(--grn);color:#000}
 .b-warn{background:var(--yel);color:#000}
 .b-err{background:var(--red);color:#fff}
 .b-hide{display:none}
-.app-nm{font-size:.82rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.app-stack{font-size:.68rem;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.app-meta{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;min-width:0}
-.app-copy{min-width:0}
-.app-type{flex-shrink:0;color:var(--mut);font-size:.62rem;text-transform:uppercase;border:1px solid #21262d;border-radius:4px;padding:2px 5px;line-height:1.15}
-.char-select{background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.75rem;padding:5px 8px;outline:none;width:100%;cursor:pointer}
-.char-select:focus{border-color:var(--pur)}
+.gear-btn{position:absolute;top:7px;right:7px;width:28px;height:28px;border-radius:50%;border:1px solid rgba(230,237,243,.28);background:rgba(13,17,23,.78);color:var(--txt);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1;z-index:2}
+.gear-btn:hover{border-color:var(--pur);background:rgba(33,38,45,.92)}
+.stack-nm{font-size:.9rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stack-sv{font-size:.68rem;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stack-meta{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;min-width:0}
+.stack-copy{min-width:0}
+.sub-list{display:flex;flex-direction:column;gap:6px;border-top:1px solid #21262d;padding-top:8px}
+.sub-row{position:relative;display:flex;align-items:center;gap:8px;min-height:28px;padding:4px 64px 4px 10px;border-radius:6px;background:#0d1117;border:1px solid #21262d;cursor:pointer}
+.sub-row:hover{border-color:var(--pur)}
+.sub-name{font-size:.75rem;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sub-type{margin-left:auto;color:var(--mut);font-size:.58rem;text-transform:uppercase;border:1px solid #21262d;border-radius:4px;padding:2px 5px;line-height:1.15;flex-shrink:0}
+.sub-row .status-circles{top:50%;left:auto;right:7px;transform:translateY(-50%)}
+.sub-row .status-dot{width:21px;height:21px;font-size:.58rem}
+.char-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
+.char-choice{border:1px solid var(--bdr);background:#0d1117;color:var(--txt);border-radius:8px;padding:7px;cursor:pointer;text-align:left}
+.char-choice:hover,.char-choice.on{border-color:var(--pur);background:#21262d}
+.char-choice img{display:block;width:100%;aspect-ratio:1.62/1;object-fit:cover;border-radius:5px;margin-bottom:5px}
+.char-choice span{display:block;font-size:.72rem;font-weight:650;text-align:center}
 /* EVENTS */
 .card{background:var(--sur);border:1px solid var(--bdr);border-radius:8px}
 .fbtn{background:#21262d;border:1px solid var(--bdr);border-radius:6px;color:var(--mut);cursor:pointer;font-size:.78rem;padding:3px 11px}
@@ -125,7 +136,8 @@ tr:last-child td{border-bottom:none}
 .aside{border-left:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;background:var(--sur)}
 .hb-wrap{padding:10px 12px 8px;border-bottom:1px solid var(--bdr);flex-shrink:0}
 .hb-lbl{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
-.hb-title{font-size:.75rem;font-weight:700;letter-spacing:.06em}
+.hb-title{font-size:.75rem;font-weight:700;letter-spacing:.06em;display:flex;align-items:center;gap:6px}
+.raven-mark{width:28px;height:28px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5));margin-top:-2px}
 .hb-st{font-size:.68rem;color:var(--mut)}
 canvas{display:block;width:100%;height:48px}
 .raven-sl{padding:7px 12px;border-bottom:1px solid var(--bdr);font-size:.76rem;color:var(--mut);flex-shrink:0;min-height:32px;display:flex;align-items:center;gap:5px;overflow:hidden}
@@ -179,7 +191,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .kingdom{padding:10px}
   .kingdom-hdr{align-items:flex-start}
   .kingdom-castle{width:38px;height:38px}
-  .kingdom-apps{grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+  .kingdom-stacks{grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
 }
 </style>
 </head>
@@ -252,7 +264,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 <aside class="aside">
   <div class="hb-wrap">
     <div class="hb-lbl">
-      <span class="hb-title">RAVEN</span>
+      <span class="hb-title"><img class="raven-mark" src="/assets/kingdoms/raven.png" alt="">RAVEN</span>
       <span class="hb-st" id="hb-status">connecting…</span>
     </div>
     <canvas id="hb-cv" height="48"></canvas>
@@ -289,12 +301,25 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   </div>
 </dialog>
 
+<dialog id="char-dlg">
+  <div class="mh"><span id="char-dlg-t">Stack Character</span><button class="mx" onclick="closeCharDlg()">&#215;</button></div>
+  <div class="mb">
+    <div class="fg">
+      <label>Character</label>
+      <div class="char-grid" id="char-grid"></div>
+    </div>
+  </div>
+  <div class="mf">
+    <button class="btns" onclick="closeCharDlg()">Close</button>
+  </div>
+</dialog>
+
 <script>
 /* ============================================================
    STATE
    ============================================================ */
 let _evts=[], _evFilters={severity:'',container:'',server:''};
-let _conns=[], _editId=null;
+let _conns=[], _editId=null, _charEditKey='';
 let _hbData=new Array(40).fill(0), _hbBucket=0;
 let _ravenFilter='', _issuePills=[];
 const MAX_ISSUE_PILLS=20;
@@ -339,14 +364,11 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 function hashStr(s){let h=0;for(let i=0;i<s.length;i++)h=((h<<5)-h+s.charCodeAt(i))|0;return Math.abs(h);}
 function storageGet(k){try{return localStorage.getItem(k);}catch{return null;}}
 function storageSet(k,v){try{localStorage.setItem(k,v);}catch{}}
-function appCharacterKey(app){return `${app.server}::${app.stack}::${app.full_name}`;}
-function defaultCharacterId(app){return CHARACTERS[hashStr(appCharacterKey(app))%CHARACTERS.length].id;}
-function selectedCharacterId(app){
-  const saved=storageGet(CHARACTER_STORAGE_PREFIX+appCharacterKey(app));
-  return CHARACTER_BY_ID[saved]?saved:defaultCharacterId(app);
-}
-function charOptions(selected){
-  return CHARACTERS.map(c=>`<option value="${esc(c.id)}"${c.id===selected?' selected':''}>${esc(c.label)}</option>`).join('');
+function stackCharacterKey(stack){return `${stack.server}::${stack.name}`;}
+function defaultCharacterId(stack){return CHARACTERS[hashStr(stackCharacterKey(stack))%CHARACTERS.length].id;}
+function selectedCharacterId(stack){
+  const saved=storageGet(CHARACTER_STORAGE_PREFIX+stackCharacterKey(stack));
+  return CHARACTER_BY_ID[saved]?saved:defaultCharacterId(stack);
 }
 function issueCounts(app){
   return {
@@ -362,13 +384,28 @@ function statusCircles(errors,warnings){
   if(!dots.length)dots.push('<span class="status-dot b-ok" title="No recent errors or warnings">0</span>');
   return `<div class="status-circles">${dots.join('')}</div>`;
 }
-function setAppCharacter(sel){
-  const ch=CHARACTER_BY_ID[sel.value];
-  if(!ch)return;
-  storageSet(CHARACTER_STORAGE_PREFIX+sel.dataset.appKey,ch.id);
-  const card=sel.closest('.app-card');
+function openCharDlg(btn){
+  _charEditKey=btn.dataset.stackKey||'';
+  const selected=storageGet(CHARACTER_STORAGE_PREFIX+_charEditKey)||btn.dataset.character||CHARACTERS[0].id;
+  document.getElementById('char-dlg-t').textContent=`${btn.dataset.stackName||'Stack'} Character`;
+  document.getElementById('char-grid').innerHTML=CHARACTERS.map(c=>`
+    <button class="char-choice ${c.id===selected?'on':''}" type="button" onclick="chooseStackCharacter('${esc(c.id)}')">
+      <img src="${esc(c.src)}" alt="${esc(c.label)}"><span>${esc(c.label)}</span>
+    </button>`).join('');
+  document.getElementById('char-dlg').showModal();
+}
+function closeCharDlg(){document.getElementById('char-dlg').close();}
+function chooseStackCharacter(id){
+  const ch=CHARACTER_BY_ID[id];
+  if(!ch||!_charEditKey)return;
+  storageSet(CHARACTER_STORAGE_PREFIX+_charEditKey,ch.id);
+  const card=[...document.querySelectorAll('.stack-card')].find(c=>c.dataset.stackKey===_charEditKey);
   const img=card?.querySelector('.char-img');
+  const gear=card?.querySelector('.gear-btn');
   if(img){img.src=ch.src;img.alt=ch.label;}
+  if(gear){gear.dataset.character=ch.id;}
+  document.querySelectorAll('.char-choice').forEach(b=>b.classList.toggle('on',b.textContent.trim()===ch.label));
+  closeCharDlg();
 }
 function jumpToEventsFromEl(el){
   jumpToEvents(el.dataset.server||'',el.dataset.container||'',el.dataset.severity||'');
@@ -408,43 +445,58 @@ function renderMap(stacks){
   const kingdomMap=new Map();
   stacks.forEach(s=>{
     const key=s.server||'Unknown server';
-    if(!kingdomMap.has(key))kingdomMap.set(key,{server:key,stacks:new Set(),apps:[]});
+    if(!kingdomMap.has(key))kingdomMap.set(key,{server:key,stacks:[]});
     const kingdom=kingdomMap.get(key);
-    kingdom.stacks.add(s.name);
-    s.containers.forEach(c=>kingdom.apps.push({...c,stack:s.name,server:key}));
+    kingdom.stacks.push({...s,server:key,containers:s.containers||[]});
   });
-  const kingdoms=[...kingdomMap.values()].filter(k=>k.apps.length).sort((a,b)=>a.server.localeCompare(b.server));
+  const kingdoms=[...kingdomMap.values()].filter(k=>k.stacks.some(s=>s.containers.length)).sort((a,b)=>a.server.localeCompare(b.server));
   if(!kingdoms.length){grid.innerHTML='<div class="empty">No containers found for the configured connections.</div>';return;}
   grid.innerHTML=kingdoms.map(k=>{
-    k.apps.sort((a,b)=>a.stack.localeCompare(b.stack)||a.type.localeCompare(b.type)||a.name.localeCompare(b.name));
-    const totals=k.apps.reduce((acc,app)=>{const c=issueCounts(app);acc.errors+=c.errors;acc.warnings+=c.warnings;return acc;},{errors:0,warnings:0});
+    k.stacks.sort((a,b)=>a.name.localeCompare(b.name));
+    const totals=k.stacks.reduce((acc,stack)=>{
+      stack.containers.forEach(app=>{const c=issueCounts(app);acc.errors+=c.errors;acc.warnings+=c.warnings;});
+      return acc;
+    },{errors:0,warnings:0});
     const kingdomCls=totals.errors>0?'er':totals.warnings>0?'warn':'';
-    const stackList=[...k.stacks].sort().join(', ');
-    const apps=k.apps.map(app=>{
-    const counts=issueCounts(app);
-    const hasErr=counts.errors>0, hasWarn=counts.warnings>0;
-    const severity=hasErr?'error':hasWarn?'warning':'';
-    const cardCls=hasErr?'er':hasWarn?'warn':'';
-    const charId=selectedCharacterId(app);
-    const ch=CHARACTER_BY_ID[charId]||CHARACTERS[0];
-    const key=appCharacterKey(app);
-    return `<div class="app-card ${cardCls}">
+    const stackList=k.stacks.map(s=>s.name).join(', ');
+    const stackCards=k.stacks.map(stack=>{
+      stack.containers.sort((a,b)=>a.type.localeCompare(b.type)||a.name.localeCompare(b.name));
+      const stackTotals=stack.containers.reduce((acc,app)=>{const c=issueCounts(app);acc.errors+=c.errors;acc.warnings+=c.warnings;return acc;},{errors:0,warnings:0});
+      const hasErr=stackTotals.errors>0, hasWarn=stackTotals.warnings>0;
+      const severity=hasErr?'error':hasWarn?'warning':'';
+      const cardCls=hasErr?'er':hasWarn?'warn':'';
+      const charId=selectedCharacterId(stack);
+      const ch=CHARACTER_BY_ID[charId]||CHARACTERS[0];
+      const key=stackCharacterKey(stack);
+      const subRows=stack.containers.map(app=>{
+        const counts=issueCounts(app);
+        const subErr=counts.errors>0, subWarn=counts.warnings>0;
+        const subSeverity=subErr?'error':subWarn?'warning':'';
+        return `<div class="sub-row" onclick="jumpToEventsFromEl(this)"
+          data-server="${esc(stack.server)}" data-container="${esc(app.full_name)}" data-severity="${esc(subSeverity)}"
+          title="${esc(app.full_name)}">
+          <span class="sub-name">${esc(app.name)}</span>
+          <span class="sub-type">${esc(app.type)}</span>
+          ${statusCircles(counts.errors,counts.warnings)}
+        </div>`;
+      }).join('');
+      return `<div class="stack-card ${cardCls}" data-stack-key="${esc(key)}">
+      <button class="gear-btn" type="button" onclick="openCharDlg(this)"
+        data-stack-key="${esc(key)}" data-stack-name="${esc(stack.name)}" data-character="${esc(charId)}"
+        title="Configure ${esc(stack.name)} character">&#9881;</button>
       <button class="char-frame" type="button" onclick="jumpToEventsFromEl(this)"
-        data-server="${esc(app.server)}" data-container="${esc(app.full_name)}" data-severity="${esc(severity)}"
-        title="View events for ${esc(app.full_name)}">
+        data-server="${esc(stack.server)}" data-container="${esc(stack.name)}" data-severity="${esc(severity)}"
+        title="View events for ${esc(stack.name)}">
         <img class="char-img" src="${esc(ch.src)}" alt="${esc(ch.label)}">
-        ${statusCircles(counts.errors,counts.warnings)}
+        ${statusCircles(stackTotals.errors,stackTotals.warnings)}
       </button>
-      <div class="app-meta">
-        <div class="app-copy">
-          <div class="app-nm" title="${esc(app.full_name)}">${esc(app.name)}</div>
-          <div class="app-stack" title="${esc(app.stack)} on ${esc(app.server)}">${esc(app.stack)} - ${esc(app.server)}</div>
+      <div class="stack-meta">
+        <div class="stack-copy">
+          <div class="stack-nm" title="${esc(stack.name)}">${esc(stack.name)}</div>
+          <div class="stack-sv">${stack.containers.length} subordinate${stack.containers.length!==1?'s':''} - ${esc(stack.server)}</div>
         </div>
-        <span class="app-type">${esc(app.type)}</span>
       </div>
-      <select class="char-select" data-app-key="${esc(key)}" onchange="setAppCharacter(this)" aria-label="Character for ${esc(app.name)}">
-        ${charOptions(charId)}
-      </select>
+      <div class="sub-list">${subRows}</div>
     </div>`;
     }).join('');
     return `<section class="kingdom ${kingdomCls}">
@@ -453,12 +505,12 @@ function renderMap(stacks){
           <img class="kingdom-castle" src="/assets/kingdoms/castle.png" alt="">
           <div class="kingdom-copy">
             <div class="kingdom-name" title="${esc(k.server)}">${esc(k.server)}</div>
-            <div class="kingdom-sub" title="${esc(stackList)}">${k.apps.length} container${k.apps.length!==1?'s':''} - ${esc(stackList)}</div>
+            <div class="kingdom-sub" title="${esc(stackList)}">${k.stacks.length} stack${k.stacks.length!==1?'s':''} - ${esc(stackList)}</div>
           </div>
         </div>
         <div class="kingdom-score">${statusCircles(totals.errors,totals.warnings)}</div>
       </div>
-      <div class="kingdom-apps">${apps}</div>
+      <div class="kingdom-stacks">${stackCards}</div>
     </section>`;
   }).join('');
 }
