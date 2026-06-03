@@ -923,8 +923,9 @@ function layoutNetworkTopology(k){
     hub.x=width/2;hub.y=height/2;
   }
   const densityPenalty=(Math.max(0,totalContainers-34)*.006)+(Math.max(0,stacks.length-8)*.018);
-  const fieldScale=Math.max(.74,Math.min(1,1-densityPenalty));
-  return {width,height,heightPx:Math.round(height+76),fieldScale:fieldScale.toFixed(2),hub,stacks:stackNodes,workers:workerNodes,links};
+  const fieldScale=Math.max(.72,Math.min(1,1-densityPenalty));
+  const heightPx=Math.round(Math.max(560,Math.min(760,height*.72+96)));
+  return {width,height,heightPx,fieldScale:fieldScale.toFixed(2),hub,stacks:stackNodes,workers:workerNodes,links};
 }
 function renderNetwork(stacks){
   const stage=document.getElementById('network-stage');
