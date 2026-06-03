@@ -1,0 +1,595 @@
+- generic [active] [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e5]: ORC
+    - generic [ref=e6]:
+      - button "Map" [ref=e7] [cursor=pointer]
+      - button "Overview" [ref=e8] [cursor=pointer]
+      - button "Network" [ref=e9] [cursor=pointer]
+      - button "Events" [ref=e10] [cursor=pointer]
+      - button "Connections" [ref=e11] [cursor=pointer]
+    - generic [ref=e12]:
+      - generic [ref=e15]: ok
+      - generic [ref=e16]:
+        - generic [ref=e17]: 2/2
+        - generic [ref=e18]: srv
+      - generic [ref=e19] [cursor=pointer]:
+        - generic [ref=e20]: "33"
+        - generic [ref=e21]: err
+      - generic [ref=e22] [cursor=pointer]:
+        - generic [ref=e23]: "11"
+        - generic [ref=e24]: warn
+      - combobox "Issue time window" [ref=e25] [cursor=pointer]:
+        - option "1 hour"
+        - option "6 hours"
+        - option "24 hours" [selected]
+      - generic [ref=e26]: 10:49:23 AM MDT
+      - button "↻" [ref=e27] [cursor=pointer]
+  - generic [ref=e28]:
+    - generic [ref=e31]:
+      - generic [ref=e32]:
+        - generic [ref=e33]:
+          - generic [ref=e35]:
+            - generic "dev" [ref=e36]: Kingdom of Dev
+            - generic "admin-api, admin-ui, atlas, console, db, filestash, gitea, grafana, homer, infinite, n8n, portainer, postgres, prometheus" [ref=e37]: 14 stacks - admin-api, admin-ui, atlas, console, db, filestash, gitea, grafana, homer, infinite, n8n, portainer, postgres, prometheus
+          - generic [ref=e39]:
+            - generic "41 errors" [ref=e40]: "41"
+            - generic "68 warnings" [ref=e41]: "68"
+        - generic [ref=e42]:
+          - generic [ref=e43]:
+            - button "⚙" [ref=e44] [cursor=pointer]
+            - button "admin-api admin-api 1 2" [ref=e45] [cursor=pointer]:
+              - img "admin-api" [ref=e46]
+              - generic [ref=e47]: admin-api
+              - generic [ref=e48]:
+                - generic "1 error" [ref=e49]: "1"
+                - generic "2 warnings" [ref=e50]: "2"
+            - generic [ref=e53]: 2 subordinates
+            - generic [ref=e54]:
+              - generic "dev_admin-api_api_0" [ref=e55] [cursor=pointer]:
+                - generic [ref=e56]: api
+                - generic [ref=e57]: api
+                - generic [ref=e58]:
+                  - generic "1 error" [ref=e59]: "1"
+                  - generic "2 warnings" [ref=e60]: "2"
+              - generic "dev_admin-api_worker_1" [ref=e61] [cursor=pointer]:
+                - generic [ref=e62]: worker
+                - generic [ref=e63]: worker
+                - generic "No recent errors or warnings" [ref=e65]: "0"
+          - generic [ref=e66]:
+            - button "⚙" [ref=e67] [cursor=pointer]
+            - button "admin-ui admin-ui 0" [ref=e68] [cursor=pointer]:
+              - img "admin-ui" [ref=e69]
+              - generic [ref=e70]: admin-ui
+              - generic "No recent errors or warnings" [ref=e72]: "0"
+            - generic [ref=e75]: 3 subordinates
+            - generic [ref=e76]:
+              - generic "dev_admin-ui_db_1" [ref=e77] [cursor=pointer]:
+                - generic [ref=e78]: db
+                - generic [ref=e79]: db
+                - generic "No recent errors or warnings" [ref=e81]: "0"
+              - generic "dev_admin-ui_redis_2" [ref=e82] [cursor=pointer]:
+                - generic [ref=e83]: redis
+                - generic [ref=e84]: redis
+                - generic "No recent errors or warnings" [ref=e86]: "0"
+              - generic "dev_admin-ui_worker_0" [ref=e87] [cursor=pointer]:
+                - generic [ref=e88]: worker
+                - generic [ref=e89]: worker
+                - generic "No recent errors or warnings" [ref=e91]: "0"
+          - generic [ref=e92]:
+            - button "⚙" [ref=e93] [cursor=pointer]
+            - button "atlas atlas 0" [ref=e94] [cursor=pointer]:
+              - img "atlas" [ref=e95]
+              - generic [ref=e96]: atlas
+              - generic "No recent errors or warnings" [ref=e98]: "0"
+            - generic [ref=e101]: 4 subordinates
+            - generic [ref=e102]:
+              - generic "dev_atlas_backend_3" [ref=e103] [cursor=pointer]:
+                - generic [ref=e104]: backend
+                - generic [ref=e105]: backend
+                - generic "No recent errors or warnings" [ref=e107]: "0"
+              - generic "dev_atlas_db_0" [ref=e108] [cursor=pointer]:
+                - generic [ref=e109]: db
+                - generic [ref=e110]: db
+                - generic "No recent errors or warnings" [ref=e112]: "0"
+              - generic "dev_atlas_frontend_2" [ref=e113] [cursor=pointer]:
+                - generic [ref=e114]: frontend
+                - generic [ref=e115]: frontend
+                - generic "No recent errors or warnings" [ref=e117]: "0"
+              - generic "dev_atlas_redis_1" [ref=e118] [cursor=pointer]:
+                - generic [ref=e119]: redis
+                - generic [ref=e120]: redis
+                - generic "No recent errors or warnings" [ref=e122]: "0"
+          - generic [ref=e123]:
+            - button "⚙" [ref=e124] [cursor=pointer]
+            - button "console console 8" [ref=e125] [cursor=pointer]:
+              - img "console" [ref=e126]
+              - generic [ref=e127]: console
+              - generic "8 warnings" [ref=e129]: "8"
+            - generic [ref=e132]: 5 subordinates
+            - generic [ref=e133]:
+              - generic "dev_console_backend_2" [ref=e134] [cursor=pointer]:
+                - generic [ref=e135]: backend
+                - generic [ref=e136]: backend
+                - generic "No recent errors or warnings" [ref=e138]: "0"
+              - generic "dev_console_frontend_1" [ref=e139] [cursor=pointer]:
+                - generic [ref=e140]: frontend
+                - generic [ref=e141]: frontend
+                - generic "No recent errors or warnings" [ref=e143]: "0"
+              - generic "dev_console_redis_0" [ref=e144] [cursor=pointer]:
+                - generic [ref=e145]: redis
+                - generic [ref=e146]: redis
+                - generic "No recent errors or warnings" [ref=e148]: "0"
+              - generic "dev_console_scheduler_3" [ref=e149] [cursor=pointer]:
+                - generic [ref=e150]: scheduler
+                - generic [ref=e151]: scheduler
+                - generic "8 warnings" [ref=e153]: "8"
+              - generic "dev_console_web_4" [ref=e154] [cursor=pointer]:
+                - generic [ref=e155]: web
+                - generic [ref=e156]: web
+                - generic "No recent errors or warnings" [ref=e158]: "0"
+          - generic [ref=e159]:
+            - button "⚙" [ref=e160] [cursor=pointer]
+            - button "db db 0" [ref=e161] [cursor=pointer]:
+              - img "db" [ref=e162]
+              - generic [ref=e163]: db
+              - generic "No recent errors or warnings" [ref=e165]: "0"
+            - generic [ref=e168]: 2 subordinates
+            - generic [ref=e169]:
+              - generic "dev_db_backend_1" [ref=e170] [cursor=pointer]:
+                - generic [ref=e171]: backend
+                - generic [ref=e172]: backend
+                - generic "No recent errors or warnings" [ref=e174]: "0"
+              - generic "dev_db_frontend_0" [ref=e175] [cursor=pointer]:
+                - generic [ref=e176]: frontend
+                - generic [ref=e177]: frontend
+                - generic "No recent errors or warnings" [ref=e179]: "0"
+          - generic [ref=e180]:
+            - button "⚙" [ref=e181] [cursor=pointer]
+            - button "filestash filestash 8" [ref=e182] [cursor=pointer]:
+              - img "filestash" [ref=e183]
+              - generic [ref=e184]: filestash
+              - generic "8 warnings" [ref=e186]: "8"
+            - generic [ref=e189]: 3 subordinates
+            - generic [ref=e190]:
+              - generic "dev_filestash_backend_0" [ref=e191] [cursor=pointer]:
+                - generic [ref=e192]: backend
+                - generic [ref=e193]: backend
+                - generic "No recent errors or warnings" [ref=e195]: "0"
+              - generic "dev_filestash_scheduler_1" [ref=e196] [cursor=pointer]:
+                - generic [ref=e197]: scheduler
+                - generic [ref=e198]: scheduler
+                - generic "8 warnings" [ref=e200]: "8"
+              - generic "dev_filestash_web_2" [ref=e201] [cursor=pointer]:
+                - generic [ref=e202]: web
+                - generic [ref=e203]: web
+                - generic "No recent errors or warnings" [ref=e205]: "0"
+          - generic [ref=e206]:
+            - button "⚙" [ref=e207] [cursor=pointer]
+            - button "gitea gitea 10 8" [ref=e208] [cursor=pointer]:
+              - img "gitea" [ref=e209]
+              - generic [ref=e210]: gitea
+              - generic [ref=e211]:
+                - generic "10 errors" [ref=e212]: "10"
+                - generic "8 warnings" [ref=e213]: "8"
+            - generic [ref=e216]: 4 subordinates
+            - generic [ref=e217]:
+              - generic "dev_gitea_api_2" [ref=e218] [cursor=pointer]:
+                - generic [ref=e219]: api
+                - generic [ref=e220]: api
+                - generic "No recent errors or warnings" [ref=e222]: "0"
+              - generic "dev_gitea_scheduler_0" [ref=e223] [cursor=pointer]:
+                - generic [ref=e224]: scheduler
+                - generic [ref=e225]: scheduler
+                - generic "8 warnings" [ref=e227]: "8"
+              - generic "dev_gitea_web_1" [ref=e228] [cursor=pointer]:
+                - generic [ref=e229]: web
+                - generic [ref=e230]: web
+                - generic "No recent errors or warnings" [ref=e232]: "0"
+              - generic "dev_gitea_worker_3" [ref=e233] [cursor=pointer]:
+                - generic [ref=e234]: worker
+                - generic [ref=e235]: worker
+                - generic "10 errors" [ref=e237]: "10"
+          - generic [ref=e238]:
+            - button "⚙" [ref=e239] [cursor=pointer]
+            - button "grafana grafana 10" [ref=e240] [cursor=pointer]:
+              - img "grafana" [ref=e241]
+              - generic [ref=e242]: grafana
+              - generic "10 errors" [ref=e244]: "10"
+            - generic [ref=e247]: 5 subordinates
+            - generic [ref=e248]:
+              - generic "dev_grafana_api_1" [ref=e249] [cursor=pointer]:
+                - generic [ref=e250]: api
+                - generic [ref=e251]: api
+                - generic "No recent errors or warnings" [ref=e253]: "0"
+              - generic "dev_grafana_db_3" [ref=e254] [cursor=pointer]:
+                - generic [ref=e255]: db
+                - generic [ref=e256]: db
+                - generic "No recent errors or warnings" [ref=e258]: "0"
+              - generic "dev_grafana_redis_4" [ref=e259] [cursor=pointer]:
+                - generic [ref=e260]: redis
+                - generic [ref=e261]: redis
+                - generic "No recent errors or warnings" [ref=e263]: "0"
+              - generic "dev_grafana_web_0" [ref=e264] [cursor=pointer]:
+                - generic [ref=e265]: web
+                - generic [ref=e266]: web
+                - generic "No recent errors or warnings" [ref=e268]: "0"
+              - generic "dev_grafana_worker_2" [ref=e269] [cursor=pointer]:
+                - generic [ref=e270]: worker
+                - generic [ref=e271]: worker
+                - generic "10 errors" [ref=e273]: "10"
+          - generic [ref=e274]:
+            - button "⚙" [ref=e275] [cursor=pointer]
+            - button "homer homer 10" [ref=e276] [cursor=pointer]:
+              - img "homer" [ref=e277]
+              - generic [ref=e278]: homer
+              - generic "10 errors" [ref=e280]: "10"
+            - generic [ref=e283]: 2 subordinates
+            - generic [ref=e284]:
+              - generic "dev_homer_api_0" [ref=e285] [cursor=pointer]:
+                - generic [ref=e286]: api
+                - generic [ref=e287]: api
+                - generic "No recent errors or warnings" [ref=e289]: "0"
+              - generic "dev_homer_worker_1" [ref=e290] [cursor=pointer]:
+                - generic [ref=e291]: worker
+                - generic [ref=e292]: worker
+                - generic "10 errors" [ref=e294]: "10"
+          - generic [ref=e295]:
+            - button "⚙" [ref=e296] [cursor=pointer]
+            - button "infinite infinite 10" [ref=e297] [cursor=pointer]:
+              - img "infinite" [ref=e298]
+              - generic [ref=e299]: infinite
+              - generic "10 errors" [ref=e301]: "10"
+            - generic [ref=e304]: 3 subordinates
+            - generic [ref=e305]:
+              - generic "dev_infinite_db_1" [ref=e306] [cursor=pointer]:
+                - generic [ref=e307]: db
+                - generic [ref=e308]: db
+                - generic "No recent errors or warnings" [ref=e310]: "0"
+              - generic "dev_infinite_redis_2" [ref=e311] [cursor=pointer]:
+                - generic [ref=e312]: redis
+                - generic [ref=e313]: redis
+                - generic "No recent errors or warnings" [ref=e315]: "0"
+              - generic "dev_infinite_worker_0" [ref=e316] [cursor=pointer]:
+                - generic [ref=e317]: worker
+                - generic [ref=e318]: worker
+                - generic "10 errors" [ref=e320]: "10"
+          - generic [ref=e321]:
+            - button "⚙" [ref=e322] [cursor=pointer]
+            - button "n8n n8n 14" [ref=e323] [cursor=pointer]:
+              - img "n8n" [ref=e324]
+              - generic [ref=e325]: n8n
+              - generic "14 warnings" [ref=e327]: "14"
+            - generic [ref=e330]: 4 subordinates
+            - generic [ref=e331]:
+              - generic "dev_n8n_backend_3" [ref=e332] [cursor=pointer]:
+                - generic [ref=e333]: backend
+                - generic [ref=e334]: backend
+                - generic "No recent errors or warnings" [ref=e336]: "0"
+              - generic "dev_n8n_db_0" [ref=e337] [cursor=pointer]:
+                - generic [ref=e338]: db
+                - generic [ref=e339]: db
+                - generic "No recent errors or warnings" [ref=e341]: "0"
+              - generic "dev_n8n_frontend_2" [ref=e342] [cursor=pointer]:
+                - generic [ref=e343]: frontend
+                - generic [ref=e344]: frontend
+                - generic "14 warnings" [ref=e346]: "14"
+              - generic "dev_n8n_redis_1" [ref=e347] [cursor=pointer]:
+                - generic [ref=e348]: redis
+                - generic [ref=e349]: redis
+                - generic "No recent errors or warnings" [ref=e351]: "0"
+          - generic [ref=e352]:
+            - button "⚙" [ref=e353] [cursor=pointer]
+            - button "portainer portainer 14" [ref=e354] [cursor=pointer]:
+              - img "portainer" [ref=e355]
+              - generic [ref=e356]: portainer
+              - generic "14 warnings" [ref=e358]: "14"
+            - generic [ref=e361]: 5 subordinates
+            - generic [ref=e362]:
+              - generic "dev_portainer_backend_2" [ref=e363] [cursor=pointer]:
+                - generic [ref=e364]: backend
+                - generic [ref=e365]: backend
+                - generic "No recent errors or warnings" [ref=e367]: "0"
+              - generic "dev_portainer_frontend_1" [ref=e368] [cursor=pointer]:
+                - generic [ref=e369]: frontend
+                - generic [ref=e370]: frontend
+                - generic "14 warnings" [ref=e372]: "14"
+              - generic "dev_portainer_redis_0" [ref=e373] [cursor=pointer]:
+                - generic [ref=e374]: redis
+                - generic [ref=e375]: redis
+                - generic "No recent errors or warnings" [ref=e377]: "0"
+              - generic "dev_portainer_scheduler_3" [ref=e378] [cursor=pointer]:
+                - generic [ref=e379]: scheduler
+                - generic [ref=e380]: scheduler
+                - generic "No recent errors or warnings" [ref=e382]: "0"
+              - generic "dev_portainer_web_4" [ref=e383] [cursor=pointer]:
+                - generic [ref=e384]: web
+                - generic [ref=e385]: web
+                - generic "No recent errors or warnings" [ref=e387]: "0"
+          - generic [ref=e388]:
+            - button "⚙" [ref=e389] [cursor=pointer]
+            - button "postgres postgres 14" [ref=e390] [cursor=pointer]:
+              - img "postgres" [ref=e391]
+              - generic [ref=e392]: postgres
+              - generic "14 warnings" [ref=e394]: "14"
+            - generic [ref=e397]: 2 subordinates
+            - generic [ref=e398]:
+              - generic "dev_postgres_backend_1" [ref=e399] [cursor=pointer]:
+                - generic [ref=e400]: backend
+                - generic [ref=e401]: backend
+                - generic "No recent errors or warnings" [ref=e403]: "0"
+              - generic "dev_postgres_frontend_0" [ref=e404] [cursor=pointer]:
+                - generic [ref=e405]: frontend
+                - generic [ref=e406]: frontend
+                - generic "14 warnings" [ref=e408]: "14"
+          - generic [ref=e409]:
+            - button "⚙" [ref=e410] [cursor=pointer]
+            - button "prometheus prometheus 0" [ref=e411] [cursor=pointer]:
+              - img "prometheus" [ref=e412]
+              - generic [ref=e413]: prometheus
+              - generic "No recent errors or warnings" [ref=e415]: "0"
+            - generic [ref=e418]: 3 subordinates
+            - generic [ref=e419]:
+              - generic "dev_prometheus_backend_0" [ref=e420] [cursor=pointer]:
+                - generic [ref=e421]: backend
+                - generic [ref=e422]: backend
+                - generic "No recent errors or warnings" [ref=e424]: "0"
+              - generic "dev_prometheus_scheduler_1" [ref=e425] [cursor=pointer]:
+                - generic [ref=e426]: scheduler
+                - generic [ref=e427]: scheduler
+                - generic "No recent errors or warnings" [ref=e429]: "0"
+              - generic "dev_prometheus_web_2" [ref=e430] [cursor=pointer]:
+                - generic [ref=e431]: web
+                - generic [ref=e432]: web
+                - generic "No recent errors or warnings" [ref=e434]: "0"
+      - generic [ref=e435]:
+        - generic [ref=e436]:
+          - generic [ref=e438]:
+            - generic "forbidden" [ref=e439]: Kingdom of the Forbidden
+            - generic "filestash, gitea, grafana, homer, infinite, n8n, portainer, postgres, prometheus, redis" [ref=e440]: 10 stacks - filestash, gitea, grafana, homer, infinite, n8n, portainer, postgres, prometheus, redis
+          - generic [ref=e442]:
+            - generic "40 errors" [ref=e443]: "40"
+            - generic "38 warnings" [ref=e444]: "38"
+        - generic [ref=e445]:
+          - generic [ref=e446]:
+            - button "⚙" [ref=e447] [cursor=pointer]
+            - button "filestash filestash 0" [ref=e448] [cursor=pointer]:
+              - img "filestash" [ref=e449]
+              - generic [ref=e450]: filestash
+              - generic "No recent errors or warnings" [ref=e452]: "0"
+            - generic [ref=e455]: 3 subordinates
+            - generic [ref=e456]:
+              - generic "forbidden_filestash_db_1" [ref=e457] [cursor=pointer]:
+                - generic [ref=e458]: db
+                - generic [ref=e459]: db
+                - generic "No recent errors or warnings" [ref=e461]: "0"
+              - generic "forbidden_filestash_redis_2" [ref=e462] [cursor=pointer]:
+                - generic [ref=e463]: redis
+                - generic [ref=e464]: redis
+                - generic "No recent errors or warnings" [ref=e466]: "0"
+              - generic "forbidden_filestash_worker_0" [ref=e467] [cursor=pointer]:
+                - generic [ref=e468]: worker
+                - generic [ref=e469]: worker
+                - generic "No recent errors or warnings" [ref=e471]: "0"
+          - generic [ref=e472]:
+            - button "⚙" [ref=e473] [cursor=pointer]
+            - button "gitea gitea 0" [ref=e474] [cursor=pointer]:
+              - img "gitea" [ref=e475]
+              - generic [ref=e476]: gitea
+              - generic "No recent errors or warnings" [ref=e478]: "0"
+            - generic [ref=e481]: 4 subordinates
+            - generic [ref=e482]:
+              - generic "forbidden_gitea_backend_3" [ref=e483] [cursor=pointer]:
+                - generic [ref=e484]: backend
+                - generic [ref=e485]: backend
+                - generic "No recent errors or warnings" [ref=e487]: "0"
+              - generic "forbidden_gitea_db_0" [ref=e488] [cursor=pointer]:
+                - generic [ref=e489]: db
+                - generic [ref=e490]: db
+                - generic "No recent errors or warnings" [ref=e492]: "0"
+              - generic "forbidden_gitea_frontend_2" [ref=e493] [cursor=pointer]:
+                - generic [ref=e494]: frontend
+                - generic [ref=e495]: frontend
+                - generic "No recent errors or warnings" [ref=e497]: "0"
+              - generic "forbidden_gitea_redis_1" [ref=e498] [cursor=pointer]:
+                - generic [ref=e499]: redis
+                - generic [ref=e500]: redis
+                - generic "No recent errors or warnings" [ref=e502]: "0"
+          - generic [ref=e503]:
+            - button "⚙" [ref=e504] [cursor=pointer]
+            - button "grafana grafana 8" [ref=e505] [cursor=pointer]:
+              - img "grafana" [ref=e506]
+              - generic [ref=e507]: grafana
+              - generic "8 warnings" [ref=e509]: "8"
+            - generic [ref=e512]: 5 subordinates
+            - generic [ref=e513]:
+              - generic "forbidden_grafana_backend_2" [ref=e514] [cursor=pointer]:
+                - generic [ref=e515]: backend
+                - generic [ref=e516]: backend
+                - generic "No recent errors or warnings" [ref=e518]: "0"
+              - generic "forbidden_grafana_frontend_1" [ref=e519] [cursor=pointer]:
+                - generic [ref=e520]: frontend
+                - generic [ref=e521]: frontend
+                - generic "No recent errors or warnings" [ref=e523]: "0"
+              - generic "forbidden_grafana_redis_0" [ref=e524] [cursor=pointer]:
+                - generic [ref=e525]: redis
+                - generic [ref=e526]: redis
+                - generic "No recent errors or warnings" [ref=e528]: "0"
+              - generic "forbidden_grafana_scheduler_3" [ref=e529] [cursor=pointer]:
+                - generic [ref=e530]: scheduler
+                - generic [ref=e531]: scheduler
+                - generic "8 warnings" [ref=e533]: "8"
+              - generic "forbidden_grafana_web_4" [ref=e534] [cursor=pointer]:
+                - generic [ref=e535]: web
+                - generic [ref=e536]: web
+                - generic "No recent errors or warnings" [ref=e538]: "0"
+          - generic [ref=e539]:
+            - button "⚙" [ref=e540] [cursor=pointer]
+            - button "homer homer 0" [ref=e541] [cursor=pointer]:
+              - img "homer" [ref=e542]
+              - generic [ref=e543]: homer
+              - generic "No recent errors or warnings" [ref=e545]: "0"
+            - generic [ref=e548]: 2 subordinates
+            - generic [ref=e549]:
+              - generic "forbidden_homer_backend_1" [ref=e550] [cursor=pointer]:
+                - generic [ref=e551]: backend
+                - generic [ref=e552]: backend
+                - generic "No recent errors or warnings" [ref=e554]: "0"
+              - generic "forbidden_homer_frontend_0" [ref=e555] [cursor=pointer]:
+                - generic [ref=e556]: frontend
+                - generic [ref=e557]: frontend
+                - generic "No recent errors or warnings" [ref=e559]: "0"
+          - generic [ref=e560]:
+            - button "⚙" [ref=e561] [cursor=pointer]
+            - button "infinite infinite 8" [ref=e562] [cursor=pointer]:
+              - img "infinite" [ref=e563]
+              - generic [ref=e564]: infinite
+              - generic "8 warnings" [ref=e566]: "8"
+            - generic [ref=e569]: 3 subordinates
+            - generic [ref=e570]:
+              - generic "forbidden_infinite_backend_0" [ref=e571] [cursor=pointer]:
+                - generic [ref=e572]: backend
+                - generic [ref=e573]: backend
+                - generic "No recent errors or warnings" [ref=e575]: "0"
+              - generic "forbidden_infinite_scheduler_1" [ref=e576] [cursor=pointer]:
+                - generic [ref=e577]: scheduler
+                - generic [ref=e578]: scheduler
+                - generic "8 warnings" [ref=e580]: "8"
+              - generic "forbidden_infinite_web_2" [ref=e581] [cursor=pointer]:
+                - generic [ref=e582]: web
+                - generic [ref=e583]: web
+                - generic "No recent errors or warnings" [ref=e585]: "0"
+          - generic [ref=e586]:
+            - button "⚙" [ref=e587] [cursor=pointer]
+            - button "n8n n8n 10 8" [ref=e588] [cursor=pointer]:
+              - img "n8n" [ref=e589]
+              - generic [ref=e590]: n8n
+              - generic [ref=e591]:
+                - generic "10 errors" [ref=e592]: "10"
+                - generic "8 warnings" [ref=e593]: "8"
+            - generic [ref=e596]: 4 subordinates
+            - generic [ref=e597]:
+              - generic "forbidden_n8n_api_2" [ref=e598] [cursor=pointer]:
+                - generic [ref=e599]: api
+                - generic [ref=e600]: api
+                - generic "No recent errors or warnings" [ref=e602]: "0"
+              - generic "forbidden_n8n_scheduler_0" [ref=e603] [cursor=pointer]:
+                - generic [ref=e604]: scheduler
+                - generic [ref=e605]: scheduler
+                - generic "8 warnings" [ref=e607]: "8"
+              - generic "forbidden_n8n_web_1" [ref=e608] [cursor=pointer]:
+                - generic [ref=e609]: web
+                - generic [ref=e610]: web
+                - generic "No recent errors or warnings" [ref=e612]: "0"
+              - generic "forbidden_n8n_worker_3" [ref=e613] [cursor=pointer]:
+                - generic [ref=e614]: worker
+                - generic [ref=e615]: worker
+                - generic "10 errors" [ref=e617]: "10"
+          - generic [ref=e618]:
+            - button "⚙" [ref=e619] [cursor=pointer]
+            - button "portainer portainer 10" [ref=e620] [cursor=pointer]:
+              - img "portainer" [ref=e621]
+              - generic [ref=e622]: portainer
+              - generic "10 errors" [ref=e624]: "10"
+            - generic [ref=e627]: 5 subordinates
+            - generic [ref=e628]:
+              - generic "forbidden_portainer_api_1" [ref=e629] [cursor=pointer]:
+                - generic [ref=e630]: api
+                - generic [ref=e631]: api
+                - generic "No recent errors or warnings" [ref=e633]: "0"
+              - generic "forbidden_portainer_db_3" [ref=e634] [cursor=pointer]:
+                - generic [ref=e635]: db
+                - generic [ref=e636]: db
+                - generic "No recent errors or warnings" [ref=e638]: "0"
+              - generic "forbidden_portainer_redis_4" [ref=e639] [cursor=pointer]:
+                - generic [ref=e640]: redis
+                - generic [ref=e641]: redis
+                - generic "No recent errors or warnings" [ref=e643]: "0"
+              - generic "forbidden_portainer_web_0" [ref=e644] [cursor=pointer]:
+                - generic [ref=e645]: web
+                - generic [ref=e646]: web
+                - generic "No recent errors or warnings" [ref=e648]: "0"
+              - generic "forbidden_portainer_worker_2" [ref=e649] [cursor=pointer]:
+                - generic [ref=e650]: worker
+                - generic [ref=e651]: worker
+                - generic "10 errors" [ref=e653]: "10"
+          - generic [ref=e654]:
+            - button "⚙" [ref=e655] [cursor=pointer]
+            - button "postgres postgres 10" [ref=e656] [cursor=pointer]:
+              - img "postgres" [ref=e657]
+              - generic [ref=e658]: postgres
+              - generic "10 errors" [ref=e660]: "10"
+            - generic [ref=e663]: 2 subordinates
+            - generic [ref=e664]:
+              - generic "forbidden_postgres_api_0" [ref=e665] [cursor=pointer]:
+                - generic [ref=e666]: api
+                - generic [ref=e667]: api
+                - generic "No recent errors or warnings" [ref=e669]: "0"
+              - generic "forbidden_postgres_worker_1" [ref=e670] [cursor=pointer]:
+                - generic [ref=e671]: worker
+                - generic [ref=e672]: worker
+                - generic "10 errors" [ref=e674]: "10"
+          - generic [ref=e675]:
+            - button "⚙" [ref=e676] [cursor=pointer]
+            - button "prometheus prometheus 10" [ref=e677] [cursor=pointer]:
+              - img "prometheus" [ref=e678]
+              - generic [ref=e679]: prometheus
+              - generic "10 errors" [ref=e681]: "10"
+            - generic [ref=e684]: 3 subordinates
+            - generic [ref=e685]:
+              - generic "forbidden_prometheus_db_1" [ref=e686] [cursor=pointer]:
+                - generic [ref=e687]: db
+                - generic [ref=e688]: db
+                - generic "No recent errors or warnings" [ref=e690]: "0"
+              - generic "forbidden_prometheus_redis_2" [ref=e691] [cursor=pointer]:
+                - generic [ref=e692]: redis
+                - generic [ref=e693]: redis
+                - generic "No recent errors or warnings" [ref=e695]: "0"
+              - generic "forbidden_prometheus_worker_0" [ref=e696] [cursor=pointer]:
+                - generic [ref=e697]: worker
+                - generic [ref=e698]: worker
+                - generic "10 errors" [ref=e700]: "10"
+          - generic [ref=e701]:
+            - button "⚙" [ref=e702] [cursor=pointer]
+            - button "redis redis 14" [ref=e703] [cursor=pointer]:
+              - img "redis" [ref=e704]
+              - generic [ref=e705]: redis
+              - generic "14 warnings" [ref=e707]: "14"
+            - generic [ref=e710]: 4 subordinates
+            - generic [ref=e711]:
+              - generic "forbidden_redis_backend_3" [ref=e712] [cursor=pointer]:
+                - generic [ref=e713]: backend
+                - generic [ref=e714]: backend
+                - generic "No recent errors or warnings" [ref=e716]: "0"
+              - generic "forbidden_redis_db_0" [ref=e717] [cursor=pointer]:
+                - generic [ref=e718]: db
+                - generic [ref=e719]: db
+                - generic "No recent errors or warnings" [ref=e721]: "0"
+              - generic "forbidden_redis_frontend_2" [ref=e722] [cursor=pointer]:
+                - generic [ref=e723]: frontend
+                - generic [ref=e724]: frontend
+                - generic "14 warnings" [ref=e726]: "14"
+              - generic "forbidden_redis_redis_1" [ref=e727] [cursor=pointer]:
+                - generic [ref=e728]: redis
+                - generic [ref=e729]: redis
+                - generic "No recent errors or warnings" [ref=e731]: "0"
+    - complementary [ref=e732]:
+      - generic [ref=e733]:
+        - generic:
+          - generic: RAVEN
+          - generic: live
+      - generic [ref=e736]:
+        - generic [ref=e737]: â€”
+        - generic [ref=e738]: Waiting for activityâ€¦
+      - generic [ref=e739]:
+        - button "All" [ref=e740] [cursor=pointer]
+        - button "Critical" [ref=e741] [cursor=pointer]
+        - button "Errors" [ref=e742] [cursor=pointer]
+        - button "Warnings" [ref=e743] [cursor=pointer]
+      - generic [ref=e745]: No issues found yet.
+      - generic "Drag to resize Raven and Oracle" [ref=e746]
+      - generic [ref=e747]:
+        - generic [ref=e748]:
+          - generic [ref=e749]: THE ORACLE
+          - button "Activate" [ref=e750] [cursor=pointer]
+        - generic [ref=e751]: Review the last hour of warnings and errors on demand, then get the top three problems worth researching and fixing first.
+        - generic [ref=e752]: Ready to review the last hour of events.

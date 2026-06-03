@@ -1,55 +1,4 @@
-import json
-import os
-import re
-from collections import Counter
-from contextlib import asynccontextmanager
-from dataclasses import asdict
-from datetime import datetime, timedelta, timezone
-
-import httpx
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-from sqlalchemy import func, text as _sa_text
-
-from .config import REDIS_URL, REPO_ROOT
-from .db import Connection, ObservedEvent, SessionLocal, init_db
-from .raven import CHANNEL
-from .portainer import PortainerClient
-from .registry import load_registry
-
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
-DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
-_ORACLE_UUID_RE = re.compile(r"\b[0-9a-f]{8,}\b", re.I)
-_ORACLE_NUM_RE = re.compile(r"\b\d+\b")
-
-
-# ---------------------------------------------------------------------------
-# Pydantic schemas
-# ---------------------------------------------------------------------------
-
-class ConnectionIn(BaseModel):
-    name: str
-    type: str = "portainer"
-    base_url: str
-    api_token: str = ""
-    enabled: bool = True
-    poll_interval_seconds: int | None = None
-    server_name: str = ""
-    logo_data: str = ""
-
-
-class ConnectionTestIn(BaseModel):
-    base_url: str
-    api_token: str
-
-
-# ---------------------------------------------------------------------------
-# App HTML
-# ---------------------------------------------------------------------------
-
-_HTML = """<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -81,7 +30,7 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
 /* STACK MAP */
 #pane-map,#pane-network{position:relative;min-height:calc(100vh - 92px);padding:12px;border-radius:14px;overflow:hidden;background:
   linear-gradient(rgba(13,17,23,.18),rgba(13,17,23,.34)),
-  url('/assets/kingdoms/pale-strategy-map.png') center/cover no-repeat;
+  url('/kingdoms/pale-strategy-map.png') center/cover no-repeat;
 box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 #pane-map::before,#pane-network::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at center,rgba(255,255,255,.04),rgba(13,17,23,.06) 52%,rgba(13,17,23,.18) 100%);pointer-events:none}
 #pane-overview{min-height:calc(100vh - 92px);padding:12px;background:#0f141b}
@@ -272,7 +221,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 </head>
 <body>
 <nav class="nav">
-  <span class="brand"><span class="brand-mark"><img src="/assets/characters/orc.png" alt=""></span><span>ORC</span></span>
+  <span class="brand"><span class="brand-mark"><img src="/characters/orc.png" alt=""></span><span>ORC</span></span>
   <div class="tabs">
     <button class="tab on" id="tab-map" onclick="showTab('map')">Map</button>
     <button class="tab" id="tab-overview" onclick="showTab('overview')">Overview</button>
@@ -282,12 +231,12 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   </div>
   <div class="nav-r">
     <span class="sp"><span class="dot" id="api-dot"></span><span id="api-txt">API</span></span>
-    <span class="sp"><span id="srv-txt" style="color:var(--mut)">—</span> <span style="color:var(--mut)">srv</span></span>
+    <span class="sp"><span id="srv-txt" style="color:var(--mut)">â€”</span> <span style="color:var(--mut)">srv</span></span>
     <span class="sp" style="cursor:pointer" onclick="showTab('events');setEvFilter('severity','error')">
-      <span id="err-cnt" class="se2">—</span><span class="muted"> err</span>
+      <span id="err-cnt" class="se2">â€”</span><span class="muted"> err</span>
     </span>
     <span class="sp" style="cursor:pointer" onclick="showTab('events');setEvFilter('severity','warning')">
-      <span id="warn-cnt" class="sw2">—</span><span class="muted"> warn</span>
+      <span id="warn-cnt" class="sw2">â€”</span><span class="muted"> warn</span>
     </span>
     <select class="nav-sel" id="window-hours" onchange="setWindowHours(this.value)" title="Issue time window">
       <option value="1">1 hour</option>
@@ -304,7 +253,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 
   <!-- MAP -->
   <div class="pane on" id="pane-map">
-    <div class="map-grid" id="map-grid"><div class="empty">Loading stack map…</div></div>
+    <div class="map-grid" id="map-grid"><div class="empty">Loading stack mapâ€¦</div></div>
   </div>
 
   <!-- OVERVIEW -->
@@ -335,11 +284,11 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
         <select id="ev-server" onchange="setEvFilter('server',this.value)" style="background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.76rem;padding:3px 8px;cursor:pointer">
           <option value="">All servers</option>
         </select>
-        <input id="ev-container" placeholder="Container…" oninput="setEvFilter('container',this.value)"
+        <input id="ev-container" placeholder="Containerâ€¦" oninput="setEvFilter('container',this.value)"
           style="background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.76rem;padding:3px 8px;width:120px;outline:none">
         <button class="fbtn" onclick="clearEvFilters()" id="ev-clear" style="display:none">&#215; Clear</button>
       </div>
-      <div id="ev-body"><div class="empty">Loading…</div></div>
+      <div id="ev-body"><div class="empty">Loadingâ€¦</div></div>
     </div>
   </div>
 
@@ -350,7 +299,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
         <div style="font-weight:600">Portainer Connections</div>
         <button class="btnp" onclick="openModal()">+ Add Connection</button>
       </div>
-      <div id="conn-body"><div class="empty">Loading…</div></div>
+      <div id="conn-body"><div class="empty">Loadingâ€¦</div></div>
     </div>
   </div>
 
@@ -360,14 +309,14 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 <aside class="aside">
   <div class="hb-wrap">
     <div class="hb-lbl">
-      <span class="hb-title"><img class="raven-mark" src="/assets/kingdoms/raven.png" alt="">RAVEN</span>
-      <span class="hb-st" id="hb-status">connecting…</span>
+      <span class="hb-title"><img class="raven-mark" src="/kingdoms/raven.png" alt="">RAVEN</span>
+      <span class="hb-st" id="hb-status">connectingâ€¦</span>
     </div>
     <div class="hb-canvas-wrap"><canvas id="hb-cv" height="48"></canvas></div>
   </div>
   <div class="raven-sl" id="raven-sl">
-    <span class="sl-icon" id="sl-icon">—</span>
-    <span class="sl-txt" id="sl-txt">Waiting for activity…</span>
+    <span class="sl-icon" id="sl-icon">â€”</span>
+    <span class="sl-txt" id="sl-txt">Waiting for activityâ€¦</span>
   </div>
   <div class="feed-hdr">
     <button class="ff on" id="rf-all" onclick="setRF('')">All</button>
@@ -379,7 +328,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   <div class="oracle-resizer" id="oracle-resizer" title="Drag to resize Raven and Oracle"></div>
   <div class="oracle">
     <div class="oracle-hdr">
-      <span class="oracle-title"><img class="oracle-mark" src="/assets/kingdoms/oracle.png" alt="">THE ORACLE</span>
+      <span class="oracle-title"><img class="oracle-mark" src="/kingdoms/oracle.png" alt="">THE ORACLE</span>
       <button class="btns" id="oracle-btn" onclick="runOracle()">Activate</button>
     </div>
     <div class="oracle-meta">Review the last hour of warnings and errors on demand, then get the top three problems worth researching and fixing first.</div>
@@ -406,7 +355,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     <div class="fg"><label>Type</label><select id="f-type"><option value="portainer">Portainer</option></select></div>
     <div class="fg"><label>URL</label><input id="f-url" type="text" placeholder="https://portainer.example.com" required></div>
     <div class="fg"><label id="f-tl">API Token</label><input id="f-tok" type="password" placeholder="API token"></div>
-    <div class="fg"><label>Poll interval (seconds per container)</label><input id="f-interval" type="number" min="1" max="120" placeholder="Auto (100 ÷ containers)"></div>
+    <div class="fg"><label>Poll interval (seconds per container)</label><input id="f-interval" type="number" min="1" max="120" placeholder="Auto (100 Ã· containers)"></div>
     <div class="fg"><label style="display:flex;align-items:center;gap:8px;color:var(--txt)"><input id="f-en" type="checkbox" checked> Enabled</label></div>
     <div id="tr" style="display:none"></div>
   </div>
@@ -441,6 +390,45 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 </dialog>
 
 <script>
+(()=>{
+  const servers=[['dev','Kingdom of Dev'],['forbidden','Kingdom of the Forbidden']];
+  const stacks=['admin-api','admin-ui','atlas','console','db','filestash','gitea','grafana','homer','infinite','n8n','portainer','postgres','prometheus','redis','registry','traefik','vault'];
+  const types=['api','worker','db','redis','frontend','backend','scheduler','web'];
+  const makeContainers=(server,stack,idx)=>Array.from({length:2+(idx%4)},(_,i)=>({
+    name:types[(i+idx)%types.length],
+    full_name:`${server}_${stack}_${types[(i+idx)%types.length]}_${i}`,
+    type:types[(i+idx)%types.length],
+    errors:(idx+i)%9===0?idx+i+1:0,
+    warnings:(idx+i)%6===0?idx+i+2:0
+  }));
+  const mockStacks=[];
+  servers.forEach(([server,server_name],si)=>{
+    const count=si===0?14:10;
+    for(let i=0;i<count;i++){
+      const stack=stacks[(i+si*5)%stacks.length];
+      mockStacks.push({
+        name:stack,server,server_name,server_logo:'',
+        character:['orc','wizard','elf','corp-db','corp-worker','sorceress','warrior','dwarf'][(i+si)%8],
+        containers:makeContainers(server,stack,i+si)
+      });
+    }
+  });
+  const json=(data)=>Promise.resolve({ok:true,json:async()=>data,text:async()=>JSON.stringify(data)});
+  window.fetch=(input)=>{
+    const url=String(input);
+    if(url.includes('/overview'))return json({hours:24,stacks:mockStacks});
+    if(url.includes('/health'))return json({status:'ok',connections:{ok:2,total:2}});
+    if(url.includes('/events'))return json({err_count:33,warn_count:11,items:[]});
+    if(url.includes('/connections'))return json(servers.map(([name,server_name],id)=>({id,name,server_name,logo_data:'',last_status:'ok'})));
+    if(url.includes('/raven/backlog'))return json([]);
+    if(url.includes('/oracle'))return json({summary:null,analysis:'Preview only'});
+    return json({});
+  };
+  window.EventSource=class{constructor(){setTimeout(()=>this.onopen&&this.onopen({}),10)}close(){}};
+  window.addEventListener('load',()=>setTimeout(()=>showTab('network'),180));
+})();
+</script>
+<script>
 /* ============================================================
    STATE
    ============================================================ */
@@ -457,32 +445,32 @@ const MAX_ISSUE_PILLS=20;
    CHARACTER ASSETS
    ============================================================ */
 const CHARACTERS=[
-  {id:'orc',label:'Orc',src:'/assets/characters/orc.png'},
-  {id:'wizard',label:'Wizard',src:'/assets/characters/wizard.png'},
-  {id:'elf',label:'Elf',src:'/assets/characters/elf.png'},
-  {id:'warrior',label:'Warrior',src:'/assets/characters/warrior.png'},
-  {id:'fighter',label:'Fighter',src:'/assets/characters/fighter.png'},
-  {id:'dwarf',label:'Dwarf',src:'/assets/characters/dwarf.png'},
-  {id:'rogue',label:'Rogue',src:'/assets/characters/rogue.png'},
-  {id:'cleric',label:'Cleric',src:'/assets/characters/cleric.png'},
-  {id:'bard',label:'Bard',src:'/assets/characters/bard.png'},
-  {id:'farmer',label:'Farmer',src:'/assets/characters/farmer.png'},
-  {id:'vendor',label:'Vendor',src:'/assets/characters/vendor.png'},
-  {id:'blacksmith',label:'Blacksmith',src:'/assets/characters/blacksmith.png'},
-  {id:'shepherd',label:'Shepherd',src:'/assets/characters/shepherd.png'},
-  {id:'herder',label:'Herder',src:'/assets/characters/herder.png'},
-  {id:'sorceress',label:'Sorceress',src:'/assets/characters/sorceress.png'},
-  {id:'corp-db',label:'Database',src:'/assets/characters/corporate-worker-0.png'},
-  {id:'corp-worker',label:'Worker App',src:'/assets/characters/corporate-worker-1.png'},
-  {id:'corp-redis',label:'Redis',src:'/assets/characters/corporate-worker-2.png'},
-  {id:'corp-ui',label:'UI Panel',src:'/assets/characters/corporate-worker-3.png'}
+  {id:'orc',label:'Orc',src:'/characters/orc.png'},
+  {id:'wizard',label:'Wizard',src:'/characters/wizard.png'},
+  {id:'elf',label:'Elf',src:'/characters/elf.png'},
+  {id:'warrior',label:'Warrior',src:'/characters/warrior.png'},
+  {id:'fighter',label:'Fighter',src:'/characters/fighter.png'},
+  {id:'dwarf',label:'Dwarf',src:'/characters/dwarf.png'},
+  {id:'rogue',label:'Rogue',src:'/characters/rogue.png'},
+  {id:'cleric',label:'Cleric',src:'/characters/cleric.png'},
+  {id:'bard',label:'Bard',src:'/characters/bard.png'},
+  {id:'farmer',label:'Farmer',src:'/characters/farmer.png'},
+  {id:'vendor',label:'Vendor',src:'/characters/vendor.png'},
+  {id:'blacksmith',label:'Blacksmith',src:'/characters/blacksmith.png'},
+  {id:'shepherd',label:'Shepherd',src:'/characters/shepherd.png'},
+  {id:'herder',label:'Herder',src:'/characters/herder.png'},
+  {id:'sorceress',label:'Sorceress',src:'/characters/sorceress.png'},
+  {id:'corp-db',label:'Database',src:'/characters/corporate-worker-0.png'},
+  {id:'corp-worker',label:'Worker App',src:'/characters/corporate-worker-1.png'},
+  {id:'corp-redis',label:'Redis',src:'/characters/corporate-worker-2.png'},
+  {id:'corp-ui',label:'UI Panel',src:'/characters/corporate-worker-3.png'}
 ];
 const CHARACTER_BY_ID=Object.fromEntries(CHARACTERS.map(c=>[c.id,c]));
 const WORKER_ASSETS=[
-  '/assets/characters/worker-medieval-0.png',
-  '/assets/characters/worker-medieval-1.png',
-  '/assets/characters/worker-medieval-2.png',
-  '/assets/characters/worker-medieval-3.png'
+  '/characters/worker-medieval-0.png',
+  '/characters/worker-medieval-1.png',
+  '/characters/worker-medieval-2.png',
+  '/characters/worker-medieval-3.png'
 ];
 const CHARACTER_STORAGE_PREFIX='orc.map.character.';
 const STACK_STORAGE_PREFIX='orc.stack.';
@@ -697,7 +685,7 @@ async function loadStatus(){
     document.getElementById('api-txt').textContent=d.status;
     document.getElementById('api-dot').className='dot ok';
     const c=d.connections;
-    document.getElementById('srv-txt').textContent=c.total?`${c.ok}/${c.total}`:'—';
+    document.getElementById('srv-txt').textContent=c.total?`${c.ok}/${c.total}`:'â€”';
   }catch{
     document.getElementById('api-txt').textContent='err';
     document.getElementById('api-dot').className='dot er';
@@ -751,8 +739,8 @@ function renderStackGrid(stacks,targetId,mode){
     const kingdomCls=totals.errors>0?'er':totals.warnings>0?'warn':'';
     const stackList=k.stacks.map(s=>stackFriendlyName(s)).join(', ');
     const kIcon=corporate
-      ? `<img class="kingdom-logo" src="${esc(serverLogo(k)||'/assets/kingdoms/castle.png')}" alt="">`
-      : `<img class="kingdom-castle" src="/assets/kingdoms/castle.png" alt="">`;
+      ? `<img class="kingdom-logo" src="${esc(serverLogo(k)||'/kingdoms/castle.png')}" alt="">`
+      : `<img class="kingdom-castle" src="/kingdoms/castle.png" alt="">`;
     const stackCards=k.stacks.map(stack=>{
       stack.containers.sort((a,b)=>a.type.localeCompare(b.type)||a.name.localeCompare(b.name));
       const stackTotals=stack.containers.reduce((acc,app)=>{const c=issueCounts(app);acc.errors+=c.errors;acc.warnings+=c.warnings;return acc;},{errors:0,warnings:0});
@@ -938,7 +926,7 @@ function renderNetwork(stacks){
   stage.innerHTML=kingdoms.map(k=>{
     const totals=k.stacks.reduce((acc,stack)=>{stack.containers.forEach(app=>{const c=issueCounts(app);acc.errors+=c.errors;acc.warnings+=c.warnings;});return acc;},{errors:0,warnings:0});
     const kingdomCls=totals.errors>0?'er':totals.warnings>0?'warn':'';
-    const logo=serverLogo(k)||'/assets/kingdoms/castle.png';
+    const logo=serverLogo(k)||'/kingdoms/castle.png';
     const layout=layoutNetworkTopology(k);
     const lineHtml=layout.links.map(link=>{
       const cls=`${link.type==='hub'?'hub-link':''} ${link.severity}`.trim();
@@ -1046,7 +1034,7 @@ function renderEvts(){
   const S={critical:'sc2',error:'se2',warning:'sw2',info:'si2',debug:'si2'};
   if(!_evts.length){
     document.getElementById('ev-body').innerHTML=
-      `<div class="empty">${Object.values(_evFilters).some(v=>v)?'No events match these filters.':'No events yet — worker polls each connection in turn.'}</div>`;
+      `<div class="empty">${Object.values(_evFilters).some(v=>v)?'No events match these filters.':'No events yet â€” worker polls each connection in turn.'}</div>`;
     return;
   }
   const rows=_evts.map(e=>`<tr>
@@ -1070,7 +1058,7 @@ async function loadConns(){
     _populateServerDropdown();
     if(!_conns.length){document.getElementById('conn-body').innerHTML='<div class="empty">No connections yet. Add a Portainer server to start ingesting logs.</div>';return;}
     const rows=_conns.map(c=>{
-      const st=c.last_status==='ok'?'<span class="st-ok">&#10003; OK</span>':c.last_status==='error'?`<span class="st-er" title="${esc(c.last_error||'')}">&#10007; Error</span>`:'<span class="st-no">—</span>';
+      const st=c.last_status==='ok'?'<span class="st-ok">&#10003; OK</span>':c.last_status==='error'?`<span class="st-er" title="${esc(c.last_error||'')}">&#10007; Error</span>`:'<span class="st-no">â€”</span>';
       const logo=c.logo_data?`<img class="kingdom-logo" src="${esc(c.logo_data)}" alt="">`:'';
       const display=c.server_name||c.name;
       return `<tr${c.enabled?'':' style="opacity:.5"'}>
@@ -1110,11 +1098,11 @@ function openModal(id){
   document.getElementById('dlg').showModal();
 }
 function closeDlg(){document.getElementById('dlg').close();}
-function showTr(ok,msg){const el=document.getElementById('tr');el.style.display='block';el.className='tr '+(ok===true?'tr-ok':ok===false?'tr-er':'tr-no');el.textContent=(ok===true?'✓ ':ok===false?'✗ ':'')+msg;}
+function showTr(ok,msg){const el=document.getElementById('tr');el.style.display='block';el.className='tr '+(ok===true?'tr-ok':ok===false?'tr-er':'tr-no');el.textContent=(ok===true?'âœ“ ':ok===false?'âœ— ':'')+msg;}
 async function testDlg(){
   const url=document.getElementById('f-url').value.trim(),tok=document.getElementById('f-tok').value;
   if(!url){showTr(false,'Enter a URL first.');return;}
-  showTr(null,'Testing…');
+  showTr(null,'Testingâ€¦');
   try{
     let d;
     if(tok){d=await fetch('/connections/test-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_url:url,api_token:tok})}).then(r=>r.json());}
@@ -1138,11 +1126,11 @@ async function saveDlg(){
     closeDlg();await loadAll();
   }catch(e){showTr(false,'Save failed: '+e.message);}
 }
-async function testEx(id,btn){const o=btn.textContent;btn.textContent='…';btn.disabled=true;try{const d=await fetch(`/connections/${id}/test`,{method:'POST'}).then(r=>r.json());alert(d.ok?'✓ Connection successful!':'✗ '+(d.error||'Failed'));await loadConns();}finally{btn.textContent=o;btn.disabled=false;}}
+async function testEx(id,btn){const o=btn.textContent;btn.textContent='â€¦';btn.disabled=true;try{const d=await fetch(`/connections/${id}/test`,{method:'POST'}).then(r=>r.json());alert(d.ok?'âœ“ Connection successful!':'âœ— '+(d.error||'Failed'));await loadConns();}finally{btn.textContent=o;btn.disabled=false;}}
 async function delConn(id){if(!confirm('Delete this connection?'))return;await fetch(`/connections/${id}`,{method:'DELETE'});await loadConns();}
 async function pollNow(id,btn){
-  const o=btn.textContent;btn.textContent='…';btn.disabled=true;
-  try{const d=await fetch(`/connections/${id}/poll`,{method:'POST'}).then(r=>r.json());if(!d.ok)alert('✗ '+(d.error||'Poll failed'));await loadConns();}
+  const o=btn.textContent;btn.textContent='â€¦';btn.disabled=true;
+  try{const d=await fetch(`/connections/${id}/poll`,{method:'POST'}).then(r=>r.json());if(!d.ok)alert('âœ— '+(d.error||'Poll failed'));await loadConns();}
   catch(e){alert('Error: '+e.message);}
   finally{btn.textContent=o;btn.disabled=false;}
 }
@@ -1250,7 +1238,7 @@ function issuePillHtml(msg,opacity,isCurrent){
     </div>`;
   }
   if(msg.type==='poll_error')
-    return `<div class="pill p-error" style="${style}">✗ <strong>${esc(msg.server)}</strong><div style="font-size:.72rem;margin-top:2px;opacity:.85">${esc(msg.error||'')}</div></div>`;
+    return `<div class="pill p-error" style="${style}">âœ— <strong>${esc(msg.server)}</strong><div style="font-size:.72rem;margin-top:2px;opacity:.85">${esc(msg.error||'')}</div></div>`;
   if(msg.type==='container_result'){
     const ne=msg.errors||0,nw=msg.warnings||0;
     let cls,detail,sev;
@@ -1273,9 +1261,9 @@ function renderFeed(){
 }
 function handleRaven(msg){
   switch(msg.type){
-    case 'no_connections': setStatus('—','No connections configured.',false); break;
-    case 'queue_ready':{const iv=msg.interval?` · ${msg.interval}s/ctr`:'';setStatus('▶',`Scanning ${msg.containers} containers${iv}`,true);break;}
-    case 'container_checking': setStatus('🔍',`Checking ${msg.container} on ${msg.server}`,true); break;
+    case 'no_connections': setStatus('â€”','No connections configured.',false); break;
+    case 'queue_ready':{const iv=msg.interval?` Â· ${msg.interval}s/ctr`:'';setStatus('â–¶',`Scanning ${msg.containers} containers${iv}`,true);break;}
+    case 'container_checking': setStatus('ðŸ”',`Checking ${msg.container} on ${msg.server}`,true); break;
     case 'issue_event':{
       const sev=msg.severity||'error';
       _hbBucket+=1;
@@ -1286,12 +1274,12 @@ function handleRaven(msg){
     case 'container_result':{
       const ne=msg.errors||0,nw=msg.warnings||0;
       if(!msg.issue_events)_hbBucket+=ne+nw;
-      if(ne>0){setStatus('⚠',`${msg.container} · ${ne} new error${ne!==1?'s':''}`,true);addIssuePill(msg);}
-      else if(nw>0){setStatus('⚠',`${msg.container} · ${nw} new warning${nw!==1?'s':''}`,true);addIssuePill(msg);}
-      else setStatus('✓',`${msg.container} · no new issues`,true);
+      if(ne>0){setStatus('âš ',`${msg.container} Â· ${ne} new error${ne!==1?'s':''}`,true);addIssuePill(msg);}
+      else if(nw>0){setStatus('âš ',`${msg.container} Â· ${nw} new warning${nw!==1?'s':''}`,true);addIssuePill(msg);}
+      else setStatus('âœ“',`${msg.container} Â· no new issues`,true);
       break;
     }
-    case 'poll_error': setStatus('✗',`${msg.server}: ${msg.error||'connection failed'}`,true);addIssuePill(msg); break;
+    case 'poll_error': setStatus('âœ—',`${msg.server}: ${msg.error||'connection failed'}`,true);addIssuePill(msg); break;
   }
 }
 
@@ -1312,7 +1300,7 @@ function drawHb(){
   d.forEach((v,i)=>{const x=i*step,y=h-(v/max)*(h-6)-3;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
   ctx.lineTo((d.length-1)*step,h);ctx.lineTo(0,h);ctx.closePath();
   ctx.fillStyle=grad;ctx.fill();
-  // line — red when active, muted when idle
+  // line â€” red when active, muted when idle
   const cur=d[d.length-1];
   ctx.beginPath();
   d.forEach((v,i)=>{const x=i*step,y=h-(v/max)*(h-6)-3;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
@@ -1330,13 +1318,13 @@ setInterval(tickHb,5000);
    ============================================================ */
 function connectRaven(){
   const es=new EventSource('/raven/stream');
-  document.getElementById('hb-status').textContent='connecting…';
+  document.getElementById('hb-status').textContent='connectingâ€¦';
   es.onopen=()=>document.getElementById('hb-status').textContent='live';
   es.onmessage=e=>{
     try{const msg=JSON.parse(e.data);if(msg.type==='connected'){document.getElementById('hb-status').textContent='live';return;}handleRaven(msg);}
     catch{}
   };
-  es.onerror=()=>{document.getElementById('hb-status').textContent='reconnecting…';es.close();setTimeout(connectRaven,5000);};
+  es.onerror=()=>{document.getElementById('hb-status').textContent='reconnectingâ€¦';es.close();setTimeout(connectRaven,5000);};
 }
 
 function setupInputs(){
@@ -1387,661 +1375,4 @@ setInterval(loadAll,30000);
 connectRaven();
 </script>
 </body>
-</html>"""
-
-
-# ---------------------------------------------------------------------------
-# Lifespan
-# ---------------------------------------------------------------------------
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    init_db()
-    yield
-
-
-app = FastAPI(title="ORC API", version="0.1.0", lifespan=lifespan)
-app.mount("/assets", StaticFiles(directory=REPO_ROOT / "app" / "static"), name="assets")
-
-
-# ---------------------------------------------------------------------------
-# Routes — UI
-# ---------------------------------------------------------------------------
-
-@app.get("/", response_class=HTMLResponse, include_in_schema=False)
-def dashboard() -> str:
-    return _HTML
-
-
-# ---------------------------------------------------------------------------
-# Routes — Raven SSE stream
-# ---------------------------------------------------------------------------
-
-@app.get("/raven/stream")
-async def raven_stream() -> StreamingResponse:
-    from redis.asyncio import Redis as ARedis
-
-    async def _gen():
-        r = ARedis.from_url(REDIS_URL, decode_responses=True)
-        ps = r.pubsub()
-        await ps.subscribe(CHANNEL)
-        try:
-            yield 'data: {"type":"connected"}\n\n'
-            # Poll with 10s timeout; sends a keepalive comment on timeout so the
-            # browser connection stays alive through proxies and load balancers.
-            while True:
-                msg = await ps.get_message(ignore_subscribe_messages=True, timeout=10.0)
-                if msg and msg["type"] == "message":
-                    yield f'data: {msg["data"]}\n\n'
-                else:
-                    yield ': ka\n\n'
-        except Exception:
-            pass
-        finally:
-            try:
-                await ps.unsubscribe(CHANNEL)
-                await r.aclose()
-            except Exception:
-                pass
-
-    return StreamingResponse(
-        _gen(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
-# ---------------------------------------------------------------------------
-# Routes — Health
-# ---------------------------------------------------------------------------
-
-@app.get("/health")
-def health() -> dict:
-    with SessionLocal() as s:
-        total = s.query(func.count(Connection.id)).scalar() or 0
-        ok = s.query(func.count(Connection.id)).filter(Connection.last_status == "ok").scalar() or 0
-        err = s.query(func.count(Connection.id)).filter(Connection.last_status == "error").scalar() or 0
-    return {"status": "ok", "service": "orc-api", "connections": {"total": total, "ok": ok, "error": err}}
-
-
-def _oracle_summary(window_hours: int = 1) -> dict:
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
-    with SessionLocal() as s:
-        rows = (
-            s.query(ObservedEvent, Connection)
-            .outerjoin(Connection, ObservedEvent.connection_id == Connection.id)
-            .filter(
-                ObservedEvent.occurred_at >= cutoff,
-                ObservedEvent.severity.in_(["warning", "error", "critical"]),
-            )
-            .order_by(ObservedEvent.occurred_at.desc())
-            .all()
-        )
-
-    container_rollup: dict[tuple[str, str, str], dict] = {}
-    stack_rollup: dict[tuple[str, str], dict] = {}
-    pattern_rollup: dict[tuple[str, str, str, str], dict] = {}
-    totals = {"total_events": len(rows), "errors": 0, "warnings": 0}
-
-    for event, conn in rows:
-        server = conn.name if conn else "Unknown server"
-        stack = event.stack_name or _infer_stack(event.container_name)
-        stack_key = (server, stack)
-        key = (server, stack, event.container_name)
-        bucket = container_rollup.setdefault(
-            key,
-            {
-                "server": server,
-                "stack": stack,
-                "container": event.container_name,
-                "errors": 0,
-                "warnings": 0,
-                "latest_at": event.occurred_at.isoformat(),
-                "messages": Counter(),
-            },
-        )
-        stack_bucket = stack_rollup.setdefault(
-            stack_key,
-            {
-                "server": server,
-                "stack": stack,
-                "errors": 0,
-                "warnings": 0,
-                "containers": set(),
-            },
-        )
-        severity = "error" if event.severity in ("error", "critical") else "warning"
-        if severity == "error":
-            bucket["errors"] += 1
-            totals["errors"] += 1
-            stack_bucket["errors"] += 1
-        else:
-            bucket["warnings"] += 1
-            totals["warnings"] += 1
-            stack_bucket["warnings"] += 1
-        stack_bucket["containers"].add(event.container_name)
-        bucket["messages"][event.message[:220]] += 1
-        bucket["latest_at"] = max(bucket["latest_at"], event.occurred_at.isoformat())
-        pattern = _oracle_pattern(event.message)
-        pattern_key = (server, stack, event.container_name, pattern)
-        pattern_bucket = pattern_rollup.setdefault(
-            pattern_key,
-            {
-                "server": server,
-                "stack": stack,
-                "container": event.container_name,
-                "pattern": pattern,
-                "count": 0,
-                "errors": 0,
-                "warnings": 0,
-                "examples": Counter(),
-            },
-        )
-        pattern_bucket["count"] += 1
-        if severity == "error":
-            pattern_bucket["errors"] += 1
-        else:
-            pattern_bucket["warnings"] += 1
-        pattern_bucket["examples"][event.message[:220]] += 1
-
-    top_containers = []
-    for item in sorted(
-        container_rollup.values(),
-        key=lambda x: (-x["errors"], -x["warnings"], x["container"].lower()),
-    )[:20]:
-        top_containers.append(
-            {
-                "server": item["server"],
-                "stack": item["stack"],
-                "container": item["container"],
-                "errors": item["errors"],
-                "warnings": item["warnings"],
-                "latest_at": item["latest_at"],
-                "top_messages": [
-                    {"message": msg, "count": count}
-                    for msg, count in item["messages"].most_common(3)
-                ],
-            }
-        )
-
-    stacks = [
-        {
-            "server": item["server"],
-            "stack": item["stack"],
-            "errors": item["errors"],
-            "warnings": item["warnings"],
-            "containers": len(item["containers"]),
-        }
-        for item in sorted(
-            stack_rollup.values(),
-            key=lambda x: (-x["errors"], -x["warnings"], x["stack"].lower()),
-        )[:12]
-    ]
-
-    top_patterns = [
-        {
-            "server": item["server"],
-            "stack": item["stack"],
-            "container": item["container"],
-            "pattern": item["pattern"],
-            "count": item["count"],
-            "errors": item["errors"],
-            "warnings": item["warnings"],
-            "example": item["examples"].most_common(1)[0][0],
-        }
-        for item in sorted(
-            pattern_rollup.values(),
-            key=lambda x: (-x["errors"], -x["warnings"], -x["count"], x["container"].lower()),
-        )[:20]
-    ]
-
-    return {
-        "window_hours": window_hours,
-        "window_start": cutoff.isoformat(),
-        "window_end": datetime.now(timezone.utc).isoformat(),
-        "total_events": totals["total_events"],
-        "errors": totals["errors"],
-        "warnings": totals["warnings"],
-        "unique_containers": len(container_rollup),
-        "stacks": stacks,
-        "top_containers": top_containers,
-        "top_patterns": top_patterns,
-    }
-
-
-def _oracle_pattern(message: str) -> str:
-    text = message.strip().lower()
-    text = _ORACLE_UUID_RE.sub("<id>", text)
-    text = _ORACLE_NUM_RE.sub("<n>", text)
-    text = re.sub(r"\s+", " ", text)
-    return text[:220]
-
-
-def _oracle_prompt(summary: dict) -> list[dict[str, str]]:
-    system_prompt = (
-        "You are The Oracle inside ORC, an operations advisor reviewing the last hour "
-        "of container warnings and errors collected from Portainer-managed applications. "
-        "Prioritize only the top three problems worth researching and fixing first. "
-        "Use the stack, container, message patterns, and event frequencies in the summary. "
-        "Do not try to solve every issue in the data. Respond in plain text with exactly this format:\n"
-        "Top 3 observations\n"
-        "1. <stack / container / pattern / why it matters>\n"
-        "2. <...>\n"
-        "3. <...>\n\n"
-        "Possible root cause\n"
-        "1. <most likely cause for observation 1>\n"
-        "2. <most likely cause for observation 2>\n"
-        "3. <most likely cause for observation 3>\n\n"
-        "What you should do to fix it\n"
-        "1. <first action>\n"
-        "2. <second action>\n"
-        "3. <third action>\n"
-        "Keep each line specific and short."
-    )
-    return [
-        {"role": "system", "content": system_prompt},
-        {
-            "role": "user",
-            "content": (
-                "Review this one-hour event summary and recommend the best next fixes.\n\n"
-                + json.dumps(summary, indent=2)
-            ),
-        },
-    ]
-
-
-def _oracle_review(summary: dict) -> str:
-    if not summary["total_events"]:
-        return (
-            "Top 3 observations\n"
-            "1. No warnings or errors were found in the last hour.\n"
-            "2. There is no active stack or container pattern to prioritize.\n"
-            "3. The environment looked quiet during this review window.\n\n"
-            "Possible root cause\n"
-            "1. Systems may be healthy.\n"
-            "2. Activity may have been low during the last hour.\n"
-            "3. There may be nothing urgent to research right now.\n\n"
-            "What you should do to fix it\n"
-            "1. Keep monitoring.\n"
-            "2. Re-run the Oracle when fresh issues appear.\n"
-            "3. Use the Events tab for a manual spot check if needed."
-        )
-
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="The Oracle is not configured. Set OPENAI_API_KEY using the same Portainer env pattern as BADGE.",
-        )
-
-    model = os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
-    payload = {
-        "model": model,
-        "temperature": 0.2,
-        "messages": _oracle_prompt(summary),
-    }
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-    try:
-        resp = httpx.post(OPENAI_API_URL, headers=headers, json=payload, timeout=45.0)
-        resp.raise_for_status()
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"].strip()
-    except httpx.HTTPStatusError as exc:
-        detail = exc.response.text[:400] if exc.response is not None else str(exc)
-        raise HTTPException(status_code=502, detail=f"Oracle request failed: {detail}") from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Oracle request failed: {exc}") from exc
-
-    return content or "Summary:\n- The Oracle did not return any content."
-
-
-def _hours_window(hours: int) -> int:
-    return hours if hours in (1, 6, 24) else 24
-
-
-# ---------------------------------------------------------------------------
-# Routes — Connections
-# ---------------------------------------------------------------------------
-
-@app.get("/connections")
-def list_connections() -> list:
-    with SessionLocal() as s:
-        return [_cdct(c) for c in s.query(Connection).order_by(Connection.name).all()]
-
-
-@app.post("/connections", status_code=201)
-def create_connection(body: ConnectionIn) -> dict:
-    with SessionLocal() as s:
-        c = Connection(
-            name=body.name, type=body.type,
-            base_url=body.base_url.rstrip("/"), api_token=body.api_token,
-            enabled=body.enabled, poll_interval_seconds=body.poll_interval_seconds,
-            server_name=body.server_name.strip() or None,
-            logo_data=body.logo_data.strip() or None,
-        )
-        s.add(c)
-        s.commit()
-        s.refresh(c)
-        return _cdct(c)
-
-
-@app.put("/connections/{cid}")
-def update_connection(cid: int, body: ConnectionIn) -> dict:
-    with SessionLocal() as s:
-        c = s.get(Connection, cid)
-        if not c:
-            raise HTTPException(404, "Not found")
-        c.name = body.name
-        c.type = body.type
-        c.base_url = body.base_url.rstrip("/")
-        c.enabled = body.enabled
-        c.poll_interval_seconds = body.poll_interval_seconds
-        c.server_name = body.server_name.strip() or None
-        c.logo_data = body.logo_data.strip() or None
-        if body.api_token:
-            c.api_token = body.api_token
-        s.commit()
-        s.refresh(c)
-        return _cdct(c)
-
-
-@app.delete("/connections/{cid}", status_code=204)
-def delete_connection(cid: int) -> None:
-    with SessionLocal() as s:
-        c = s.get(Connection, cid)
-        if not c:
-            raise HTTPException(404, "Not found")
-        s.delete(c)
-        s.commit()
-
-
-@app.post("/connections/test-url")
-def test_connection_url(body: ConnectionTestIn) -> dict:
-    ok = PortainerClient(body.base_url.rstrip("/"), body.api_token).health_check()
-    return {"ok": ok, "error": None if ok else "Could not reach Portainer API"}
-
-
-@app.post("/connections/{cid}/test")
-def test_connection(cid: int) -> dict:
-    with SessionLocal() as s:
-        c = s.get(Connection, cid)
-        if not c:
-            raise HTTPException(404, "Not found")
-        url, token = c.base_url, c.api_token
-    ok = PortainerClient(url, token).health_check()
-    return {"ok": ok, "error": None if ok else "Could not reach Portainer API"}
-
-
-@app.post("/connections/{cid}/poll")
-def poll_now(cid: int) -> dict:
-    """Immediately scan all containers on one connection (runs in API process)."""
-    from .db import IngestionCheckpoint
-    from .ingest import parse_logs
-    from . import raven as _raven
-
-    with SessionLocal() as s:
-        c = s.get(Connection, cid)
-        if not c:
-            raise HTTPException(404, "Not found")
-        conn_id, name, url, token = c.id, c.name, c.base_url, c.api_token
-
-    client = PortainerClient(url, token)
-    try:
-        endpoints = client.get_endpoints()
-    except Exception as exc:
-        _raven.publish({"type": "poll_error", "server": name, "error": str(exc)})
-        with SessionLocal() as s:
-            c2 = s.get(Connection, conn_id)
-            if c2:
-                c2.last_status = "error"
-                c2.last_error = str(exc)
-                s.commit()
-        return {"ok": False, "error": str(exc)}
-
-    total_events = 0
-    for ep in endpoints:
-        eid = ep["Id"]
-        try:
-            containers = client.get_containers(eid)
-        except Exception:
-            continue
-        for container in containers:
-            cid_c = container["Id"]
-            cname = (container.get("Names") or [f"/{cid_c[:12]}"])[0].lstrip("/")
-            _raven.publish({"type": "container_checking", "server": name, "container": cname})
-            try:
-                event_count = 0
-                err_c = 0
-                warn_c = 0
-                issue_payloads: list[dict] = []
-                with SessionLocal() as session:
-                    chk = session.query(IngestionCheckpoint).filter_by(
-                        connection_id=conn_id, endpoint_id=eid, container_id=cid_c
-                    ).first()
-                    since = chk.last_unix_ts if chk else 0
-                    raw = client.get_container_logs(eid, cid_c, since=since)
-                    events, last_ts = parse_logs(raw, conn_id, eid, cid_c, cname)
-                    event_count = len(events)
-                    err_c = sum(1 for e in events if e.severity in ("error", "critical"))
-                    warn_c = sum(1 for e in events if e.severity == "warning")
-                    if events:
-                        session.add_all(events)
-                        session.flush()
-                        issue_payloads = _raven.issue_event_payloads(name, events)
-                        if chk:
-                            chk.last_unix_ts = last_ts
-                        else:
-                            session.add(IngestionCheckpoint(
-                                connection_id=conn_id, endpoint_id=eid,
-                                container_id=cid_c, last_unix_ts=last_ts,
-                            ))
-                        session.commit()
-                for payload in issue_payloads:
-                    _raven.publish(payload)
-                _raven.publish({
-                    "type": "container_result",
-                    "server": name, "container": cname,
-                    "events": event_count, "errors": err_c, "warnings": warn_c,
-                    "issue_events": len(issue_payloads),
-                })
-                total_events += event_count
-            except Exception as exc2:
-                log.warning("poll_now %s/%s: %s", name, cname, exc2)
-
-    with SessionLocal() as s:
-        c2 = s.get(Connection, conn_id)
-        if c2:
-            c2.last_status = "ok"
-            c2.last_polled_at = datetime.now(timezone.utc)
-            c2.last_error = None
-            s.commit()
-
-    return {"ok": True, "total_events": total_events}
-
-
-# ---------------------------------------------------------------------------
-# Routes — Registry + Events
-# ---------------------------------------------------------------------------
-
-@app.get("/registry/agents")
-def registry_agents() -> dict:
-    items = load_registry(REPO_ROOT, "agents")
-    return {"count": len(items), "items": [asdict(item) for item in items]}
-
-
-@app.get("/registry/skills")
-def registry_skills() -> dict:
-    items = load_registry(REPO_ROOT, "skills")
-    return {"count": len(items), "items": [asdict(item) for item in items]}
-
-
-@app.get("/events")
-def get_events(
-    limit: int = 200,
-    severity: str = "",
-    container: str = "",
-    server: str = "",
-    hours: int = 24,
-) -> dict:
-    hours = _hours_window(hours)
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-    with SessionLocal() as s:
-        q = (
-            s.query(ObservedEvent, Connection)
-            .outerjoin(Connection, ObservedEvent.connection_id == Connection.id)
-            .filter(ObservedEvent.occurred_at >= cutoff)
-            .order_by(ObservedEvent.occurred_at.desc())
-        )
-        if severity:
-            if severity == "error":
-                q = q.filter(ObservedEvent.severity.in_(["error", "critical"]))
-            else:
-                q = q.filter(ObservedEvent.severity == severity)
-        if container:
-            q = q.filter(ObservedEvent.container_name.ilike(f"%{container}%"))
-        if server:
-            q = q.filter(Connection.name == server)
-
-        rows = q.limit(limit).all()
-
-        err_count = s.query(func.count(ObservedEvent.id)).filter(
-            ObservedEvent.occurred_at >= cutoff,
-            ObservedEvent.severity.in_(["error", "critical"]),
-        ).scalar() or 0
-        warn_count = s.query(func.count(ObservedEvent.id)).filter(
-            ObservedEvent.occurred_at >= cutoff,
-            ObservedEvent.severity == "warning",
-        ).scalar() or 0
-
-    return {
-        "hours": hours,
-        "err_count": err_count,
-        "warn_count": warn_count,
-        "items": [
-            {
-                "id": e.id,
-                "server": c.name if c else "—",
-                "container_name": e.container_name,
-                "severity": e.severity,
-                "message": e.message,
-                "occurred_at": e.occurred_at.isoformat(),
-            }
-            for e, c in rows
-        ],
-    }
-
-
-@app.post("/oracle/review")
-def review_with_oracle() -> dict:
-    summary = _oracle_summary(window_hours=1)
-    analysis = _oracle_review(summary)
-    return {
-        "summary": {
-            "total_events": summary["total_events"],
-            "errors": summary["errors"],
-            "warnings": summary["warnings"],
-            "unique_containers": summary["unique_containers"],
-            "window_start": summary["window_start"],
-            "window_end": summary["window_end"],
-        },
-        "analysis": analysis,
-        "model": os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-
-def _infer_stack(cname: str) -> str:
-    parts = cname.split("-")
-    return "-".join(parts[:-2]) if len(parts) >= 3 else cname
-
-
-def _container_type(name: str) -> str:
-    n = name.lower()
-    if any(x in n for x in ("postgres", "mysql", "mongo", "db", "sqlite", "maria")): return "db"
-    if any(x in n for x in ("redis", "cache", "memcache", "rabbit", "kafka")): return "cache"
-    if any(x in n for x in ("worker", "celery", "cron", "job", "task", "beat")): return "worker"
-    if any(x in n for x in ("web", "frontend", "ui", "nginx", "react", "next", "vue")): return "ui"
-    return "api"
-
-
-def _stack_character(name: str) -> str:
-    n = name.lower()
-    if "orc" in n: return "orc"
-    if any(x in n for x in ("ai", "ml", "kpi", "chatbot", "advisor", "analytics", "tower")): return "wizard"
-    if any(x in n for x in ("simulator", "sppm", "presentation", "ux2")): return "fighter"
-    return ("orc", "rogue", "wizard", "fighter")[abs(hash(name)) % 4]
-
-
-@app.get("/overview")
-def get_overview(hours: int = 24) -> dict:
-    hours = _hours_window(hours)
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-    with SessionLocal() as s:
-        connections = s.query(Connection).filter_by(enabled=True).all()
-        err_rows = s.query(
-            ObservedEvent.connection_id, ObservedEvent.container_id,
-            func.count(ObservedEvent.id).label("n")
-        ).filter(
-            ObservedEvent.occurred_at >= cutoff,
-            ObservedEvent.severity.in_(["error", "critical"])
-        ).group_by(ObservedEvent.connection_id, ObservedEvent.container_id).all()
-
-        warn_rows = s.query(
-            ObservedEvent.connection_id, ObservedEvent.container_id,
-            func.count(ObservedEvent.id).label("n")
-        ).filter(
-            ObservedEvent.occurred_at >= cutoff,
-            ObservedEvent.severity == "warning"
-        ).group_by(ObservedEvent.connection_id, ObservedEvent.container_id).all()
-
-    errs  = {(r.connection_id, r.container_id): int(r.n) for r in err_rows}
-    warns = {(r.connection_id, r.container_id): int(r.n) for r in warn_rows}
-
-    stacks_out = []
-    for conn in connections:
-        client = PortainerClient(conn.base_url, conn.api_token)
-        try:
-            endpoints = client.get_endpoints()
-        except Exception:
-            continue
-        stacks: dict[str, list] = {}
-        for ep in endpoints:
-            try:
-                for c in client.get_containers(ep["Id"]):
-                    cid = c["Id"]
-                    cname = (c.get("Names") or [f"/{cid[:12]}"])[0].lstrip("/")
-                    labels = c.get("Labels") or {}
-                    stack_name = labels.get("com.docker.compose.project") or _infer_stack(cname)
-                    service   = labels.get("com.docker.compose.service")  or cname
-                    stacks.setdefault(stack_name, []).append({
-                        "name": service,
-                        "full_name": cname,
-                        "container_id": cid,
-                        "type": _container_type(service),
-                        "errors": errs.get((conn.id, cid), 0),
-                        "warnings": warns.get((conn.id, cid), 0),
-                    })
-            except Exception:
-                continue
-        for sname, containers in sorted(stacks.items()):
-            stacks_out.append({
-                "name": sname, "server": conn.name,
-                "server_name": conn.server_name or conn.name,
-                "server_logo": conn.logo_data or "",
-                "character": _stack_character(sname),
-                "containers": sorted(containers, key=lambda x: x["type"]),
-            })
-    return {"hours": hours, "stacks": stacks_out}
-
-
-def _cdct(c: Connection) -> dict:
-    return {
-        "id": c.id, "name": c.name, "type": c.type, "base_url": c.base_url,
-        "api_token": c.api_token, "enabled": c.enabled,
-        "poll_interval_seconds": c.poll_interval_seconds,
-        "server_name": c.server_name or "",
-        "logo_data": c.logo_data or "",
-        "last_polled_at": c.last_polled_at.isoformat() if c.last_polled_at else None,
-        "last_status": c.last_status, "last_error": c.last_error,
-    }
+</html>
