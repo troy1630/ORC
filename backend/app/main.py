@@ -9,7 +9,7 @@ from sqlalchemy import func
 
 from .config import REDIS_URL, REPO_ROOT
 from .db import Connection, ObservedEvent, SessionLocal, init_db
-from .hermes import CHANNEL
+from .raven import CHANNEL
 from .portainer import PortainerClient
 from .registry import load_registry
 
@@ -170,11 +170,11 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 
   </div><!-- /main -->
 
-  <!-- HERMES SIDEBAR -->
+  <!-- RAVEN SIDEBAR -->
   <aside class="aside">
     <div class="hb-wrap">
       <div class="hb-lbl">
-        <span class="hb-title">HERMES</span>
+        <span class="hb-title">RAVEN</span>
         <span class="hb-status" id="hb-status">connecting…</span>
       </div>
       <canvas id="hb-cv" height="52"></canvas>
@@ -281,6 +281,7 @@ async function loadConns(){
         <td>${c.type}</td><td>${st}</td>
         <td class="muted small">${c.last_polled_at?fmt(c.last_polled_at):'Never'}</td>
         <td><div style="display:flex;gap:5px">
+          <button class="btnp" style="font-size:.75rem;padding:4px 10px" onclick="pollNow(${c.id},this)">&#9654; Poll Now</button>
           <button class="btns" onclick="testEx(${c.id},this)">Test</button>
           <button class="btns" onclick="openModal(${c.id})">Edit</button>
           <button class="btnd" onclick="delConn(${c.id})">Delete</button>
@@ -342,8 +343,18 @@ async function delConn(id){
   if(!confirm('Delete this connection? Events will be preserved.'))return;
   await fetch(`/connections/${id}`,{method:'DELETE'}); await loadConns();
 }
+async function pollNow(id,btn){
+  const orig=btn.textContent; btn.textContent='Polling…'; btn.disabled=true;
+  try{
+    const d=await fetch(`/connections/${id}/poll`,{method:'POST'}).then(r=>r.json());
+    if(!d.ok)addPill({type:'poll_error',server:_conns.find(c=>c.id===id)?.name||'',error:d.error||'Poll failed'});
+    await loadConns();
+  }catch(e){
+    addPill({type:'poll_error',server:'',error:'Request failed: '+e.message});
+  }finally{btn.textContent=orig;btn.disabled=false;}
+}
 
-/* ---- hermes / activity feed ---- */
+/* ---- raven / activity feed ---- */
 function addPill(msg){
   _pills.unshift(msg);
   if(_pills.length>MAX_PILLS)_pills.pop();
@@ -410,8 +421,8 @@ function tickHb(){
 setInterval(tickHb,5000);
 
 /* ---- SSE ---- */
-function connectHermes(){
-  const es=new EventSource('/hermes/stream');
+function connectRaven(){
+  const es=new EventSource('/raven/stream');
   document.getElementById('hb-status').textContent='connecting…';
   es.onopen=()=>document.getElementById('hb-status').textContent='live';
   es.onmessage=e=>{
@@ -424,7 +435,7 @@ function connectHermes(){
   };
   es.onerror=()=>{
     document.getElementById('hb-status').textContent='reconnecting…';
-    es.close(); setTimeout(connectHermes,5000);
+    es.close(); setTimeout(connectRaven,5000);
   };
 }
 
@@ -439,7 +450,7 @@ window.addEventListener('resize',()=>{resizeCanvas();drawHb();});
 resizeCanvas(); drawHb();
 loadAll();
 setInterval(loadAll,30000);
-connectHermes();
+connectRaven();
 </script>
 </body>
 </html>"""
@@ -468,11 +479,11 @@ def dashboard() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Routes — Hermes SSE stream
+# Routes — Raven SSE stream
 # ---------------------------------------------------------------------------
 
-@app.get("/hermes/stream")
-async def hermes_stream(request: Request) -> StreamingResponse:
+@app.get("/raven/stream")
+async def raven_stream() -> StreamingResponse:
     from redis.asyncio import Redis as ARedis
 
     async def _gen():
@@ -481,16 +492,22 @@ async def hermes_stream(request: Request) -> StreamingResponse:
         await ps.subscribe(CHANNEL)
         try:
             yield 'data: {"type":"connected"}\n\n'
-            async for msg in ps.listen():
-                if await request.is_disconnected():
-                    break
-                if msg["type"] == "message":
+            # Poll with 10s timeout; sends a keepalive comment on timeout so the
+            # browser connection stays alive through proxies and load balancers.
+            while True:
+                msg = await ps.get_message(ignore_subscribe_messages=True, timeout=10.0)
+                if msg and msg["type"] == "message":
                     yield f'data: {msg["data"]}\n\n'
+                else:
+                    yield ': ka\n\n'
         except Exception:
             pass
         finally:
-            await ps.unsubscribe(CHANNEL)
-            await r.aclose()
+            try:
+                await ps.unsubscribe(CHANNEL)
+                await r.aclose()
+            except Exception:
+                pass
 
     return StreamingResponse(
         _gen(),
@@ -578,6 +595,30 @@ def test_connection(cid: int) -> dict:
         url, token = c.base_url, c.api_token
     ok = PortainerClient(url, token).health_check()
     return {"ok": ok, "error": None if ok else "Could not reach Portainer API"}
+
+
+@app.post("/connections/{cid}/poll")
+def poll_now(cid: int) -> dict:
+    """Trigger an immediate poll for one connection from the API process."""
+    from .worker import _poll_one
+    with SessionLocal() as s:
+        c = s.get(Connection, cid)
+        if not c:
+            raise HTTPException(404, "Not found")
+        conn_id, name, url, token = c.id, c.name, c.base_url, c.api_token
+
+    now = datetime.now(timezone.utc)
+    status, error = _poll_one(conn_id, name, url, token)
+
+    with SessionLocal() as s:
+        c = s.get(Connection, cid)
+        if c:
+            c.last_polled_at = now
+            c.last_status = status
+            c.last_error = error
+            s.commit()
+
+    return {"ok": status == "ok", "error": error}
 
 
 # ---------------------------------------------------------------------------

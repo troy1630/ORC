@@ -1,5 +1,5 @@
 """
-Hermes — ORC's internal messaging bus.
+Raven — ORC's internal messaging bus.
 
 The worker publishes structured activity messages to a Redis channel.
 The API streams them to the browser via SSE so the UI updates in real time.
@@ -13,7 +13,7 @@ import redis as _redis
 
 from .config import REDIS_URL
 
-CHANNEL = "hermes"
+CHANNEL = "raven"
 
 _client: _redis.Redis | None = None
 
@@ -26,7 +26,7 @@ def _get() -> _redis.Redis:
 
 
 def publish(msg: dict[str, Any]) -> None:
-    """Publish a message to the Hermes channel. Silently drops if Redis is unavailable."""
+    """Publish a message to the Raven channel. Silently drops if Redis is unavailable."""
     msg.setdefault("ts", datetime.now(timezone.utc).isoformat())
     try:
         _get().publish(CHANNEL, json.dumps(msg))

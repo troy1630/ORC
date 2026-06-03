@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from .config import CYCLE_SECONDS, POLL_INTERVAL_SECONDS
 from .db import Connection, IngestionCheckpoint, SessionLocal, init_db
-from . import hermes
+from . import raven
 from .ingest import parse_logs
 from .portainer import PortainerClient
 
@@ -25,13 +25,13 @@ def _pick_connection() -> tuple[int, str, str, str] | None:
 
 
 def _poll_one(conn_id: int, name: str, base_url: str, api_token: str) -> tuple[str, str | None]:
-    hermes.publish({"type": "poll_start", "server": name})
+    raven.publish({"type": "poll_start", "server": name})
 
     client = PortainerClient(base_url, api_token)
     try:
         endpoints = client.get_endpoints()
     except Exception as exc:
-        hermes.publish({"type": "poll_error", "server": name, "error": str(exc)})
+        raven.publish({"type": "poll_error", "server": name, "error": str(exc)})
         return "error", str(exc)
 
     total_events = 0
@@ -73,7 +73,7 @@ def _poll_one(conn_id: int, name: str, base_url: str, api_token: str) -> tuple[s
                     err_count = sum(1 for e in events if e.severity in ("error", "critical"))
                     warn_count = sum(1 for e in events if e.severity == "warning")
 
-                    hermes.publish({
+                    raven.publish({
                         "type": "container_result",
                         "server": name,
                         "container": cname,
@@ -89,7 +89,7 @@ def _poll_one(conn_id: int, name: str, base_url: str, api_token: str) -> tuple[s
                 except Exception as exc:
                     log.error("[%s] failed to ingest %s: %s", name, cname, exc)
 
-    hermes.publish({
+    raven.publish({
         "type": "poll_complete",
         "server": name,
         "containers": total_containers,
