@@ -144,12 +144,15 @@ box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 .net-tools{position:absolute;z-index:5;right:14px;top:14px;display:flex;gap:5px;background:rgba(13,17,23,.72);border:1px solid rgba(230,237,243,.12);border-radius:8px;padding:5px}
 .network-stage{position:relative;z-index:1;height:calc(100vh - 118px);min-height:680px;overflow:hidden;cursor:grab;touch-action:none;border-radius:10px}
 .network-stage.dragging{cursor:grabbing}
-.raven-flight{position:absolute;z-index:9;left:0;top:0;width:38px;height:38px;object-fit:contain;pointer-events:none;filter:drop-shadow(0 0 1px rgba(255,255,255,.8)) drop-shadow(0 6px 10px rgba(0,0,0,.5));animation:raven-flight 1.35s ease-out forwards}
-@keyframes raven-flight{0%{opacity:0;transform:translate(calc(var(--x) - 10px),var(--y)) scale(.35) rotate(-12deg);filter:drop-shadow(0 0 1px rgba(255,255,255,.8)) drop-shadow(0 6px 10px rgba(0,0,0,.5)) blur(0)}18%{opacity:1}72%{opacity:.86}100%{opacity:0;transform:translate(calc(var(--x) + var(--tx)),calc(var(--y) + var(--ty))) scale(1.08) rotate(var(--rot));filter:drop-shadow(0 0 5px rgba(230,237,243,.26)) blur(2px)}}
+.raven-flight{position:absolute;z-index:9;left:0;top:0;width:60px;height:42px;object-fit:contain;pointer-events:none;filter:drop-shadow(0 0 1px rgba(255,255,255,.82)) drop-shadow(0 7px 12px rgba(0,0,0,.5));animation:raven-flight-to-center 1.15s ease-in-out forwards}
+.raven-scroll-drop{position:absolute;z-index:8;left:0;top:0;width:58px;height:auto;object-fit:contain;pointer-events:none;filter:drop-shadow(0 5px 7px rgba(0,0,0,.42));animation:raven-scroll-drop 1.65s ease-out forwards}
+@keyframes raven-flight-to-center{0%{opacity:0;transform:translate(calc(var(--sx) - 30px),calc(var(--sy) - 21px)) scale(.38) rotate(var(--start-rot));filter:drop-shadow(0 0 1px rgba(255,255,255,.82)) drop-shadow(0 7px 12px rgba(0,0,0,.5)) blur(0)}16%{opacity:1}82%{opacity:1}100%{opacity:0;transform:translate(calc(var(--ex) - 30px),calc(var(--ey) - 21px)) scale(.76) rotate(var(--end-rot));filter:drop-shadow(0 0 5px rgba(230,237,243,.28)) blur(1.4px)}}
+@keyframes raven-scroll-drop{0%{opacity:0;transform:translate(calc(var(--x) - 29px),calc(var(--y) - 8px)) scale(.28) rotate(-9deg)}18%{opacity:1}72%{opacity:.95}100%{opacity:0;transform:translate(calc(var(--x) - 29px),calc(var(--y) + 44px)) scale(1) rotate(3deg)}}
 .net-pan-surface{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .net-backbone{position:absolute;z-index:0;left:0;top:0;overflow:visible;pointer-events:none}
 .net-backbone line{stroke:rgba(139,148,158,.58);stroke-width:4.2;vector-effect:non-scaling-stroke}
 .net-backbone line.hub-link{stroke:rgba(163,113,247,.55);stroke-width:5}
+.net-backbone line.worker-link{stroke:rgba(31,37,45,.86);stroke-width:5.2}
 .net-backbone line.err{stroke:rgba(248,81,73,.86);stroke-width:5.4}.net-backbone line.warn{stroke:rgba(210,153,34,.88);stroke-width:5.4}
 .net-hub,.network-stack,.net-worker{position:absolute;left:var(--x);top:var(--y);transform:translate(-50%,-50%)}
 .net-hub,.network-stack,.net-worker{cursor:grab}
@@ -169,6 +172,8 @@ box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 .net-worker{display:flex;align-items:center;gap:5px;min-width:0;max-width:142px;z-index:3;filter:drop-shadow(0 7px 10px rgba(0,0,0,.28))}
 .net-worker.left{flex-direction:row-reverse}.net-worker.left .net-worker-name{text-align:right}
 .worker-avatar{position:relative;width:48px;height:48px;overflow:visible;background:transparent;border:0;flex:0 0 48px}
+.worker-avatar::after{content:"";display:none;position:absolute;right:0;bottom:4px;width:13px;height:13px;border-radius:50%;background:#020407;border:2px solid rgba(255,255,255,.72);box-shadow:0 2px 8px rgba(0,0,0,.55)}
+.net-worker.checking .worker-avatar::after{display:block}
 .worker-avatar img{width:100%;height:100%;object-fit:contain;position:static;display:block}
 .net-dot{position:absolute;left:34px;top:-3px;width:21px;height:21px;border-radius:50%;box-shadow:0 0 0 2px #0d1117,0 2px 8px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-size:.58rem;line-height:1;font-weight:900;color:#fff;flex-shrink:0}
 .net-worker.left .net-dot{left:auto;right:34px}
@@ -464,6 +469,7 @@ let _conns=[], _editId=null, _charEditKey='', _charDraftCharacter='', _charLogoD
 let _stacks=[], _connLogoDraft='', _networkZoom=1;
 let _networkPan={x:0,y:0,worldKey:'',dragging:false,startX:0,startY:0,originX:0,originY:0,suppressClick:false};
 let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,moved:false};
+let _networkChecking={server:'',container:''};
 let _hbData=new Array(40).fill(0), _hbBucket=0;
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
 let _oracleState={busy:false,summary:null,analysis:'',error:''};
@@ -1118,7 +1124,7 @@ function renderNetwork(stacks){
     centerNetworkWorld(world,stage);
   }
   const lineHtml=world.links.map(link=>{
-    const cls=`${link.type==='hub'?'hub-link':''} ${link.severity}`.trim();
+    const cls=`${link.type==='hub'?'hub-link':'worker-link'} ${link.severity}`.trim();
     return `<line class="${esc(cls)}" data-source="${esc(link.source.id)}" data-target="${esc(link.target.id)}" x1="${link.source.x.toFixed(1)}" y1="${link.source.y.toFixed(1)}" x2="${link.target.x.toFixed(1)}" y2="${link.target.y.toFixed(1)}"></line>`;
   }).join('');
   const hubHtml=world.hubs.map(node=>{
@@ -1157,7 +1163,9 @@ function renderNetwork(stacks){
     const workerAsset=WORKER_ASSETS[hashStr(app.full_name||app.name)%WORKER_ASSETS.length];
     const displayName=containerFriendlyName(app);
     const side=node.x<node.stackNode.x?'left':'right';
-    return `<div class="net-worker ${side}" data-node-id="${esc(node.id)}" data-stack-node-id="${esc(node.stackNode.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" onclick="jumpToEventsFromEl(this)" data-server="${esc(node.stack.server)}" data-container="${esc(app.full_name)}" data-severity="${esc(dot==='err'?'error':dot==='warn'?'warning':'')}" title="${esc(app.full_name)}">
+    const containerName=app.full_name||app.name||'';
+    const checking=_networkChecking.server===node.stack.server&&_networkChecking.container===containerName;
+    return `<div class="net-worker ${side} ${checking?'checking':''}" data-node-id="${esc(node.id)}" data-stack-node-id="${esc(node.stackNode.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" onclick="jumpToEventsFromEl(this)" data-server="${esc(node.stack.server)}" data-container="${esc(containerName)}" data-severity="${esc(dot==='err'?'error':dot==='warn'?'warning':'')}" title="${esc(containerName)}">
       <span class="worker-avatar"><img src="${esc(workerAsset)}" alt=""></span>
       <span class="net-dot ${dot}">${esc(dotText)}</span>
       <span class="net-worker-name">${esc(displayName)}</span>
@@ -1171,34 +1179,72 @@ function renderNetwork(stacks){
   </div>`;
   applyNetworkTransform();
 }
+function findNetworkWorker(server,container){
+  const stage=document.getElementById('network-stage');
+  if(!stage||!container)return null;
+  const workers=[...stage.querySelectorAll('.net-worker')];
+  return workers.find(el=>(el.dataset.container||'')===container&&(!server||(el.dataset.server||'')===server))||
+    workers.find(el=>(el.dataset.container||'')===container)||null;
+}
+function setNetworkCheckingContainer(server,container,active=true){
+  if(active)_networkChecking={server:server||'',container:container||''};
+  else if(_networkChecking.container===container&&(!_networkChecking.server||_networkChecking.server===server))_networkChecking={server:'',container:''};
+  document.querySelectorAll('.net-worker.checking').forEach(el=>{
+    if(!active||el.dataset.container!==container||((server||'')&&(el.dataset.server||'')!==server))el.classList.remove('checking');
+  });
+  if(active){
+    const node=findNetworkWorker(server,container);
+    if(node)node.classList.add('checking');
+  }
+}
+function networkElementCenter(el,stage){
+  const r=el.getBoundingClientRect();
+  const sr=stage.getBoundingClientRect();
+  return {x:r.left+r.width/2-sr.left,y:r.top+r.height/2-sr.top};
+}
+function networkHubForWorker(worker){
+  const stackId=worker?.dataset.stackNodeId||'';
+  if(!stackId)return null;
+  const line=[...document.querySelectorAll('.net-backbone line.hub-link')].find(l=>l.dataset.source===stackId||l.dataset.target===stackId);
+  if(!line)return null;
+  const hubId=line.dataset.source===stackId?line.dataset.target:line.dataset.source;
+  return getNetworkNodeEl(hubId);
+}
+function dropRavenScroll(stage,x,y){
+  const scroll=document.createElement('img');
+  scroll.className='raven-scroll-drop';
+  scroll.src='/assets/kingdoms/message-scroll.png';
+  scroll.alt='';
+  scroll.style.setProperty('--x',`${x.toFixed(1)}px`);
+  scroll.style.setProperty('--y',`${y.toFixed(1)}px`);
+  stage.appendChild(scroll);
+  scroll.addEventListener('animationend',()=>scroll.remove(),{once:true});
+  setTimeout(()=>scroll.remove(),1900);
+}
 function launchRavenFromContainer(server,container){
   const pane=document.getElementById('pane-network');
   const stage=document.getElementById('network-stage');
   if(!pane?.classList.contains('on')||!stage||!container)return;
-  const node=[...stage.querySelectorAll('.net-worker')].find(el=>
-    (el.dataset.container||'')===container&&(!server||(el.dataset.server||'')===server)
-  );
+  const node=findNetworkWorker(server,container);
   if(!node)return;
-  const r=node.getBoundingClientRect();
-  const sr=stage.getBoundingClientRect();
-  const x=r.left+r.width/2-sr.left;
-  const y=r.top+r.height/2-sr.top;
+  const hub=networkHubForWorker(node);
+  const start=networkElementCenter(node,stage);
+  const end=hub?networkElementCenter(hub,stage):{x:stage.clientWidth/2,y:stage.clientHeight/2};
   const bird=document.createElement('img');
   bird.className='raven-flight';
-  bird.src='/assets/kingdoms/raven.png';
+  bird.src='/assets/kingdoms/raven-flying.png';
   bird.alt='';
-  const dir=hashStr(`${server}:${container}:${Date.now()}`)%2?-1:1;
-  const tx=dir*(90+Math.random()*90);
-  const ty=-110-Math.random()*80;
-  const rot=dir*(12+Math.random()*12);
-  bird.style.setProperty('--x',`${x.toFixed(1)}px`);
-  bird.style.setProperty('--y',`${y.toFixed(1)}px`);
-  bird.style.setProperty('--tx',`${tx.toFixed(1)}px`);
-  bird.style.setProperty('--ty',`${ty.toFixed(1)}px`);
-  bird.style.setProperty('--rot',`${rot.toFixed(1)}deg`);
+  const dir=end.x>=start.x?1:-1;
+  bird.style.setProperty('--sx',`${start.x.toFixed(1)}px`);
+  bird.style.setProperty('--sy',`${start.y.toFixed(1)}px`);
+  bird.style.setProperty('--ex',`${end.x.toFixed(1)}px`);
+  bird.style.setProperty('--ey',`${end.y.toFixed(1)}px`);
+  bird.style.setProperty('--start-rot',`${(dir*14).toFixed(1)}deg`);
+  bird.style.setProperty('--end-rot',`${(dir*3).toFixed(1)}deg`);
   stage.appendChild(bird);
+  setTimeout(()=>{if(stage.isConnected)dropRavenScroll(stage,end.x,end.y+30);},820);
   bird.addEventListener('animationend',()=>bird.remove(),{once:true});
-  setTimeout(()=>bird.remove(),1800);
+  setTimeout(()=>bird.remove(),1400);
 }
 
 /* ============================================================
@@ -1488,6 +1534,7 @@ function handleRaven(msg){
     case 'queue_ready':{const iv=msg.interval?` · ${msg.interval}s/ctr`:'';setStatus('▶',`Scanning ${msg.containers} containers${iv}`,true);break;}
     case 'container_checking':
       setStatus('🔍',`Checking ${msg.container} on ${msg.server}`,true);
+      setNetworkCheckingContainer(msg.server||'',msg.container||'',true);
       launchRavenFromContainer(msg.server||'',msg.container||'');
       break;
     case 'issue_event':{
@@ -1498,6 +1545,7 @@ function handleRaven(msg){
       break;
     }
     case 'container_result':{
+      setNetworkCheckingContainer(msg.server||'',msg.container||'',false);
       const ne=msg.errors||0,nw=msg.warnings||0;
       if(!msg.issue_events)_hbBucket+=ne+nw;
       if(ne>0){setStatus('⚠',`${msg.container} · ${ne} new error${ne!==1?'s':''}`,true);addIssuePill(msg);}
