@@ -141,15 +141,20 @@ box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 .network-stage.dragging{cursor:grabbing}
 .net-pan-surface{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .net-backbone{position:absolute;z-index:0;left:0;top:0;overflow:visible;pointer-events:none}
-.net-backbone line{stroke:rgba(139,148,158,.58);stroke-width:2.1;vector-effect:non-scaling-stroke}
-.net-backbone line.hub-link{stroke:rgba(163,113,247,.55);stroke-width:2.5}
-.net-backbone line.err{stroke:rgba(248,81,73,.86);stroke-width:2.7}.net-backbone line.warn{stroke:rgba(210,153,34,.88);stroke-width:2.7}
+.net-backbone line{stroke:rgba(139,148,158,.58);stroke-width:4.2;vector-effect:non-scaling-stroke}
+.net-backbone line.hub-link{stroke:rgba(163,113,247,.55);stroke-width:5}
+.net-backbone line.err{stroke:rgba(248,81,73,.86);stroke-width:5.4}.net-backbone line.warn{stroke:rgba(210,153,34,.88);stroke-width:5.4}
 .net-hub,.network-stack,.net-worker{position:absolute;left:var(--x);top:var(--y);transform:translate(-50%,-50%)}
 .net-hub,.network-stack,.net-worker{cursor:grab}
 .net-hub:active,.network-stack:active,.net-worker:active{cursor:grabbing}
 .net-hub{z-index:3;width:66px;height:66px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(13,17,23,.9);border:2px solid rgba(88,166,255,.8);box-shadow:0 0 0 5px rgba(88,166,255,.14),0 10px 24px rgba(0,0,0,.26)}
 .net-hub img{width:45px;height:45px;border-radius:50%;object-fit:cover}
-.net-hub-label{position:absolute;left:50%;top:70px;transform:translateX(-50%);max-width:185px;background:rgba(48,54,61,.92);border:1px solid rgba(230,237,243,.14);border-radius:5px;padding:3px 7px;font-size:.65rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt)}
+.net-hub-meta{position:absolute;left:50%;top:70px;transform:translateX(-50%);display:flex;align-items:center;gap:5px;max-width:260px}
+.net-hub-label{position:static;max-width:168px;background:rgba(48,54,61,.92);border:1px solid rgba(230,237,243,.14);border-radius:5px;padding:3px 7px;font-size:.65rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt)}
+.net-health{height:21px;display:inline-flex;align-items:center;gap:5px;padding:2px 6px;border-radius:999px;background:rgba(13,17,23,.88);border:1px solid rgba(230,237,243,.16);box-shadow:0 2px 8px rgba(0,0,0,.24);font-size:.58rem;font-weight:900;color:var(--txt);white-space:nowrap;flex-shrink:0}
+.net-health-bar{width:36px;height:6px;overflow:hidden;border-radius:999px;background:rgba(139,148,158,.22)}
+.net-health-bar span{display:block;height:100%;border-radius:inherit;background:var(--grn)}
+.net-health.warn .net-health-bar span{background:var(--yel)}.net-health.err .net-health-bar span{background:var(--red)}
 .network-stack{z-index:4;width:82px;height:82px;isolation:isolate}
 .net-stack-node{position:relative;width:82px;height:82px;border-radius:50%;overflow:hidden;border:1px solid rgba(230,237,243,.28);box-shadow:0 0 0 3px rgba(13,17,23,.68),0 8px 18px rgba(0,0,0,.32);background:#0d1117;cursor:grab}
 .net-stack-node img{width:100%;height:100%;object-fit:cover;filter:saturate(.9) contrast(1.05);opacity:.82;-webkit-mask-image:radial-gradient(circle at center,#000 55%,rgba(0,0,0,.62) 72%,transparent 90%);mask-image:radial-gradient(circle at center,#000 55%,rgba(0,0,0,.62) 72%,transparent 90%)}
@@ -837,6 +842,29 @@ function saveNetworkNodePosition(id,x,y){
 function stackIssueTotals(stack){
   return stack.containers.reduce((acc,app)=>{const c=issueCounts(app);acc.errors+=c.errors;acc.warnings+=c.warnings;return acc;},{errors:0,warnings:0});
 }
+function observedLineCount(app){
+  const n=Number(app.lines_queried ?? app.total_lines ?? app.lines ?? app.events ?? app.event_count ?? 0);
+  return Number.isFinite(n)&&n>0?n:0;
+}
+function kingdomHealth(k){
+  const totals=(k.stacks||[]).reduce((acc,stack)=>{
+    (stack.containers||[]).forEach(app=>{
+      const c=issueCounts(app);
+      acc.defects+=c.errors+c.warnings;
+      acc.lines+=observedLineCount(app);
+    });
+    return acc;
+  },{defects:0,lines:0});
+  const denominator=Math.max(totals.lines,totals.defects);
+  const percent=denominator>0?Math.round((1-Math.min(totals.defects,denominator)/denominator)*100):100;
+  const pct=networkClamp(percent,0,100);
+  return {
+    percent:pct,
+    cls:pct>=95?'ok':pct>=80?'warn':'err',
+    defects:totals.defects,
+    lines:totals.lines
+  };
+}
 function issueSeverityFromCounts(counts){
   return counts.errors>0?'err':counts.warnings>0?'warn':'';
 }
@@ -1021,10 +1049,20 @@ function renderNetwork(stacks){
     const cls=`${link.type==='hub'?'hub-link':''} ${link.severity}`.trim();
     return `<line class="${esc(cls)}" data-source="${esc(link.source.id)}" data-target="${esc(link.target.id)}" x1="${link.source.x.toFixed(1)}" y1="${link.source.y.toFixed(1)}" x2="${link.target.x.toFixed(1)}" y2="${link.target.y.toFixed(1)}"></line>`;
   }).join('');
-  const hubHtml=world.hubs.map(node=>`<div class="net-hub" data-node-id="${esc(node.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" title="${esc(serverDisplayName(node.kingdom||{}))}">
-    <img src="/assets/kingdoms/castle.png" alt="">
-    <span class="net-hub-label">${esc(serverDisplayName(node.kingdom||{}))}</span>
-  </div>`).join('');
+  const hubHtml=world.hubs.map(node=>{
+    const health=kingdomHealth(node.kingdom||{});
+    const healthTitle=`Health = 1 - (${health.defects} defects / ${health.lines} lines queried)`;
+    return `<div class="net-hub" data-node-id="${esc(node.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" title="${esc(serverDisplayName(node.kingdom||{}))}">
+      <img src="/assets/kingdoms/castle.png" alt="">
+      <span class="net-hub-meta">
+        <span class="net-hub-label">${esc(serverDisplayName(node.kingdom||{}))}</span>
+        <span class="net-health ${esc(health.cls)}" title="${esc(healthTitle)}">
+          <span class="net-health-bar"><span style="width:${health.percent}%"></span></span>
+          <span>${health.percent}%</span>
+        </span>
+      </span>
+    </div>`;
+  }).join('');
   const stacksHtml=world.stacks.map(node=>{
     const stack=node.stack;
     const charId=selectedCharacterId(stack);
@@ -2147,8 +2185,16 @@ def get_overview(hours: int = 24) -> dict:
             ObservedEvent.severity == "warning"
         ).group_by(ObservedEvent.connection_id, ObservedEvent.container_id).all()
 
+        line_rows = s.query(
+            ObservedEvent.connection_id, ObservedEvent.container_id,
+            func.count(ObservedEvent.id).label("n")
+        ).filter(
+            ObservedEvent.occurred_at >= cutoff
+        ).group_by(ObservedEvent.connection_id, ObservedEvent.container_id).all()
+
     errs  = {(r.connection_id, r.container_id): int(r.n) for r in err_rows}
     warns = {(r.connection_id, r.container_id): int(r.n) for r in warn_rows}
+    lines = {(r.connection_id, r.container_id): int(r.n) for r in line_rows}
 
     stacks_out = []
     for conn in connections:
@@ -2173,6 +2219,8 @@ def get_overview(hours: int = 24) -> dict:
                         "type": _container_type(service),
                         "errors": errs.get((conn.id, cid), 0),
                         "warnings": warns.get((conn.id, cid), 0),
+                        "total_lines": lines.get((conn.id, cid), 0),
+                        "lines_queried": lines.get((conn.id, cid), 0),
                     })
             except Exception:
                 continue
