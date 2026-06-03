@@ -1,9 +1,38 @@
 import httpx
 
-# SSL verification is disabled by default — Portainer commonly uses self-signed certs on internal networks.
+# SSL verification disabled — Portainer commonly uses self-signed certs on internal networks.
 _CLIENT_KWARGS = {"verify": False, "timeout": 15}
 _HEALTH_KWARGS = {"verify": False, "timeout": 5}
 _LOG_KWARGS = {"verify": False, "timeout": 30}
+
+
+def _decode_docker_stream(data: bytes) -> str:
+    """
+    Decode Docker's multiplexed log stream.
+
+    Non-TTY containers use a framing format: each frame is an 8-byte header
+    [stream_type (1), padding (3), payload_size (4 big-endian)] followed by
+    payload_size bytes of UTF-8 text.  TTY containers emit raw text with no
+    headers.  We detect which format we have from the first byte.
+    """
+    if not data:
+        return ""
+
+    # If the first byte is 0, 1, or 2 and bytes 1-3 are null, it's multiplexed.
+    if len(data) >= 8 and data[0] in (0, 1, 2) and data[1:4] == b"\x00\x00\x00":
+        parts: list[str] = []
+        i = 0
+        while i + 8 <= len(data):
+            size = int.from_bytes(data[i + 4 : i + 8], "big")
+            end = i + 8 + size
+            if end > len(data):
+                break
+            parts.append(data[i + 8 : end].decode("utf-8", errors="replace"))
+            i = end
+        return "".join(parts)
+
+    # TTY or plain-text stream — decode as-is.
+    return data.decode("utf-8", errors="replace")
 
 
 class PortainerClient:
@@ -44,4 +73,4 @@ class PortainerClient:
             **_LOG_KWARGS,
         )
         r.raise_for_status()
-        return r.text
+        return _decode_docker_stream(r.content)  # r.content (bytes), not r.text
