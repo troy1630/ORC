@@ -1,9 +1,8 @@
 """
-ORC Worker — polls one container every POLL_INTERVAL_SECONDS.
+ORC Worker — polls one container at a time, spacing work across 100 seconds.
 
-With 30 containers and a 3-second interval a full cycle takes ~90 seconds.
-When the queue drains it is rebuilt by re-querying each Portainer endpoint,
-picking up any containers that started or stopped since the last cycle.
+With N containers the sleep interval is 100/N seconds so a full cycle always
+takes roughly 100 seconds regardless of how many containers are running.
 """
 
 import logging
@@ -20,12 +19,14 @@ from .portainer import PortainerClient
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("orc.worker")
 
-# Each item: (conn_id, conn_name, endpoint_id, container_id, container_name, client)
+# Each entry: (conn_id, conn_name, endpoint_id, container_id, container_name, client)
 _queue: deque = deque()
+_sleep: float = float(POLL_INTERVAL_SECONDS)
+_warned_no_connections: bool = False
 
 
 def _rebuild_queue() -> None:
-    """Query every enabled connection, enumerate running containers, fill the queue."""
+    global _sleep, _warned_no_connections
     _queue.clear()
     now = datetime.now(timezone.utc)
 
@@ -34,14 +35,19 @@ def _rebuild_queue() -> None:
         conn_list = [(c.id, c.name, c.base_url, c.api_token) for c in connections]
 
     if not conn_list:
-        log.info("No enabled connections — waiting for one to be configured")
+        if not _warned_no_connections:
+            log.info("No enabled connections — add one via the Connections tab")
+            raven.publish({"type": "no_connections"})
+            _warned_no_connections = True
+        _sleep = 10.0
         return
 
+    _warned_no_connections = False
     total = 0
+
     for conn_id, conn_name, base_url, api_token in conn_list:
         client = PortainerClient(base_url, api_token)
         conn_ok, conn_error = True, None
-
         try:
             endpoints = client.get_endpoints()
         except Exception as exc:
@@ -49,7 +55,7 @@ def _rebuild_queue() -> None:
             log.error("[%s] cannot reach Portainer: %s", conn_name, exc)
             raven.publish({"type": "poll_error", "server": conn_name, "error": conn_error})
 
-        _update_conn_status(conn_id, "ok" if conn_ok else "error", conn_error, now)
+        _update_conn(conn_id, "ok" if conn_ok else "error", conn_error, now)
 
         if not conn_ok:
             continue
@@ -57,27 +63,32 @@ def _rebuild_queue() -> None:
         for ep in endpoints:
             eid = ep["Id"]
             try:
-                containers = client.get_containers(eid)
-                for c in containers:
+                for c in client.get_containers(eid):
                     cid = c["Id"]
                     cname = (c.get("Names") or [f"/{cid[:12]}"])[0].lstrip("/")
                     _queue.append((conn_id, conn_name, eid, cid, cname, client))
                     total += 1
             except Exception as exc:
-                log.error("[%s] endpoint %s listing failed: %s", conn_name, eid, exc)
+                log.error("[%s] endpoint %s: %s", conn_name, eid, exc)
 
-    log.info("Queue built: %d container(s) across %d connection(s)", total, len(conn_list))
     if total:
+        _sleep = round(100.0 / total, 2)
+        log.info("Queue: %d container(s), interval=%.2fs", total, _sleep)
         raven.publish({
             "type": "queue_ready",
             "containers": total,
             "connections": len(conn_list),
+            "interval": _sleep,
         })
+    else:
+        _sleep = 10.0
 
 
 def _poll_next() -> None:
-    """Pop one container from the queue, ingest its new logs, publish to Raven."""
     conn_id, conn_name, eid, cid, cname, client = _queue.popleft()
+
+    raven.publish({"type": "container_checking", "server": conn_name, "container": cname})
+
     try:
         with SessionLocal() as session:
             checkpoint = (
@@ -127,7 +138,7 @@ def _poll_next() -> None:
         })
 
 
-def _update_conn_status(conn_id: int, status: str, error: str | None, ts: datetime) -> None:
+def _update_conn(conn_id: int, status: str, error: str | None, ts: datetime) -> None:
     with SessionLocal() as s:
         c = s.get(Connection, conn_id)
         if c:
@@ -139,7 +150,7 @@ def _update_conn_status(conn_id: int, status: str, error: str | None, ts: dateti
 
 def main() -> None:
     init_db()
-    log.info("ORC worker started — %ds per container", POLL_INTERVAL_SECONDS)
+    log.info("ORC worker started")
     while True:
         try:
             if not _queue:
@@ -148,7 +159,7 @@ def main() -> None:
                 _poll_next()
         except Exception as exc:
             log.error("Worker error: %s", exc)
-        time.sleep(POLL_INTERVAL_SECONDS)
+        time.sleep(_sleep)
 
 
 if __name__ == "__main__":

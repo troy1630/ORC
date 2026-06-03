@@ -71,6 +71,7 @@ canvas{display:block;width:100%;height:52px}
 .p-ok{background:#152215;border-color:#1f3d1f;color:var(--grn)}
 .p-clean{background:#161b22;border-color:var(--bdr);color:var(--mut)}
 .p-done{background:#1c1529;border-color:#2d2040;color:var(--pur);font-size:.75rem}
+.p-checking{background:#161b22;border-color:#21262d;color:var(--mut)}
 .ph{color:var(--mut);font-size:.82rem;text-align:center;padding:24px 0}
 .pill-hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
 .pill-cn{font-family:monospace;font-weight:600;font-size:.8rem}
@@ -376,21 +377,30 @@ function pillVisible(msg){
   if(_ravenFilter==='error')
     return msg.type==='poll_error'||(msg.type==='container_result'&&msg.errors>0);
   if(_ravenFilter==='warning')
-    return msg.type==='container_result'&&msg.warnings>0;
+    return msg.type==='container_result'&&msg.warnings>0&&msg.errors===0;
   return true;
 }
 
 function pillHtml(msg){
   const ts=msg.ts?fmtShort(msg.ts):'';
-  if(msg.type==='queue_ready')
-    return `<div class="pill p-start">&#9654; Scanning ${msg.containers} container${msg.containers!==1?'s':''}</div>`;
+  if(msg.type==='no_connections')
+    return `<div class="pill p-start">No connections configured — add one in the Connections tab.</div>`;
+  if(msg.type==='queue_ready'){
+    const iv=msg.interval?` · ${msg.interval}s/container`:'';
+    return `<div class="pill p-start">&#9654; Scanning <strong>${msg.containers}</strong> containers${iv}</div>`;
+  }
+  if(msg.type==='container_checking')
+    return `<div class="pill p-checking">
+      <div class="pill-hdr"><span class="pill-cn">${esc(msg.container)}</span><span class="pill-sv">${esc(msg.server)}</span></div>
+      <div style="opacity:.7">checking…</div>
+    </div>`;
   if(msg.type==='poll_error')
     return `<div class="pill p-error">&#10007; <strong>${esc(msg.server)}</strong><div style="opacity:.8;font-size:.75rem;margin-top:2px">${esc(msg.error||'')}</div></div>`;
   if(msg.type==='container_result'){
-    let cls='p-clean',detail='clean';
+    let cls='p-clean',detail='no changes';
     if(msg.errors>0){cls='p-error';detail=`${msg.errors} error${msg.errors>1?'s':''}${msg.warnings>0?`, ${msg.warnings} warn`:''}`;
     }else if(msg.warnings>0){cls='p-warn';detail=`${msg.warnings} warning${msg.warnings>1?'s':''}`;
-    }else if(msg.events>0){cls='p-ok';detail=`${msg.events} new`;}
+    }else if(msg.events>0){cls='p-ok';detail=`${msg.events} new event${msg.events>1?'s':''}`;}
     return `<div class="pill ${cls}">
       <div class="pill-hdr"><span class="pill-cn">${esc(msg.container)}</span><span class="pill-sv">${esc(msg.server)}</span></div>
       <div style="display:flex;justify-content:space-between"><span>${detail}</span><span class="pill-ts">${ts}</span></div>
@@ -462,7 +472,7 @@ function connectRaven(){
       const msg=JSON.parse(e.data);
       if(msg.type==='connected'){document.getElementById('hb-status').textContent='live';return;}
       if(msg.type==='container_result')_hbBucket+=msg.events;
-      const show=['container_result','poll_error','queue_ready'];
+      const show=['container_result','container_checking','poll_error','queue_ready','no_connections'];
       if(show.includes(msg.type))addPill(msg);
     }catch{}
   };
@@ -632,26 +642,79 @@ def test_connection(cid: int) -> dict:
 
 @app.post("/connections/{cid}/poll")
 def poll_now(cid: int) -> dict:
-    """Trigger an immediate poll for one connection from the API process."""
-    from .worker import _poll_one
+    """Immediately scan all containers on one connection (runs in API process)."""
+    from .db import IngestionCheckpoint
+    from .ingest import parse_logs
+    from . import raven as _raven
+
     with SessionLocal() as s:
         c = s.get(Connection, cid)
         if not c:
             raise HTTPException(404, "Not found")
         conn_id, name, url, token = c.id, c.name, c.base_url, c.api_token
 
-    now = datetime.now(timezone.utc)
-    status, error = _poll_one(conn_id, name, url, token)
+    client = PortainerClient(url, token)
+    try:
+        endpoints = client.get_endpoints()
+    except Exception as exc:
+        _raven.publish({"type": "poll_error", "server": name, "error": str(exc)})
+        with SessionLocal() as s:
+            c2 = s.get(Connection, conn_id)
+            if c2:
+                c2.last_status = "error"
+                c2.last_error = str(exc)
+                s.commit()
+        return {"ok": False, "error": str(exc)}
+
+    total_events = 0
+    for ep in endpoints:
+        eid = ep["Id"]
+        try:
+            containers = client.get_containers(eid)
+        except Exception:
+            continue
+        for container in containers:
+            cid_c = container["Id"]
+            cname = (container.get("Names") or [f"/{cid_c[:12]}"])[0].lstrip("/")
+            _raven.publish({"type": "container_checking", "server": name, "container": cname})
+            try:
+                with SessionLocal() as session:
+                    chk = session.query(IngestionCheckpoint).filter_by(
+                        connection_id=conn_id, endpoint_id=eid, container_id=cid_c
+                    ).first()
+                    since = chk.last_unix_ts if chk else 0
+                    raw = client.get_container_logs(eid, cid_c, since=since)
+                    events, last_ts = parse_logs(raw, conn_id, eid, cid_c, cname)
+                    if events:
+                        session.add_all(events)
+                        if chk:
+                            chk.last_unix_ts = last_ts
+                        else:
+                            session.add(IngestionCheckpoint(
+                                connection_id=conn_id, endpoint_id=eid,
+                                container_id=cid_c, last_unix_ts=last_ts,
+                            ))
+                        session.commit()
+                    err_c  = sum(1 for e in events if e.severity in ("error", "critical"))
+                    warn_c = sum(1 for e in events if e.severity == "warning")
+                    _raven.publish({
+                        "type": "container_result",
+                        "server": name, "container": cname,
+                        "events": len(events), "errors": err_c, "warnings": warn_c,
+                    })
+                    total_events += len(events)
+            except Exception as exc2:
+                log.warning("poll_now %s/%s: %s", name, cname, exc2)
 
     with SessionLocal() as s:
-        c = s.get(Connection, cid)
-        if c:
-            c.last_polled_at = now
-            c.last_status = status
-            c.last_error = error
+        c2 = s.get(Connection, conn_id)
+        if c2:
+            c2.last_status = "ok"
+            c2.last_polled_at = datetime.now(timezone.utc)
+            c2.last_error = None
             s.commit()
 
-    return {"ok": status == "ok", "error": error}
+    return {"ok": True, "total_events": total_events}
 
 
 # ---------------------------------------------------------------------------
