@@ -24,6 +24,7 @@ class ConnectionIn(BaseModel):
     base_url: str
     api_token: str = ""
     enabled: bool = True
+    poll_interval_seconds: int | None = None
 
 
 class ConnectionTestIn(BaseModel):
@@ -72,6 +73,10 @@ canvas{display:block;width:100%;height:52px}
 .p-clean{background:#161b22;border-color:var(--bdr);color:var(--mut)}
 .p-done{background:#1c1529;border-color:#2d2040;color:var(--pur);font-size:.75rem}
 .p-checking{background:#161b22;border-color:#21262d;color:var(--mut)}
+.raven-sl{padding:8px 14px;border-bottom:1px solid var(--bdr);font-size:.78rem;color:var(--mut);flex-shrink:0;min-height:34px;display:flex;align-items:center;gap:6px;overflow:hidden}
+.raven-sl.live{color:var(--txt)}
+.raven-sl .sl-icon{flex-shrink:0;font-size:.85rem}
+.raven-sl .sl-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ph{color:var(--mut);font-size:.82rem;text-align:center;padding:24px 0}
 .pill-hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
 .pill-cn{font-family:monospace;font-weight:600;font-size:.8rem}
@@ -183,13 +188,17 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
       </div>
       <canvas id="hb-cv" height="52"></canvas>
     </div>
+    <div class="raven-sl" id="raven-sl">
+      <span class="sl-icon" id="sl-icon">—</span>
+      <span class="sl-txt" id="sl-txt">Waiting for activity…</span>
+    </div>
     <div class="feed-hdr">
       <button class="ff on" id="rf-all" onclick="setRF('')">All</button>
       <button class="ff" id="rf-error" onclick="setRF('error')">Errors</button>
       <button class="ff" id="rf-warning" onclick="setRF('warning')">Warnings</button>
     </div>
     <div class="feed" id="feed">
-      <div class="ph">Waiting for activity…</div>
+      <div class="ph">No issues found yet.</div>
     </div>
   </aside>
 </div>
@@ -202,6 +211,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     <div class="fg"><label>Type</label><select id="f-type"><option value="portainer">Portainer</option></select></div>
     <div class="fg"><label>URL</label><input id="f-url" type="text" placeholder="https://portainer.example.com" required></div>
     <div class="fg"><label id="f-tl">API Token</label><input id="f-tok" type="password" placeholder="API token"></div>
+    <div class="fg"><label>Poll interval (seconds per container)</label><input id="f-interval" type="number" min="1" max="120" placeholder="Auto (100 ÷ containers)"></div>
     <div class="fg"><label style="display:flex;align-items:center;gap:8px;color:var(--txt)"><input id="f-en" type="checkbox" checked> Enabled</label></div>
     <div id="tr" style="display:none"></div>
   </div>
@@ -215,8 +225,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 <script>
 /* ---- state ---- */
 let _evts=[], _filter='', _conns=[], _editId=null;
-let _pills=[], _hbData=new Array(40).fill(0), _hbBucket=0;
-const MAX_PILLS=60;
+let _hbData=new Array(40).fill(0), _hbBucket=0;
 
 /* ---- tabs ---- */
 function showTab(id){
@@ -309,6 +318,7 @@ function openModal(id){
   document.getElementById('f-url').value=c?c.base_url:'';
   document.getElementById('f-tok').value='';
   document.getElementById('f-tok').placeholder=c?'Leave blank to keep existing token':'API token';
+  document.getElementById('f-interval').value=c&&c.poll_interval_seconds?c.poll_interval_seconds:'';
   document.getElementById('f-en').checked=c?c.enabled:true;
   document.getElementById('tr').style.display='none';
   document.getElementById('dlg').showModal();
@@ -336,7 +346,10 @@ async function saveDlg(){
   const name=document.getElementById('f-name').value.trim(), url=document.getElementById('f-url').value.trim(), tok=document.getElementById('f-tok').value;
   if(!name||!url){showTr(false,'Name and URL are required.');return;}
   if(!_editId&&!tok){showTr(false,'API token is required.');return;}
-  const body={name,type:document.getElementById('f-type').value,base_url:url,api_token:tok,enabled:document.getElementById('f-en').checked};
+  const iv=document.getElementById('f-interval').value;
+  const body={name,type:document.getElementById('f-type').value,base_url:url,api_token:tok,
+    enabled:document.getElementById('f-en').checked,
+    poll_interval_seconds:iv?parseInt(iv):null};
   try{
     const r=await fetch(_editId?`/connections/${_editId}`:'/connections',{method:_editId?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!r.ok)throw new Error(await r.text());
@@ -363,70 +376,115 @@ async function pollNow(id,btn){
   }finally{btn.textContent=orig;btn.disabled=false;}
 }
 
-/* ---- raven / activity feed ---- */
-let _ravenFilter='';
+/* ---- raven sidebar ---- */
+// Status line: overwrites every tick showing what's being checked
+// Issue pills: only appear when errors/warnings are found, last 5 with opacity fade
+
+let _ravenFilter='', _issuePills=[];
+const MAX_ISSUE_PILLS=20; // keep in memory; display only last 5
 
 function setRF(f){
   _ravenFilter=f;
   ['all','error','warning'].forEach(k=>document.getElementById('rf-'+k).classList.toggle('on',k===(f||'all')));
-  renderFeed(false);
+  renderFeed();
 }
 
-function pillVisible(msg){
-  if(_ravenFilter==='')return true;
-  if(_ravenFilter==='error')
-    return msg.type==='poll_error'||(msg.type==='container_result'&&msg.errors>0);
-  if(_ravenFilter==='warning')
-    return msg.type==='container_result'&&msg.warnings>0&&msg.errors===0;
-  return true;
+function setStatus(icon, text, live){
+  document.getElementById('sl-icon').textContent=icon;
+  document.getElementById('sl-txt').textContent=text;
+  document.getElementById('raven-sl').className='raven-sl'+(live?' live':'');
 }
 
-function pillHtml(msg){
+function issuePillHtml(msg, opacity, isCurrent){
   const ts=msg.ts?fmtShort(msg.ts):'';
-  if(msg.type==='no_connections')
-    return `<div class="pill p-start">No connections configured — add one in the Connections tab.</div>`;
-  if(msg.type==='queue_ready'){
-    const iv=msg.interval?` · ${msg.interval}s/container`:'';
-    return `<div class="pill p-start">&#9654; Scanning <strong>${msg.containers}</strong> containers${iv}</div>`;
-  }
-  if(msg.type==='container_checking')
-    return `<div class="pill p-checking">
-      <div class="pill-hdr"><span class="pill-cn">${esc(msg.container)}</span><span class="pill-sv">${esc(msg.server)}</span></div>
-      <div style="opacity:.7">checking…</div>
-    </div>`;
+  const accent=isCurrent?'border-left:3px solid currentColor;padding-left:9px;':'';
+  const style=`opacity:${opacity};${accent}`;
   if(msg.type==='poll_error')
-    return `<div class="pill p-error">&#10007; <strong>${esc(msg.server)}</strong><div style="opacity:.8;font-size:.75rem;margin-top:2px">${esc(msg.error||'')}</div></div>`;
+    return `<div class="pill p-error" style="${style}">✗ <strong>${esc(msg.server)}</strong><div style="font-size:.75rem;margin-top:2px;opacity:.85">${esc(msg.error||'')}</div></div>`;
   if(msg.type==='container_result'){
-    let cls='p-clean',detail='no changes';
-    if(msg.errors>0){cls='p-error';detail=`${msg.errors} error${msg.errors>1?'s':''}${msg.warnings>0?`, ${msg.warnings} warn`:''}`;
-    }else if(msg.warnings>0){cls='p-warn';detail=`${msg.warnings} warning${msg.warnings>1?'s':''}`;
-    }else if(msg.events>0){cls='p-ok';detail=`${msg.events} new event${msg.events>1?'s':''}`;}
-    return `<div class="pill ${cls}">
+    const re=msg.recent_errors||0, rw=msg.recent_warnings||0;
+    const ne=msg.errors||0, nw=msg.warnings||0;
+    let cls, detail;
+    if(re>0||ne>0){
+      cls='p-error'; const t=re||ne; detail=`${t} error${t!==1?'s':''} (24h)`;
+      const tw=rw||nw; if(tw>0) detail+=`, ${tw} warn`;
+    }else{
+      cls='p-warn'; const tw=rw||nw; detail=`${tw} warning${tw!==1?'s':''} (24h)`;
+    }
+    return `<div class="pill ${cls}" style="${style}">
       <div class="pill-hdr"><span class="pill-cn">${esc(msg.container)}</span><span class="pill-sv">${esc(msg.server)}</span></div>
-      <div style="display:flex;justify-content:space-between"><span>${detail}</span><span class="pill-ts">${ts}</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:2px"><span>${detail}</span><span class="pill-ts">${ts}</span></div>
     </div>`;
   }
   return '';
 }
 
-function addPill(msg){
-  _pills.push(msg); // newest at bottom
-  if(_pills.length>MAX_PILLS)_pills.shift();
-  const feed=document.getElementById('feed');
-  const nearBottom=feed.scrollHeight-feed.clientHeight<=feed.scrollTop+80;
-  renderFeed(false);
-  if(nearBottom)feed.scrollTop=feed.scrollHeight;
+function addIssuePill(msg){
+  _issuePills.push(msg);
+  if(_issuePills.length>MAX_ISSUE_PILLS)_issuePills.shift();
+  renderFeed();
 }
 
-function renderFeed(scrollToBottom){
+function renderFeed(){
   const feed=document.getElementById('feed');
-  const visible=_pills.filter(pillVisible);
-  if(!visible.length){
-    feed.innerHTML=`<div class="ph">${_pills.length?'No events match this filter.':'Waiting for activity…'}</div>`;
+  let src=_issueLinks();
+  if(!src.length){
+    feed.innerHTML='<div class="ph">No issues found yet.</div>';
     return;
   }
-  feed.innerHTML=visible.map(pillHtml).join('');
-  if(scrollToBottom)feed.scrollTop=feed.scrollHeight;
+  const visible=src.slice(-5);
+  const n=visible.length;
+  const ops=[0.15,0.35,0.55,0.75,1.0];
+  feed.innerHTML=visible.map((msg,i)=>issuePillHtml(msg, ops[i+(5-n)]??1.0, i===n-1)).join('');
+  feed.scrollTop=feed.scrollHeight;
+}
+
+function _issueLinks(){
+  if(_ravenFilter==='error')
+    return _issueLinks_all().filter(m=>m.type==='poll_error'||(m.type==='container_result'&&(m.recent_errors||m.errors)>0));
+  if(_ravenFilter==='warning')
+    return _issueLinks_all().filter(m=>m.type==='container_result'&&(m.recent_warnings||m.warnings)>0&&!(m.recent_errors||m.errors));
+  return _issueLinks_all();
+}
+function _issueLinks_all(){return _issueLinks_cache=_issueLinks_cache||_issuePills;}
+let _issueLinks_cache=null;
+
+function handleRaven(msg){
+  _issueLinks_cache=null; // invalidate filter cache
+  switch(msg.type){
+    case 'no_connections':
+      setStatus('—','No connections configured. Add one in Connections tab.',false);
+      break;
+    case 'queue_ready':{
+      const iv=msg.interval?` · ${msg.interval}s/container`:'';
+      setStatus('▶',`Scanning ${msg.containers} containers${iv}`,true);
+      break;
+    }
+    case 'container_checking':
+      setStatus('🔍',`Checking ${msg.container} on ${msg.server}`,true);
+      break;
+    case 'container_result':{
+      _hbBucket+=msg.events;
+      const re=msg.recent_errors||0, rw=msg.recent_warnings||0;
+      const ne=msg.errors||0, nw=msg.warnings||0;
+      if(re>0||ne>0){
+        const t=re||ne;
+        setStatus('⚠',`${msg.container} · ${t} error${t!==1?'s':''} (24h)`,true);
+        addIssuePill(msg);
+      }else if(rw>0||nw>0){
+        const tw=rw||nw;
+        setStatus('⚠',`${msg.container} · ${tw} warning${tw!==1?'s':''} (24h)`,true);
+        addIssuePill(msg);
+      }else{
+        setStatus('✓',`${msg.container} · no changes`,true);
+      }
+      break;
+    }
+    case 'poll_error':
+      setStatus('✗',`${msg.server}: ${msg.error||'connection failed'}`,true);
+      addIssuePill(msg);
+      break;
+  }
 }
 
 /* ---- heartbeat chart ---- */
@@ -471,9 +529,7 @@ function connectRaven(){
     try{
       const msg=JSON.parse(e.data);
       if(msg.type==='connected'){document.getElementById('hb-status').textContent='live';return;}
-      if(msg.type==='container_result')_hbBucket+=msg.events;
-      const show=['container_result','container_checking','poll_error','queue_ready','no_connections'];
-      if(show.includes(msg.type))addPill(msg);
+      handleRaven(msg);
     }catch{}
   };
   es.onerror=()=>{
@@ -588,7 +644,7 @@ def create_connection(body: ConnectionIn) -> dict:
         c = Connection(
             name=body.name, type=body.type,
             base_url=body.base_url.rstrip("/"), api_token=body.api_token,
-            enabled=body.enabled,
+            enabled=body.enabled, poll_interval_seconds=body.poll_interval_seconds,
         )
         s.add(c)
         s.commit()
@@ -606,6 +662,7 @@ def update_connection(cid: int, body: ConnectionIn) -> dict:
         c.type = body.type
         c.base_url = body.base_url.rstrip("/")
         c.enabled = body.enabled
+        c.poll_interval_seconds = body.poll_interval_seconds
         if body.api_token:
             c.api_token = body.api_token
         s.commit()
@@ -773,6 +830,7 @@ def _cdct(c: Connection) -> dict:
     return {
         "id": c.id, "name": c.name, "type": c.type, "base_url": c.base_url,
         "api_token": c.api_token, "enabled": c.enabled,
+        "poll_interval_seconds": c.poll_interval_seconds,
         "last_polled_at": c.last_polled_at.isoformat() if c.last_polled_at else None,
         "last_status": c.last_status, "last_error": c.last_error,
     }
