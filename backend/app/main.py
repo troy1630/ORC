@@ -141,25 +141,27 @@ box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 .network-stage.dragging{cursor:grabbing}
 .net-pan-surface{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .net-backbone{position:absolute;z-index:0;left:0;top:0;overflow:visible;pointer-events:none}
-.net-backbone line{stroke:rgba(139,148,158,.52);stroke-width:1.35;vector-effect:non-scaling-stroke}
-.net-backbone line.hub-link{stroke:rgba(163,113,247,.45);stroke-width:1.55}
-.net-backbone line.err{stroke:rgba(248,81,73,.8)}.net-backbone line.warn{stroke:rgba(210,153,34,.82)}
+.net-backbone line{stroke:rgba(139,148,158,.58);stroke-width:2.1;vector-effect:non-scaling-stroke}
+.net-backbone line.hub-link{stroke:rgba(163,113,247,.55);stroke-width:2.5}
+.net-backbone line.err{stroke:rgba(248,81,73,.86);stroke-width:2.7}.net-backbone line.warn{stroke:rgba(210,153,34,.88);stroke-width:2.7}
 .net-hub,.network-stack,.net-worker{position:absolute;left:var(--x);top:var(--y);transform:translate(-50%,-50%)}
-.net-hub{z-index:3;width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(13,17,23,.9);border:2px solid rgba(88,166,255,.8);box-shadow:0 0 0 5px rgba(88,166,255,.14),0 10px 24px rgba(0,0,0,.26)}
-.net-hub img{width:39px;height:39px;border-radius:50%;object-fit:cover}
-.net-hub-label{position:absolute;left:50%;top:62px;transform:translateX(-50%);max-width:170px;background:rgba(48,54,61,.92);border:1px solid rgba(230,237,243,.14);border-radius:5px;padding:3px 7px;font-size:.61rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt)}
-.network-stack{z-index:4;width:64px;height:64px;isolation:isolate}
-.net-stack-node{position:relative;width:64px;height:64px;border-radius:50%;overflow:hidden;border:1px solid rgba(230,237,243,.28);box-shadow:0 0 0 3px rgba(13,17,23,.68),0 8px 18px rgba(0,0,0,.32);background:#0d1117;cursor:pointer}
+.net-hub,.network-stack,.net-worker{cursor:grab}
+.net-hub:active,.network-stack:active,.net-worker:active{cursor:grabbing}
+.net-hub{z-index:3;width:66px;height:66px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(13,17,23,.9);border:2px solid rgba(88,166,255,.8);box-shadow:0 0 0 5px rgba(88,166,255,.14),0 10px 24px rgba(0,0,0,.26)}
+.net-hub img{width:45px;height:45px;border-radius:50%;object-fit:cover}
+.net-hub-label{position:absolute;left:50%;top:70px;transform:translateX(-50%);max-width:185px;background:rgba(48,54,61,.92);border:1px solid rgba(230,237,243,.14);border-radius:5px;padding:3px 7px;font-size:.65rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt)}
+.network-stack{z-index:4;width:82px;height:82px;isolation:isolate}
+.net-stack-node{position:relative;width:82px;height:82px;border-radius:50%;overflow:hidden;border:1px solid rgba(230,237,243,.28);box-shadow:0 0 0 3px rgba(13,17,23,.68),0 8px 18px rgba(0,0,0,.32);background:#0d1117;cursor:grab}
 .net-stack-node img{width:100%;height:100%;object-fit:cover;filter:saturate(.9) contrast(1.05);opacity:.82;-webkit-mask-image:radial-gradient(circle at center,#000 55%,rgba(0,0,0,.62) 72%,transparent 90%);mask-image:radial-gradient(circle at center,#000 55%,rgba(0,0,0,.62) 72%,transparent 90%)}
-.net-stack-name{position:absolute;left:5px;right:5px;bottom:5px;min-width:0;max-width:none;background:rgba(48,54,61,.94);border:1px solid rgba(230,237,243,.14);border-radius:5px;padding:2px 4px;font-size:.55rem;line-height:1.05;font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;color:var(--txt)}
-.net-worker{display:flex;align-items:center;gap:4px;min-width:0;max-width:122px;cursor:pointer;z-index:3;filter:drop-shadow(0 7px 10px rgba(0,0,0,.28))}
+.net-stack-name{position:absolute;left:6px;right:6px;bottom:6px;min-width:0;max-width:none;background:rgba(48,54,61,.94);border:1px solid rgba(230,237,243,.14);border-radius:5px;padding:3px 5px;font-size:.61rem;line-height:1.05;font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;color:var(--txt)}
+.net-worker{display:flex;align-items:center;gap:5px;min-width:0;max-width:142px;z-index:3;filter:drop-shadow(0 7px 10px rgba(0,0,0,.28))}
 .net-worker.left{flex-direction:row-reverse}.net-worker.left .net-worker-name{text-align:right}
-.worker-avatar{position:relative;width:34px;height:34px;overflow:visible;background:transparent;border:0;flex:0 0 34px}
+.worker-avatar{position:relative;width:48px;height:48px;overflow:visible;background:transparent;border:0;flex:0 0 48px}
 .worker-avatar img{width:100%;height:100%;object-fit:contain;position:static;display:block}
-.net-dot{position:absolute;left:22px;top:-4px;width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 2px #0d1117,0 2px 8px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-size:.54rem;line-height:1;font-weight:900;color:#fff;flex-shrink:0}
-.net-worker.left .net-dot{left:auto;right:22px}
+.net-dot{position:absolute;left:34px;top:-3px;width:21px;height:21px;border-radius:50%;box-shadow:0 0 0 2px #0d1117,0 2px 8px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-size:.58rem;line-height:1;font-weight:900;color:#fff;flex-shrink:0}
+.net-worker.left .net-dot{left:auto;right:34px}
 .net-dot.err{background:var(--red)}.net-dot.warn{background:var(--yel);color:#211300}.net-dot.none{display:none}
-.net-worker-name{display:block;max-width:80px;background:rgba(48,54,61,.88);border:1px solid rgba(230,237,243,.12);border-radius:5px;padding:2px 5px;font-size:.57rem;line-height:1.05;font-weight:750;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.net-worker-name{display:block;max-width:86px;background:rgba(48,54,61,.88);border:1px solid rgba(230,237,243,.12);border-radius:5px;padding:2px 5px;font-size:.62rem;line-height:1.05;font-weight:750;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* EVENTS */
 .card{background:var(--sur);border:1px solid var(--bdr);border-radius:8px}
 .fbtn{background:#21262d;border:1px solid var(--bdr);border-radius:6px;color:var(--mut);cursor:pointer;font-size:.78rem;padding:3px 11px}
@@ -439,7 +441,8 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 let _evts=[], _evFilters={severity:'',container:'',server:''};
 let _conns=[], _editId=null, _charEditKey='', _charDraftCharacter='', _charLogoDraft='';
 let _stacks=[], _connLogoDraft='', _networkZoom=1;
-let _networkPan={x:0,y:0,worldKey:'',dragging:false,startX:0,startY:0,originX:0,originY:0};
+let _networkPan={x:0,y:0,worldKey:'',dragging:false,startX:0,startY:0,originX:0,originY:0,suppressClick:false};
+let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,moved:false};
 let _hbData=new Array(40).fill(0), _hbBucket=0;
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
 let _oracleState={busy:false,summary:null,analysis:'',error:''};
@@ -819,6 +822,18 @@ function networkRand(key,salt){
 }
 function networkClamp(v,min,max){return Math.max(min,Math.min(max,v));}
 function networkPx(v){return `${v.toFixed(1)}px`;}
+function networkNodeStorageKey(id){return `orc.network.node.${encodeURIComponent(id)}`;}
+function loadNetworkNodePosition(id){
+  try{
+    const raw=localStorage.getItem(networkNodeStorageKey(id));
+    if(!raw)return null;
+    const pos=JSON.parse(raw);
+    return Number.isFinite(pos.x)&&Number.isFinite(pos.y)?pos:null;
+  }catch{return null;}
+}
+function saveNetworkNodePosition(id,x,y){
+  try{localStorage.setItem(networkNodeStorageKey(id),JSON.stringify({x,y}));}catch{}
+}
 function stackIssueTotals(stack){
   return stack.containers.reduce((acc,app)=>{const c=issueCounts(app);acc.errors+=c.errors;acc.warnings+=c.warnings;return acc;},{errors:0,warnings:0});
 }
@@ -828,20 +843,20 @@ function issueSeverityFromCounts(counts){
 function layoutNetworkTopology(k){
   const stacks=[...k.stacks].sort((a,b)=>a.name.localeCompare(b.name));
   const totalContainers=stacks.reduce((sum,s)=>sum+(s.containers||[]).length,0);
-  const width=1320;
-  const height=Math.max(760,Math.min(1180,660+Math.sqrt(totalContainers)*38+Math.max(0,stacks.length-6)*34));
-  const hub={id:'hub',type:'hub',fixed:true,x:width/2,y:height/2,r:52};
+  const width=1040;
+  const height=Math.max(660,Math.min(920,560+Math.sqrt(totalContainers)*24+Math.max(0,stacks.length-6)*20));
+  const hub={id:`hub:${k.server}`,type:'hub',fixed:true,x:width/2,y:height/2,r:60};
   const nodes=[hub],stackNodes=[],workerNodes=[],links=[];
   const count=Math.max(1,stacks.length);
   const angleOffset=(networkRand(k.server||'network','angle')-.5)*.72;
-  const ringRx=Math.min(width*.39,335+Math.min(190,stacks.length*16+totalContainers*1.8));
-  const ringRy=Math.min(height*.36,245+Math.min(180,stacks.length*13+totalContainers*1.5));
+  const ringRx=Math.min(width*.31,205+Math.min(100,stacks.length*8+totalContainers*.75));
+  const ringRy=Math.min(height*.3,160+Math.min(95,stacks.length*7+totalContainers*.65));
   stacks.forEach((stack,i)=>{
     const angle=(-Math.PI/2)+angleOffset+(Math.PI*2*i/count);
-    const stagger=count>7&&i%2?.18:0;
+    const stagger=count>7&&i%2?.12:0;
     const sx=hub.x+Math.cos(angle)*ringRx*(1+stagger);
     const sy=hub.y+Math.sin(angle)*ringRy*(1+stagger);
-    const stackNode={id:`s${i}`,type:'stack',stack,x:sx,y:sy,targetX:sx,targetY:sy,r:58,angle};
+    const stackNode={id:`stack:${stackCharacterKey(stack)}`,type:'stack',stack,x:sx,y:sy,targetX:sx,targetY:sy,r:72,angle};
     nodes.push(stackNode);
     stackNodes.push(stackNode);
     links.push({source:hub,target:stackNode,type:'hub',severity:issueSeverityFromCounts(stackIssueTotals(stack))});
@@ -851,42 +866,42 @@ function layoutNetworkTopology(k){
       const rel=apps.length===1?0:(j-(apps.length-1)/2)/(apps.length-1);
       const appKey=app.full_name||app.name||`${stack.name}:${j}`;
       const fanAngle=angle+rel*spread+(networkRand(appKey,'fan')-.5)*.14;
-      const dist=142+Math.floor(j/5)*46+(apps.length>4?22:0);
+      const dist=112+Math.floor(j/5)*36+(apps.length>4?16:0);
       const workerNode={
-        id:`w${i}-${j}`,type:'worker',stack,stackNode,app,
+        id:`worker:${stackCharacterKey(stack)}:${app.full_name||app.name||j}`,type:'worker',stack,stackNode,app,
         x:sx+Math.cos(fanAngle)*dist,
         y:sy+Math.sin(fanAngle)*dist*.88,
         targetX:sx+Math.cos(fanAngle)*dist,
         targetY:sy+Math.sin(fanAngle)*dist*.88,
-        r:34,angle:fanAngle
+        r:48,angle:fanAngle
       };
       nodes.push(workerNode);
       workerNodes.push(workerNode);
       links.push({source:stackNode,target:workerNode,type:'worker',severity:issueSeverityFromCounts(issueCounts(app))});
     });
   });
-  for(let iter=0;iter<170;iter++){
+  for(let iter=0;iter<210;iter++){
     links.forEach(link=>{
       const a=link.source,b=link.target;
       const dx=b.x-a.x,dy=b.y-a.y;
       const d=Math.hypot(dx,dy)||1;
-      const desired=link.type==='hub'?Math.min(470,315+(b.stack?.containers?.length||0)*13):126;
-      const strength=link.type==='hub'?.026:.072;
+      const desired=link.type==='hub'?Math.min(270,178+(b.stack?.containers?.length||0)*7):104;
+      const strength=link.type==='hub'?.03:.078;
       const shift=(d-desired)/d*strength;
       if(!a.fixed){
-        const aw=a.type==='stack'?.38:.5;
+        const aw=a.type==='stack'?.42:.5;
         a.x+=dx*shift*aw;
         a.y+=dy*shift*aw;
       }
       if(!b.fixed){
-        const bw=b.type==='stack'?.74:.86;
+        const bw=b.type==='stack'?.78:.86;
         b.x-=dx*shift*bw;
         b.y-=dy*shift*bw;
       }
     });
     nodes.forEach(node=>{
       if(node.fixed)return;
-      const pull=node.type==='stack'?.022:.038;
+      const pull=node.type==='stack'?.03:.044;
       node.x+=(node.targetX-node.x)*pull;
       node.y+=(node.targetY-node.y)*pull;
     });
@@ -895,7 +910,7 @@ function layoutNetworkTopology(k){
         const a=nodes[i],b=nodes[j];
         let dx=b.x-a.x,dy=b.y-a.y;
         let d=Math.hypot(dx,dy)||.01;
-        const min=a.r+b.r+(a.type===b.type?24:12);
+        const min=a.r+b.r+(a.type===b.type?18:10);
         if(d<min){
           const push=(min-d)/d*.43;
           dx*=push;dy*=push;
@@ -912,8 +927,8 @@ function layoutNetworkTopology(k){
     }
     nodes.forEach(node=>{
       if(node.fixed)return;
-      const padX=node.type==='stack'?78:46;
-      const padY=node.type==='stack'?78:44;
+      const padX=node.type==='stack'?90:58;
+      const padY=node.type==='stack'?90:56;
       node.x=networkClamp(node.x,padX,width-padX);
       node.y=networkClamp(node.y,padY,height-padY);
     });
@@ -924,7 +939,7 @@ function layoutNetworkTopology(k){
 function layoutNetworkWorld(kingdoms){
   const layouts=kingdoms.map(k=>layoutNetworkTopology(k));
   const cols=layouts.length<=2?layouts.length:Math.ceil(Math.sqrt(layouts.length));
-  const gap=180;
+  const gap=90;
   const cellW=Math.max(...layouts.map(l=>l.width),1000)+gap;
   const cellH=Math.max(...layouts.map(l=>l.height),760)+gap;
   const world={width:Math.max(cellW,cols*cellW),height:Math.max(cellH,Math.ceil(layouts.length/cols)*cellH),groups:[],links:[],hubs:[],stacks:[],workers:[]};
@@ -932,7 +947,10 @@ function layoutNetworkWorld(kingdoms){
     const col=i%cols,row=Math.floor(i/cols);
     const ox=col*cellW+(cellW-layout.width)/2;
     const oy=row*cellH+(cellH-layout.height)/2;
-    const offsetNode=node=>({...node,x:node.x+ox,y:node.y+oy});
+    const offsetNode=node=>{
+      const moved=loadNetworkNodePosition(node.id);
+      return {...node,x:moved?moved.x:node.x+ox,y:moved?moved.y:node.y+oy};
+    };
     const hub={...offsetNode(layout.hub),kingdom:layout.kingdom};
     const stacks=layout.stacks.map(offsetNode);
     const workers=layout.workers.map(node=>({...offsetNode(node),stackNode:stacks[layout.stacks.indexOf(node.stackNode)]}));
@@ -960,9 +978,33 @@ function applyNetworkTransform(){
 function centerNetworkWorld(world,stage){
   const sw=stage.clientWidth||1000,sh=stage.clientHeight||700;
   const fit=Math.min(1,(sw-40)/world.width,(sh-40)/world.height);
-  _networkZoom=Math.max(.42,Math.min(.82,fit));
+  _networkZoom=Math.max(.5,Math.min(.92,fit*1.18));
   _networkPan.x=(sw-world.width*_networkZoom)/2;
   _networkPan.y=(sh-world.height*_networkZoom)/2;
+}
+function getNetworkNodeEl(id){
+  return [...document.querySelectorAll('[data-node-id]')].find(el=>el.dataset.nodeId===id)||null;
+}
+function updateNetworkLines(id,x,y){
+  document.querySelectorAll('.net-backbone line').forEach(line=>{
+    if(line.dataset.source===id){line.setAttribute('x1',x.toFixed(1));line.setAttribute('y1',y.toFixed(1));}
+    if(line.dataset.target===id){line.setAttribute('x2',x.toFixed(1));line.setAttribute('y2',y.toFixed(1));}
+  });
+}
+function setNetworkNodePosition(el,x,y,persist=true){
+  el.dataset.x=x.toFixed(1);
+  el.dataset.y=y.toFixed(1);
+  el.style.setProperty('--x',networkPx(x));
+  el.style.setProperty('--y',networkPx(y));
+  updateNetworkLines(el.dataset.nodeId,x,y);
+  if(el.classList.contains('net-worker')){
+    const stackEl=getNetworkNodeEl(el.dataset.stackNodeId||'');
+    if(stackEl){
+      const sx=Number(stackEl.dataset.x||0);
+      el.classList.toggle('left',x<sx);
+    }
+  }
+  if(persist)saveNetworkNodePosition(el.dataset.nodeId,x,y);
 }
 function renderNetwork(stacks){
   const stage=document.getElementById('network-stage');
@@ -977,9 +1019,9 @@ function renderNetwork(stacks){
   }
   const lineHtml=world.links.map(link=>{
     const cls=`${link.type==='hub'?'hub-link':''} ${link.severity}`.trim();
-    return `<line class="${esc(cls)}" x1="${link.source.x.toFixed(1)}" y1="${link.source.y.toFixed(1)}" x2="${link.target.x.toFixed(1)}" y2="${link.target.y.toFixed(1)}"></line>`;
+    return `<line class="${esc(cls)}" data-source="${esc(link.source.id)}" data-target="${esc(link.target.id)}" x1="${link.source.x.toFixed(1)}" y1="${link.source.y.toFixed(1)}" x2="${link.target.x.toFixed(1)}" y2="${link.target.y.toFixed(1)}"></line>`;
   }).join('');
-  const hubHtml=world.hubs.map(node=>`<div class="net-hub" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" title="${esc(serverDisplayName(node.kingdom||{}))}">
+  const hubHtml=world.hubs.map(node=>`<div class="net-hub" data-node-id="${esc(node.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" title="${esc(serverDisplayName(node.kingdom||{}))}">
     <img src="/assets/kingdoms/castle.png" alt="">
     <span class="net-hub-label">${esc(serverDisplayName(node.kingdom||{}))}</span>
   </div>`).join('');
@@ -989,7 +1031,7 @@ function renderNetwork(stacks){
     const ch=CHARACTER_BY_ID[charId]||CHARACTERS[0];
     const stackTotals=stackIssueTotals(stack);
     const severity=stackTotals.errors>0?'error':stackTotals.warnings>0?'warning':'';
-    return `<div class="network-stack" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}">
+    return `<div class="network-stack" data-node-id="${esc(node.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}">
       <div class="net-stack-node" onclick="jumpToEvents('${esc(stack.server)}','${esc(stack.name)}','${esc(severity)}')" title="${esc(stack.name)}">
         <img src="${esc(ch.src)}" alt="${esc(stackFriendlyName(stack))}">
         <span class="net-stack-name">${esc(stackFriendlyName(stack))}</span>
@@ -1005,7 +1047,7 @@ function renderNetwork(stacks){
     const workerAsset=WORKER_ASSETS[hashStr(app.full_name||app.name)%WORKER_ASSETS.length];
     const displayName=containerFriendlyName(app);
     const side=node.x<node.stackNode.x?'left':'right';
-    return `<div class="net-worker ${side}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" onclick="jumpToEventsFromEl(this)" data-server="${esc(node.stack.server)}" data-container="${esc(app.full_name)}" data-severity="${esc(dot==='err'?'error':dot==='warn'?'warning':'')}" title="${esc(app.full_name)}">
+    return `<div class="net-worker ${side}" data-node-id="${esc(node.id)}" data-stack-node-id="${esc(node.stackNode.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" onclick="jumpToEventsFromEl(this)" data-server="${esc(node.stack.server)}" data-container="${esc(app.full_name)}" data-severity="${esc(dot==='err'?'error':dot==='warn'?'warning':'')}" title="${esc(app.full_name)}">
       <span class="worker-avatar"><img src="${esc(workerAsset)}" alt=""></span>
       <span class="net-dot ${dot}">${esc(dotText)}</span>
       <span class="net-worker-name">${esc(displayName)}</span>
@@ -1373,7 +1415,21 @@ function setupNetworkPan(){
   const stage=document.getElementById('network-stage');
   if(!stage)return;
   stage.addEventListener('pointerdown',e=>{
-    if(e.button!==0||e.target.closest('.net-tools,.net-worker,.net-stack-node'))return;
+    if(e.button!==0)return;
+    const nodeEl=e.target.closest('.net-hub,.network-stack,.net-worker');
+    if(nodeEl){
+      e.preventDefault();
+      _networkDrag.active=true;
+      _networkDrag.nodeId=nodeEl.dataset.nodeId||'';
+      _networkDrag.startX=e.clientX;
+      _networkDrag.startY=e.clientY;
+      _networkDrag.originX=Number(nodeEl.dataset.x||0);
+      _networkDrag.originY=Number(nodeEl.dataset.y||0);
+      _networkDrag.moved=false;
+      stage.setPointerCapture(e.pointerId);
+      return;
+    }
+    if(e.target.closest('.net-tools'))return;
     e.preventDefault();
     _networkPan.dragging=true;
     _networkPan.startX=e.clientX;
@@ -1384,12 +1440,32 @@ function setupNetworkPan(){
     stage.setPointerCapture(e.pointerId);
   });
   stage.addEventListener('pointermove',e=>{
+    if(_networkDrag.active){
+      const el=getNetworkNodeEl(_networkDrag.nodeId);
+      if(!el)return;
+      const sx=e.clientX-_networkDrag.startX,sy=e.clientY-_networkDrag.startY;
+      if(Math.hypot(sx,sy)>4)_networkDrag.moved=true;
+      const x=_networkDrag.originX+sx/_networkZoom;
+      const y=_networkDrag.originY+sy/_networkZoom;
+      setNetworkNodePosition(el,x,y);
+      return;
+    }
     if(!_networkPan.dragging)return;
     _networkPan.x=_networkPan.originX+(e.clientX-_networkPan.startX);
     _networkPan.y=_networkPan.originY+(e.clientY-_networkPan.startY);
     applyNetworkTransform();
   });
   const stop=e=>{
+    if(_networkDrag.active){
+      if(_networkDrag.moved){
+        _networkPan.suppressClick=true;
+        setTimeout(()=>{_networkPan.suppressClick=false;},80);
+      }
+      _networkDrag.active=false;
+      _networkDrag.nodeId='';
+      try{stage.releasePointerCapture(e.pointerId);}catch{}
+      return;
+    }
     if(!_networkPan.dragging)return;
     _networkPan.dragging=false;
     stage.classList.remove('dragging');
@@ -1397,6 +1473,11 @@ function setupNetworkPan(){
   };
   stage.addEventListener('pointerup',stop);
   stage.addEventListener('pointercancel',stop);
+  stage.addEventListener('click',e=>{
+    if(!_networkPan.suppressClick)return;
+    e.preventDefault();
+    e.stopPropagation();
+  },true);
   stage.addEventListener('wheel',e=>{
     if(!stage.closest('.pane.on'))return;
     e.preventDefault();
