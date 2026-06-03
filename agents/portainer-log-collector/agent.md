@@ -25,6 +25,7 @@ Authenticate to Portainer, pull configured container logs, normalize them, and e
 
 ## Allowed Skills
 
+- portainer_access
 - portainer-log-review
 
 ## Rules

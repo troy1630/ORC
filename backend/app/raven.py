@@ -14,6 +14,7 @@ import redis as _redis
 from .config import REDIS_URL
 
 CHANNEL = "raven"
+ISSUE_SEVERITIES = {"warning", "error", "critical"}
 
 _client: _redis.Redis | None = None
 
@@ -32,3 +33,41 @@ def publish(msg: dict[str, Any]) -> None:
         _get().publish(CHANNEL, json.dumps(msg))
     except Exception:
         pass
+
+
+def _iso(value: Any) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def issue_event_payload(server: str, event: Any) -> dict[str, Any] | None:
+    severity = str(getattr(event, "severity", "") or "").lower()
+    if severity not in ISSUE_SEVERITIES:
+        return None
+
+    payload: dict[str, Any] = {
+        "type": "issue_event",
+        "server": server,
+        "container": getattr(event, "container_name", ""),
+        "severity": severity,
+        "message": getattr(event, "message", ""),
+        "occurred_at": _iso(getattr(event, "occurred_at", None)),
+    }
+    event_id = getattr(event, "id", None)
+    if event_id is not None:
+        payload["event_id"] = event_id
+    return payload
+
+
+def issue_event_payloads(server: str, events: list[Any], limit: int = 25) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for event in events:
+        payload = issue_event_payload(server, event)
+        if payload:
+            payloads.append(payload)
+        if len(payloads) >= limit:
+            break
+    return payloads

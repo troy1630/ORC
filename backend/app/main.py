@@ -174,6 +174,7 @@ canvas{display:block;width:100%;height:48px}
 .pill-hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
 .pill-cn{font-family:monospace;font-weight:600;font-size:.78rem}
 .pill-sv{font-size:.68rem;opacity:.75}
+.pill-msg{font-size:.72rem;line-height:1.3;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;opacity:.92}
 .pill-ts{font-size:.68rem;opacity:.6;text-align:right;margin-top:2px}
 .oracle{border-top:1px solid var(--bdr);padding:12px;display:flex;flex-direction:column;gap:8px;background:rgba(13,17,23,.24)}
 .oracle-hdr{display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -307,6 +308,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   </div>
   <div class="feed-hdr">
     <button class="ff on" id="rf-all" onclick="setRF('')">All</button>
+    <button class="ff" id="rf-critical" onclick="setRF('critical')">Critical</button>
     <button class="ff" id="rf-error" onclick="setRF('error')">Errors</button>
     <button class="ff" id="rf-warning" onclick="setRF('warning')">Warnings</button>
   </div>
@@ -362,7 +364,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 let _evts=[], _evFilters={severity:'',container:'',server:''};
 let _conns=[], _editId=null, _charEditKey='';
 let _hbData=new Array(40).fill(0), _hbBucket=0;
-let _ravenFilter='', _issuePills=[];
+let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
 let _oracleState={busy:false,summary:null,analysis:'',error:''};
 let _windowHours=24;
 const MAX_ISSUE_PILLS=20;
@@ -435,7 +437,12 @@ function setWindowHours(v,refresh=true){
   storageSet('orc.window.hours',String(_windowHours));
   const sel=document.getElementById('window-hours');
   if(sel)sel.value=String(_windowHours);
-  if(refresh)loadAll();
+  if(refresh){
+    _issuePills=[];
+    _issueKeys=new Set();
+    renderFeed();
+    loadAll();
+  }
 }
 function countLabel(n){return n>99?'99+':String(n);}
 function statusCircles(errors,warnings){
@@ -783,7 +790,7 @@ async function pollNow(id,btn){
    ============================================================ */
 function setRF(f){
   _ravenFilter=f;
-  ['all','error','warning'].forEach(k=>document.getElementById('rf-'+k).classList.toggle('on',k===(f||'all')));
+  ['all','critical','error','warning'].forEach(k=>document.getElementById('rf-'+k).classList.toggle('on',k===(f||'all')));
   renderFeed();
 }
 function setStatus(icon,text,live){
@@ -791,20 +798,84 @@ function setStatus(icon,text,live){
   document.getElementById('sl-txt').textContent=text;
   document.getElementById('raven-sl').className='raven-sl'+(live?' live':'');
 }
-function addIssuePill(msg){
+function issueKey(msg){
+  if(msg.type==='issue_event'&&msg.event_id)return `event:${msg.event_id}`;
+  return [msg.type,msg.server||'',msg.container||'',msg.severity||'',msg.occurred_at||msg.ts||'',msg.message||msg.error||''].join('|');
+}
+function issueTime(msg){
+  return new Date(msg.occurred_at||msg.ts||0).getTime()||0;
+}
+function pillSeverity(msg){
+  if(msg.type==='poll_error')return 'error';
+  if(msg.type==='issue_event')return msg.severity||'error';
+  if(msg.type==='container_result'){
+    const c=newIssueCounts(msg);
+    if(c.errors>0)return 'error';
+    if(c.warnings>0)return 'warning';
+  }
+  return '';
+}
+function addIssuePill(msg,repaint=true){
+  if(msg.type==='container_result'&&msg.issue_events)return;
+  const key=issueKey(msg);
+  if(_issueKeys.has(key))return;
+  msg._key=key;
+  _issueKeys.add(key);
   _issuePills.push(msg);
-  if(_issuePills.length>MAX_ISSUE_PILLS)_issuePills.shift();
-  renderFeed();
+  _issuePills.sort((a,b)=>issueTime(a)-issueTime(b));
+  while(_issuePills.length>MAX_ISSUE_PILLS){
+    const old=_issuePills.shift();
+    if(old&&old._key)_issueKeys.delete(old._key);
+  }
+  if(repaint)renderFeed();
 }
 function _filteredPills(){
-  if(_ravenFilter==='error') return _issuePills.filter(m=>m.type==='poll_error'||(m.type==='container_result'&&newIssueCounts(m).errors>0));
-  if(_ravenFilter==='warning') return _issuePills.filter(m=>m.type==='container_result'&&newIssueCounts(m).warnings>0&&newIssueCounts(m).errors===0);
+  if(_ravenFilter==='critical')return _issuePills.filter(m=>pillSeverity(m)==='critical');
+  if(_ravenFilter==='error')return _issuePills.filter(m=>['critical','error'].includes(pillSeverity(m)));
+  if(_ravenFilter==='warning')return _issuePills.filter(m=>pillSeverity(m)==='warning');
   return _issuePills;
 }
+function eventToRavenIssue(e){
+  return {
+    type:'issue_event',
+    event_id:e.id,
+    server:e.server,
+    container:e.container_name,
+    severity:e.severity,
+    message:e.message,
+    occurred_at:e.occurred_at,
+    ts:e.occurred_at
+  };
+}
+async function loadRavenBacklog(){
+  try{
+    const qs=`limit=${MAX_ISSUE_PILLS}&hours=${_windowHours}`;
+    const [err,warn]=await Promise.all([
+      fetch(`/events?${qs}&severity=error`).then(r=>r.json()),
+      fetch(`/events?${qs}&severity=warning`).then(r=>r.json())
+    ]);
+    const items=[...(err.items||[]),...(warn.items||[])]
+      .filter(e=>['critical','error','warning'].includes(e.severity))
+      .sort((a,b)=>new Date(a.occurred_at)-new Date(b.occurred_at))
+      .slice(-MAX_ISSUE_PILLS);
+    items.forEach(e=>addIssuePill(eventToRavenIssue(e),false));
+    renderFeed();
+  }catch{}
+}
 function issuePillHtml(msg,opacity,isCurrent){
-  const ts=msg.ts?fmtShort(msg.ts):'';
+  const ts=fmtShort(msg.occurred_at||msg.ts);
   const accent=isCurrent?'border-left:3px solid currentColor;padding-left:9px;':'';
   const style=`opacity:${opacity};${accent}`;
+  if(msg.type==='issue_event'){
+    const sev=msg.severity||'error';
+    const cls=sev==='warning'?'p-warn':'p-error';
+    const clickSev=sev==='critical'?'critical':(sev==='warning'?'warning':'error');
+    return `<div class="pill ${cls}" style="${style};cursor:pointer" data-server="${esc(msg.server||'')}" data-container="${esc(msg.container||'')}" data-severity="${esc(clickSev)}" onclick="jumpToEventsFromEl(this)" title="Click to filter Events">
+      <div class="pill-hdr"><span class="pill-cn">${esc(msg.container||'')}</span><span class="pill-sv">${esc(msg.server||'')} - ${esc(sev.toUpperCase())}</span></div>
+      <div class="pill-msg">${esc(msg.message||'')}</div>
+      <div class="pill-ts">${ts}</div>
+    </div>`;
+  }
   if(msg.type==='poll_error')
     return `<div class="pill p-error" style="${style}">✗ <strong>${esc(msg.server)}</strong><div style="font-size:.72rem;margin-top:2px;opacity:.85">${esc(msg.error||'')}</div></div>`;
   if(msg.type==='container_result'){
@@ -812,8 +883,7 @@ function issuePillHtml(msg,opacity,isCurrent){
     let cls,detail,sev;
     if(ne>0){cls='p-error';sev='error';detail=`${ne} new error${ne!==1?'s':''}`;if(nw>0)detail+=`, ${nw} new warn`;}
     else{cls='p-warn';sev='warning';detail=`${nw} new warning${nw!==1?'s':''}`;}
-    const click=`jumpToEvents('${esc(msg.server)}','${esc(msg.container)}','${sev}')`;
-    return `<div class="pill ${cls}" style="${style};cursor:pointer" onclick="${click}" title="Click to filter Events">
+    return `<div class="pill ${cls}" style="${style};cursor:pointer" data-server="${esc(msg.server)}" data-container="${esc(msg.container)}" data-severity="${esc(sev)}" onclick="jumpToEventsFromEl(this)" title="Click to filter Events">
       <div class="pill-hdr"><span class="pill-cn">${esc(msg.container)}</span><span class="pill-sv">${esc(msg.server)}</span></div>
       <div style="display:flex;justify-content:space-between;margin-top:2px"><span>${detail}</span><span class="pill-ts">${ts}</span></div>
     </div>`;
@@ -833,9 +903,16 @@ function handleRaven(msg){
     case 'no_connections': setStatus('—','No connections configured.',false); break;
     case 'queue_ready':{const iv=msg.interval?` · ${msg.interval}s/ctr`:'';setStatus('▶',`Scanning ${msg.containers} containers${iv}`,true);break;}
     case 'container_checking': setStatus('🔍',`Checking ${msg.container} on ${msg.server}`,true); break;
+    case 'issue_event':{
+      const sev=msg.severity||'error';
+      _hbBucket+=1;
+      setStatus('!',`${msg.container||'unknown'} - ${sev}`,true);
+      addIssuePill(msg);
+      break;
+    }
     case 'container_result':{
       const ne=msg.errors||0,nw=msg.warnings||0;
-      _hbBucket+=ne+nw;
+      if(!msg.issue_events)_hbBucket+=ne+nw;
       if(ne>0){setStatus('⚠',`${msg.container} · ${ne} new error${ne!==1?'s':''}`,true);addIssuePill(msg);}
       else if(nw>0){setStatus('⚠',`${msg.container} · ${nw} new warning${nw!==1?'s':''}`,true);addIssuePill(msg);}
       else setStatus('✓',`${msg.container} · no new issues`,true);
@@ -895,7 +972,7 @@ function connectRaven(){
 async function loadAll(){
   _conns=await fetch('/connections').then(r=>r.json()).catch(()=>_conns);
   _populateServerDropdown();
-  await Promise.all([loadStatus(),loadEvts(),loadMap()]);
+  await Promise.all([loadStatus(),loadEvts(),loadMap(),loadRavenBacklog()]);
   document.getElementById('upd').textContent=fmtShort(new Date().toISOString());
 }
 window.addEventListener('resize',()=>{resizeCanvas();drawHb();});
@@ -1327,6 +1404,10 @@ def poll_now(cid: int) -> dict:
             cname = (container.get("Names") or [f"/{cid_c[:12]}"])[0].lstrip("/")
             _raven.publish({"type": "container_checking", "server": name, "container": cname})
             try:
+                event_count = 0
+                err_c = 0
+                warn_c = 0
+                issue_payloads: list[dict] = []
                 with SessionLocal() as session:
                     chk = session.query(IngestionCheckpoint).filter_by(
                         connection_id=conn_id, endpoint_id=eid, container_id=cid_c
@@ -1334,8 +1415,13 @@ def poll_now(cid: int) -> dict:
                     since = chk.last_unix_ts if chk else 0
                     raw = client.get_container_logs(eid, cid_c, since=since)
                     events, last_ts = parse_logs(raw, conn_id, eid, cid_c, cname)
+                    event_count = len(events)
+                    err_c = sum(1 for e in events if e.severity in ("error", "critical"))
+                    warn_c = sum(1 for e in events if e.severity == "warning")
                     if events:
                         session.add_all(events)
+                        session.flush()
+                        issue_payloads = _raven.issue_event_payloads(name, events)
                         if chk:
                             chk.last_unix_ts = last_ts
                         else:
@@ -1344,14 +1430,15 @@ def poll_now(cid: int) -> dict:
                                 container_id=cid_c, last_unix_ts=last_ts,
                             ))
                         session.commit()
-                    err_c  = sum(1 for e in events if e.severity in ("error", "critical"))
-                    warn_c = sum(1 for e in events if e.severity == "warning")
-                    _raven.publish({
-                        "type": "container_result",
-                        "server": name, "container": cname,
-                        "events": len(events), "errors": err_c, "warnings": warn_c,
-                    })
-                    total_events += len(events)
+                for payload in issue_payloads:
+                    _raven.publish(payload)
+                _raven.publish({
+                    "type": "container_result",
+                    "server": name, "container": cname,
+                    "events": event_count, "errors": err_c, "warnings": warn_c,
+                    "issue_events": len(issue_payloads),
+                })
+                total_events += event_count
             except Exception as exc2:
                 log.warning("poll_now %s/%s: %s", name, cname, exc2)
 

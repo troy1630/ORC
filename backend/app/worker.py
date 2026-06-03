@@ -116,6 +116,10 @@ def _recent_counts(conn_id: int, cid: str) -> tuple[int, int]:
 def _poll_next() -> None:
     global _sleep
     conn_id, conn_name, eid, cid, cname, client, conn_interval = _queue.popleft()
+    event_count = 0
+    new_errors = 0
+    new_warnings = 0
+    issue_payloads: list[dict] = []
 
     # Use connection's configured interval, or keep current auto interval
     if conn_interval:
@@ -133,9 +137,14 @@ def _poll_next() -> None:
             since = checkpoint.last_unix_ts if checkpoint else 0
             raw = client.get_container_logs(eid, cid, since=since)
             events, last_ts = parse_logs(raw, conn_id, eid, cid, cname)
+            event_count = len(events)
+            new_errors = sum(1 for e in events if e.severity in ("error", "critical"))
+            new_warnings = sum(1 for e in events if e.severity == "warning")
 
             if events:
                 session.add_all(events)
+                session.flush()
+                issue_payloads = raven.issue_event_payloads(conn_name, events)
                 if checkpoint:
                     checkpoint.last_unix_ts = last_ts
                 else:
@@ -145,19 +154,21 @@ def _poll_next() -> None:
                     ))
                 session.commit()
 
-        new_errors  = sum(1 for e in events if e.severity in ("error", "critical"))
-        new_warnings = sum(1 for e in events if e.severity == "warning")
         recent_errors, recent_warnings = _recent_counts(conn_id, cid)
+
+        for payload in issue_payloads:
+            raven.publish(payload)
 
         raven.publish({
             "type": "container_result",
             "server": conn_name,
             "container": cname,
-            "events": len(events),
+            "events": event_count,
             "errors": new_errors,
             "warnings": new_warnings,
             "recent_errors": recent_errors,
             "recent_warnings": recent_warnings,
+            "issue_events": len(issue_payloads),
         })
 
         if events:
