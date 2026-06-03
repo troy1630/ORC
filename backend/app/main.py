@@ -83,11 +83,11 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
 .main{overflow-y:auto;padding:14px}
 .pane{display:none}.pane.on{display:block}
 /* STACK MAP */
-#pane-map,#pane-network{position:relative;min-height:calc(100vh - 92px);padding:12px;border-radius:14px;overflow:hidden;background:
+#pane-map,#pane-network,#pane-netview{position:relative;min-height:calc(100vh - 92px);padding:12px;border-radius:14px;overflow:hidden;background:
   linear-gradient(rgba(13,17,23,.18),rgba(13,17,23,.34)),
   url('/assets/kingdoms/pale-strategy-map.png') center/cover no-repeat;
 box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
-#pane-map::before,#pane-network::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at center,rgba(255,255,255,.04),rgba(13,17,23,.06) 52%,rgba(13,17,23,.18) 100%);pointer-events:none}
+#pane-map::before,#pane-network::before,#pane-netview::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at center,rgba(255,255,255,.04),rgba(13,17,23,.06) 52%,rgba(13,17,23,.18) 100%);pointer-events:none}
 #pane-overview{min-height:calc(100vh - 92px);padding:12px;background:#0f141b}
 .map-grid{position:relative;z-index:1;display:flex;flex-direction:column;gap:11px}
 .kingdom{border:1px solid rgba(163,113,247,.42);border-radius:9px;padding:10px;background:rgba(13,17,23,.62);box-shadow:0 10px 24px rgba(0,0,0,.16);backdrop-filter:blur(2px)}
@@ -152,8 +152,9 @@ box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 .net-backbone{position:absolute;z-index:0;left:0;top:0;overflow:visible;pointer-events:none}
 .net-backbone line{stroke:rgba(139,148,158,.58);stroke-width:4.2;vector-effect:non-scaling-stroke}
 .net-backbone line.hub-link{stroke:rgba(163,113,247,.55);stroke-width:5}
-.net-backbone line.worker-link{stroke:rgba(31,37,45,.86);stroke-width:5.2}
 .net-backbone line.err{stroke:rgba(248,81,73,.86);stroke-width:5.4}.net-backbone line.warn{stroke:rgba(210,153,34,.88);stroke-width:5.4}
+.net-backbone line.worker-link{stroke:rgba(31,37,45,.86);stroke-width:3.05}
+.net-backbone line.worker-link.err{stroke:rgba(248,81,73,.88);stroke-width:3.35}.net-backbone line.worker-link.warn{stroke:rgba(210,153,34,.9);stroke-width:3.35}
 .net-hub,.network-stack,.net-worker{position:absolute;left:var(--x);top:var(--y);transform:translate(-50%,-50%)}
 .net-hub,.network-stack,.net-worker{cursor:grab}
 .net-hub:active,.network-stack:active,.net-worker:active{cursor:grabbing}
@@ -275,7 +276,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .aside{display:none}
   .aside-width-grip{display:none}
   .main{padding:12px}
-  #pane-map,#pane-overview,#pane-network{padding:10px}
+  #pane-map,#pane-overview,#pane-network,#pane-netview{padding:10px}
   .kingdom{padding:8px}
   .kingdom-hdr{align-items:flex-start}
   .kingdom-castle,.kingdom-logo{width:34px;height:34px}
@@ -291,10 +292,12 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     <button class="tab on" id="tab-map" onclick="showTab('map')">Map</button>
     <button class="tab" id="tab-overview" onclick="showTab('overview')">Overview</button>
     <button class="tab" id="tab-network" onclick="showTab('network')">Network</button>
+    <button class="tab" id="tab-netview" onclick="showTab('netview')">Net View</button>
     <button class="tab" id="tab-events" onclick="showTab('events')">Events</button>
     <button class="tab" id="tab-conn" onclick="showTab('conn')">Connections</button>
   </div>
   <div class="nav-r">
+    <button class="nav-sel" id="view-mode-toggle" onclick="toggleViewMode()" title="Switch default/corporate view">Default</button>
     <span class="sp"><span class="dot" id="api-dot"></span><span id="api-txt">API</span></span>
     <span class="sp"><span id="srv-txt" style="color:var(--mut)">—</span> <span style="color:var(--mut)">srv</span></span>
     <span class="sp" style="cursor:pointer" onclick="showTab('events');setEvFilter('severity','error')">
@@ -334,6 +337,16 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
       <button class="btns" onclick="resetNetworkView()">&#8982;</button>
     </div>
     <div class="network-stage" id="network-stage"><div class="empty">Loading network...</div></div>
+  </div>
+
+  <!-- NET VIEW -->
+  <div class="pane" id="pane-netview">
+    <div class="net-tools">
+      <button class="btns" onclick="zoomNetwork(-0.1)">-</button>
+      <button class="btns" onclick="zoomNetwork(0.1)">+</button>
+      <button class="btns" onclick="resetNetworkView()">&#8982;</button>
+    </div>
+    <div class="network-stage" id="netview-stage"><div class="empty">Loading net view...</div></div>
   </div>
 
   <!-- EVENTS -->
@@ -467,9 +480,10 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 let _evts=[], _evFilters={severity:'',container:'',server:''};
 let _conns=[], _editId=null, _charEditKey='', _charDraftCharacter='', _charLogoDraft='', _charDefaultLogo='';
 let _stacks=[], _connLogoDraft='', _networkZoom=1;
-let _networkPan={x:0,y:0,worldKey:'',dragging:false,startX:0,startY:0,originX:0,originY:0,suppressClick:false};
+let _networkPan={x:0,y:0,worldKey:'',centeredStageId:'',centeredVisible:false,dragging:false,startX:0,startY:0,originX:0,originY:0,suppressClick:false};
 let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,moved:false};
 let _networkChecking={server:'',container:''};
+let _viewMode='default';
 let _hbData=new Array(40).fill(0), _hbBucket=0;
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
 let _oracleState={busy:false,summary:null,analysis:'',error:''};
@@ -516,6 +530,7 @@ const STACK_STORAGE_PREFIX='orc.stack.';
 const CONTAINER_NAME_PREFIX='orc.container.name.';
 const RAVEN_FEED_HEIGHT_KEY='orc.raven.feed.height';
 const ASIDE_WIDTH_KEY='orc.aside.width';
+const VIEW_MODE_KEY='orc.view.mode';
 const MT_ZONE='America/Denver';
 const DATE_FMT=new Intl.DateTimeFormat('en-US',{timeZone:MT_ZONE,year:'numeric',month:'short',day:'2-digit',hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
 const TIME_FMT=new Intl.DateTimeFormat('en-US',{timeZone:MT_ZONE,hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
@@ -524,6 +539,7 @@ const TIME_FMT=new Intl.DateTimeFormat('en-US',{timeZone:MT_ZONE,hour:'numeric',
    UTILS
    ============================================================ */
 function showTab(id){
+  if(!tabAllowed(id))id=firstTabForMode();
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   document.getElementById('pane-'+id).classList.add('on');
@@ -532,7 +548,32 @@ function showTab(id){
   if(id==='map')loadMap();
   if(id==='overview')loadOverview();
   if(id==='network')loadNetwork();
+  if(id==='netview')loadNetView();
   if(id==='events')loadEvts();
+}
+function tabsForViewMode(mode=_viewMode){
+  return mode==='corporate'?['overview','netview','events','conn']:['map','network','events','conn'];
+}
+function tabAllowed(id){return tabsForViewMode().includes(id);}
+function firstTabForMode(){return tabsForViewMode()[0];}
+function setViewMode(mode,persist=true){
+  _viewMode=mode==='corporate'?'corporate':'default';
+  if(persist)storageSet(VIEW_MODE_KEY,_viewMode);
+  const hiddenByMode={
+    default:['overview','netview'],
+    corporate:['map','network']
+  };
+  ['map','overview','network','netview','events','conn'].forEach(id=>{
+    const tab=document.getElementById('tab-'+id);
+    if(tab)tab.hidden=hiddenByMode[_viewMode].includes(id);
+  });
+  const btn=document.getElementById('view-mode-toggle');
+  if(btn)btn.textContent=_viewMode==='corporate'?'Corporate':'Default';
+  const active=document.querySelector('.pane.on')?.id.replace('pane-','')||'';
+  if(!tabAllowed(active))showTab(firstTabForMode());
+}
+function toggleViewMode(){
+  setViewMode(_viewMode==='corporate'?'default':'corporate');
 }
 function fmt(iso){return iso?DATE_FMT.format(new Date(iso)):'';}
 function fmtShort(iso){return iso?TIME_FMT.format(new Date(iso)):'';}
@@ -700,6 +741,7 @@ function renderVisualViews(){
     renderMap(_stacks);
     renderOverview(_stacks);
     renderNetwork(_stacks);
+    renderNetView(_stacks);
   }
 }
 function jumpToEventsFromEl(el){
@@ -796,11 +838,13 @@ async function loadStacks(){
     document.getElementById('map-grid').innerHTML='<div class="empty">Could not load stack map.</div>';
     document.getElementById('overview-grid').innerHTML='<div class="empty">Could not load overview.</div>';
     document.getElementById('network-stage').innerHTML='<div class="empty">Could not load network.</div>';
+    document.getElementById('netview-stage').innerHTML='<div class="empty">Could not load net view.</div>';
   }
 }
 async function loadMap(){if(_stacks.length)renderMap(_stacks);else await loadStacks();}
 async function loadOverview(){if(_stacks.length)renderOverview(_stacks);else await loadStacks();}
 async function loadNetwork(){if(_stacks.length)renderNetwork(_stacks);else await loadStacks();}
+async function loadNetView(){if(_stacks.length)renderNetView(_stacks);else await loadStacks();}
 
 function groupKingdoms(stacks){
   const kingdomMap=new Map();
@@ -898,7 +942,10 @@ function zoomNetwork(delta){
 }
 function resetNetworkView(){
   _networkPan.worldKey='';
+  _networkPan.centeredStageId='';
+  _networkPan.centeredVisible=false;
   renderNetwork(_stacks);
+  renderNetView(_stacks);
 }
 function networkRand(key,salt){
   return (hashStr(`${key}::${salt}`)%10000)/10000;
@@ -1078,8 +1125,9 @@ function networkWorldKey(kingdoms){
   return kingdoms.map(k=>`${k.server}:${k.stacks.length}:${k.stacks.reduce((n,s)=>n+s.containers.length,0)}`).join('|');
 }
 function applyNetworkTransform(){
-  const surface=document.getElementById('net-pan-surface');
-  if(surface)surface.style.transform=`translate(${_networkPan.x}px,${_networkPan.y}px) scale(${_networkZoom})`;
+  document.querySelectorAll('.net-pan-surface').forEach(surface=>{
+    surface.style.transform=`translate(${_networkPan.x}px,${_networkPan.y}px) scale(${_networkZoom})`;
+  });
 }
 function centerNetworkWorld(world,stage){
   const sw=stage.clientWidth||1000,sh=stage.clientHeight||700;
@@ -1088,23 +1136,24 @@ function centerNetworkWorld(world,stage){
   _networkPan.x=(sw-world.width*_networkZoom)/2;
   _networkPan.y=(sh-world.height*_networkZoom)/2;
 }
-function getNetworkNodeEl(id){
-  return [...document.querySelectorAll('[data-node-id]')].find(el=>el.dataset.nodeId===id)||null;
+function getNetworkNodeEl(id,root=document){
+  return [...root.querySelectorAll('[data-node-id]')].find(el=>el.dataset.nodeId===id)||null;
 }
-function updateNetworkLines(id,x,y){
-  document.querySelectorAll('.net-backbone line').forEach(line=>{
+function updateNetworkLines(id,x,y,root=document){
+  root.querySelectorAll('.net-backbone line').forEach(line=>{
     if(line.dataset.source===id){line.setAttribute('x1',x.toFixed(1));line.setAttribute('y1',y.toFixed(1));}
     if(line.dataset.target===id){line.setAttribute('x2',x.toFixed(1));line.setAttribute('y2',y.toFixed(1));}
   });
 }
 function setNetworkNodePosition(el,x,y,persist=true){
+  const root=el.closest('.net-pan-surface')||document;
   el.dataset.x=x.toFixed(1);
   el.dataset.y=y.toFixed(1);
   el.style.setProperty('--x',networkPx(x));
   el.style.setProperty('--y',networkPx(y));
-  updateNetworkLines(el.dataset.nodeId,x,y);
+  updateNetworkLines(el.dataset.nodeId,x,y,root);
   if(el.classList.contains('net-worker')){
-    const stackEl=getNetworkNodeEl(el.dataset.stackNodeId||'');
+    const stackEl=getNetworkNodeEl(el.dataset.stackNodeId||'',root);
     if(stackEl){
       const sx=Number(stackEl.dataset.x||0);
       el.classList.toggle('left',x<sx);
@@ -1112,15 +1161,20 @@ function setNetworkNodePosition(el,x,y,persist=true){
   }
   if(persist)saveNetworkNodePosition(el.dataset.nodeId,x,y);
 }
-function renderNetwork(stacks){
-  const stage=document.getElementById('network-stage');
+function renderTopology(stacks,stageId,artMode='character'){
+  const stage=document.getElementById(stageId);
+  if(!stage)return;
+  const label=artMode==='logo'?'net view':'network';
   if(!stacks.length){stage.innerHTML='<div class="empty">No stacks found. Add a connection in the Connections tab.</div>';return;}
   const kingdoms=groupKingdoms(stacks);
-  if(!kingdoms.length){stage.innerHTML='<div class="empty">No containers found for the configured connections.</div>';return;}
+  if(!kingdoms.length){stage.innerHTML=`<div class="empty">No containers found for the configured ${label}.</div>`;return;}
   const key=networkWorldKey(kingdoms);
   const world=layoutNetworkWorld(kingdoms);
-  if(_networkPan.worldKey!==key){
+  const visible=!!stage.closest('.pane.on')&&stage.clientWidth>0;
+  if(_networkPan.worldKey!==key||(visible&&(_networkPan.centeredStageId!==stageId||!_networkPan.centeredVisible))){
     _networkPan.worldKey=key;
+    _networkPan.centeredStageId=stageId;
+    _networkPan.centeredVisible=visible;
     centerNetworkWorld(world,stage);
   }
   const lineHtml=world.links.map(link=>{
@@ -1145,11 +1199,12 @@ function renderNetwork(stacks){
     const stack=node.stack;
     const charId=selectedCharacterId(stack);
     const ch=CHARACTER_BY_ID[charId]||CHARACTERS[0];
+    const art=artMode==='logo'?selectedStackLogo(stack):ch.src;
     const stackTotals=stackIssueTotals(stack);
     const severity=stackTotals.errors>0?'error':stackTotals.warnings>0?'warning':'';
     return `<div class="network-stack" data-node-id="${esc(node.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}">
       <div class="net-stack-node" onclick="jumpToEvents('${esc(stack.server)}','${esc(stack.name)}','${esc(severity)}')" title="${esc(stack.name)}">
-        <img src="${esc(ch.src)}" alt="${esc(stackFriendlyName(stack))}">
+        <img src="${esc(art)}" alt="${esc(stackFriendlyName(stack))}">
         <span class="net-stack-name">${esc(stackFriendlyName(stack))}</span>
       </div>
     </div>`;
@@ -1171,7 +1226,7 @@ function renderNetwork(stacks){
       <span class="net-worker-name">${esc(displayName)}</span>
     </div>`;
   }).join('');
-  stage.innerHTML=`<div class="net-pan-surface" id="net-pan-surface" style="width:${world.width}px;height:${world.height}px">
+  stage.innerHTML=`<div class="net-pan-surface" data-topology-mode="${esc(artMode)}" style="width:${world.width}px;height:${world.height}px">
     <svg class="net-backbone" width="${world.width}" height="${world.height}" viewBox="0 0 ${world.width} ${world.height}" aria-hidden="true">${lineHtml}</svg>
     ${hubHtml}
     ${stacksHtml}
@@ -1179,8 +1234,12 @@ function renderNetwork(stacks){
   </div>`;
   applyNetworkTransform();
 }
-function findNetworkWorker(server,container){
-  const stage=document.getElementById('network-stage');
+function renderNetwork(stacks){renderTopology(stacks,'network-stage','character');}
+function renderNetView(stacks){renderTopology(stacks,'netview-stage','logo');}
+function activeTopologyStage(){
+  return document.querySelector('#pane-network.on .network-stage,#pane-netview.on .network-stage')||null;
+}
+function findNetworkWorker(server,container,stage=activeTopologyStage()){
   if(!stage||!container)return null;
   const workers=[...stage.querySelectorAll('.net-worker')];
   return workers.find(el=>(el.dataset.container||'')===container&&(!server||(el.dataset.server||'')===server))||
@@ -1193,8 +1252,10 @@ function setNetworkCheckingContainer(server,container,active=true){
     if(!active||el.dataset.container!==container||((server||'')&&(el.dataset.server||'')!==server))el.classList.remove('checking');
   });
   if(active){
-    const node=findNetworkWorker(server,container);
-    if(node)node.classList.add('checking');
+    document.querySelectorAll('.network-stage').forEach(stage=>{
+      const node=findNetworkWorker(server,container,stage);
+      if(node)node.classList.add('checking');
+    });
   }
 }
 function networkElementCenter(el,stage){
@@ -1205,10 +1266,11 @@ function networkElementCenter(el,stage){
 function networkHubForWorker(worker){
   const stackId=worker?.dataset.stackNodeId||'';
   if(!stackId)return null;
-  const line=[...document.querySelectorAll('.net-backbone line.hub-link')].find(l=>l.dataset.source===stackId||l.dataset.target===stackId);
+  const root=worker.closest('.net-pan-surface')||document;
+  const line=[...root.querySelectorAll('.net-backbone line.hub-link')].find(l=>l.dataset.source===stackId||l.dataset.target===stackId);
   if(!line)return null;
   const hubId=line.dataset.source===stackId?line.dataset.target:line.dataset.source;
-  return getNetworkNodeEl(hubId);
+  return getNetworkNodeEl(hubId,root);
 }
 function dropRavenScroll(stage,x,y){
   const scroll=document.createElement('img');
@@ -1222,10 +1284,9 @@ function dropRavenScroll(stage,x,y){
   setTimeout(()=>scroll.remove(),1900);
 }
 function launchRavenFromContainer(server,container){
-  const pane=document.getElementById('pane-network');
-  const stage=document.getElementById('network-stage');
-  if(!pane?.classList.contains('on')||!stage||!container)return;
-  const node=findNetworkWorker(server,container);
+  const stage=activeTopologyStage();
+  if(!stage||!container)return;
+  const node=findNetworkWorker(server,container,stage);
   if(!node)return;
   const hub=networkHubForWorker(node);
   const start=networkElementCenter(node,stage);
@@ -1602,8 +1663,9 @@ function connectRaven(){
 }
 
 function setupNetworkPan(){
-  const stage=document.getElementById('network-stage');
-  if(!stage)return;
+  document.querySelectorAll('.network-stage').forEach(stage=>{
+  if(stage.dataset.panReady)return;
+  stage.dataset.panReady='1';
   stage.addEventListener('pointerdown',e=>{
     if(e.button!==0)return;
     const nodeEl=e.target.closest('.net-hub,.network-stack,.net-worker');
@@ -1631,7 +1693,7 @@ function setupNetworkPan(){
   });
   stage.addEventListener('pointermove',e=>{
     if(_networkDrag.active){
-      const el=getNetworkNodeEl(_networkDrag.nodeId);
+      const el=getNetworkNodeEl(_networkDrag.nodeId,stage);
       if(!el)return;
       const sx=e.clientX-_networkDrag.startX,sy=e.clientY-_networkDrag.startY;
       if(Math.hypot(sx,sy)>4)_networkDrag.moved=true;
@@ -1678,6 +1740,7 @@ function setupNetworkPan(){
     _networkPan.y=e.clientY-rect.top-before.y*_networkZoom;
     applyNetworkTransform();
   },{passive:false});
+  });
 }
 
 function applyAsideWidth(width){
@@ -1756,6 +1819,7 @@ window.addEventListener('resize',()=>{resizeCanvas();drawHb();});
 setupInputs();
 resizeCanvas();drawHb();
 renderOracle();
+setViewMode(storageGet(VIEW_MODE_KEY)||'default',false);
 setWindowHours(storageGet('orc.window.hours')||24,false);
 loadAll();
 setInterval(loadAll,30000);
