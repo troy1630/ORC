@@ -3,8 +3,6 @@ services:
     build:
       context: ../backend
     environment:
-      PORTAINER_BASE_URL: ${PORTAINER_BASE_URL}
-      PORTAINER_API_TOKEN: ${PORTAINER_API_TOKEN}
       DATABASE_URL: ${DATABASE_URL:-postgresql://orc:orc@postgres:5432/orc}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     ports:
@@ -24,8 +22,6 @@ services:
       context: ../backend
     command: ["python", "-m", "app.worker"]
     environment:
-      PORTAINER_BASE_URL: ${PORTAINER_BASE_URL}
-      PORTAINER_API_TOKEN: ${PORTAINER_API_TOKEN}
       DATABASE_URL: ${DATABASE_URL:-postgresql://orc:orc@postgres:5432/orc}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     volumes:
@@ -57,3 +53,5 @@ services:
 
 volumes:
   postgres_data:
+    external: true
+    name: orc-postgres-data
