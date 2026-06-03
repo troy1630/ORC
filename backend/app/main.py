@@ -1,7 +1,11 @@
+import json
+import os
+from collections import Counter
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -13,6 +17,9 @@ from .db import Connection, ObservedEvent, SessionLocal, init_db
 from .raven import CHANNEL
 from .portainer import PortainerClient
 from .registry import load_registry
+
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 
 
 # ---------------------------------------------------------------------------
@@ -48,12 +55,12 @@ _HTML = """<!doctype html>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 /* NAV */
-.nav{background:var(--sur);border-bottom:1px solid var(--bdr);padding:0 16px;display:flex;align-items:center;gap:10px;height:48px;flex-shrink:0}
-.brand{font-weight:700;font-size:1rem;margin-right:4px;display:flex;align-items:center;gap:7px}
-.brand-mark{width:30px;height:30px;border-radius:50%;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;background:#0d1117;border:1px solid rgba(230,237,243,.2);box-shadow:0 0 0 1px rgba(0,0,0,.55) inset;flex-shrink:0}
-.brand-mark img{width:135%;height:135%;object-fit:cover;object-position:center 38%;filter:saturate(.92) contrast(1.04);-webkit-mask-image:radial-gradient(circle at center,#000 48%,rgba(0,0,0,.72) 62%,transparent 82%);mask-image:radial-gradient(circle at center,#000 48%,rgba(0,0,0,.72) 62%,transparent 82%)}
+.nav{background:rgba(22,27,34,.96);border-bottom:1px solid var(--bdr);padding:0 18px;display:flex;align-items:center;gap:14px;height:64px;flex-shrink:0;backdrop-filter:blur(12px)}
+.brand{font-weight:800;font-size:1.14rem;margin-right:8px;display:flex;align-items:center;gap:10px;letter-spacing:.02em}
+.brand-mark{width:46px;height:46px;border-radius:50%;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;background:#0d1117;border:1px solid rgba(230,237,243,.24);box-shadow:0 0 0 1px rgba(0,0,0,.55) inset,0 8px 18px rgba(0,0,0,.28);flex-shrink:0}
+.brand-mark img{width:148%;height:148%;object-fit:cover;object-position:center 36%;filter:saturate(.95) contrast(1.06);-webkit-mask-image:radial-gradient(circle at center,#000 46%,rgba(0,0,0,.75) 63%,transparent 84%);mask-image:radial-gradient(circle at center,#000 46%,rgba(0,0,0,.75) 63%,transparent 84%)}
 .tabs{display:flex;height:100%}
-.tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--mut);cursor:pointer;padding:0 12px;font-size:.88rem;font-weight:500;height:100%}
+.tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--mut);cursor:pointer;padding:0 14px;font-size:.94rem;font-weight:600;height:100%}
 .tab:hover{color:var(--txt)}.tab.on{color:var(--txt);border-bottom-color:var(--pur)}
 .nav-r{margin-left:auto;display:flex;align-items:center;gap:8px}
 /* Status pills */
@@ -65,10 +72,13 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
 .main{overflow-y:auto;padding:16px}
 .pane{display:none}.pane.on{display:block}
 /* STACK MAP */
-#pane-map{position:relative;min-height:calc(100vh - 80px);isolation:isolate}
-#pane-map::before{content:"";position:absolute;inset:-16px;background:url('/assets/kingdoms/pale-strategy-map.png') center/cover no-repeat;opacity:.12;filter:saturate(.6);pointer-events:none;z-index:-1}
-.map-grid{display:flex;flex-direction:column;gap:14px}
-.kingdom{border:1px solid rgba(163,113,247,.36);border-radius:10px;padding:12px;background:rgba(13,17,23,.78);box-shadow:0 12px 30px rgba(0,0,0,.18);backdrop-filter:blur(1px)}
+#pane-map{position:relative;min-height:calc(100vh - 96px);padding:14px;border-radius:14px;overflow:hidden;background:
+  linear-gradient(rgba(13,17,23,.18),rgba(13,17,23,.34)),
+  url('/assets/kingdoms/pale-strategy-map.png') center/cover no-repeat;
+box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
+#pane-map::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at center,rgba(255,255,255,.04),rgba(13,17,23,.06) 52%,rgba(13,17,23,.18) 100%);pointer-events:none}
+.map-grid{position:relative;z-index:1;display:flex;flex-direction:column;gap:14px}
+.kingdom{border:1px solid rgba(163,113,247,.42);border-radius:10px;padding:12px;background:rgba(13,17,23,.62);box-shadow:0 12px 30px rgba(0,0,0,.18);backdrop-filter:blur(2px)}
 .kingdom.er{border-color:rgba(248,81,73,.68)}
 .kingdom.warn{border-color:rgba(210,153,34,.7)}
 .kingdom-hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;min-width:0}
@@ -159,6 +169,16 @@ canvas{display:block;width:100%;height:48px}
 .pill-cn{font-family:monospace;font-weight:600;font-size:.78rem}
 .pill-sv{font-size:.68rem;opacity:.75}
 .pill-ts{font-size:.68rem;opacity:.6;text-align:right;margin-top:2px}
+.oracle{border-top:1px solid var(--bdr);padding:12px;display:flex;flex-direction:column;gap:8px;background:rgba(13,17,23,.24)}
+.oracle-hdr{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.oracle-title{font-size:.73rem;font-weight:800;letter-spacing:.08em}
+.oracle-meta{font-size:.72rem;color:var(--mut);line-height:1.45}
+.oracle-box{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;min-height:108px;max-height:240px;overflow:auto;font-size:.77rem;line-height:1.45;white-space:pre-wrap}
+.oracle-box.busy{color:var(--mut)}
+.oracle-box.error{border-color:rgba(248,81,73,.4);color:var(--red)}
+.oracle-box.empty{color:var(--mut)}
+.oracle-summary{display:flex;gap:6px;flex-wrap:wrap}
+.oracle-summary .sp{font-size:.7rem}
 /* CONNECTIONS */
 .st-ok{color:var(--grn)}.st-er{color:var(--red)}.st-no{color:var(--mut)}
 /* MODAL */
@@ -178,16 +198,16 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 .tr-er{background:#3a1a1a;color:var(--red);border:1px solid #5a2d2d}
 .tr-no{background:#21262d;color:var(--mut);border:1px solid var(--bdr)}
 @media (max-width:700px){
-  .nav{padding:0 8px;gap:6px;height:52px}
-  .brand{font-size:.9rem;line-height:1.05;max-width:78px}
-  .brand-mark{width:26px;height:26px}
+  .nav{padding:0 10px;gap:8px;height:58px}
+  .brand{font-size:.96rem;line-height:1.05;max-width:100px}
+  .brand-mark{width:34px;height:34px}
   .tab{padding:0 9px}
   .nav-r{gap:4px}
   .nav-r .sp:nth-of-type(n+2),.nav-r .small{display:none}
   .layout{grid-template-columns:1fr}
   .aside{display:none}
   .main{padding:12px}
-  #pane-map::before{inset:-12px}
+  #pane-map{padding:10px}
   .kingdom{padding:10px}
   .kingdom-hdr{align-items:flex-start}
   .kingdom-castle{width:38px;height:38px}
@@ -279,6 +299,15 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     <button class="ff" id="rf-warning" onclick="setRF('warning')">Warnings</button>
   </div>
   <div class="feed" id="feed"><div class="ph">No issues found yet.</div></div>
+  <div class="oracle">
+    <div class="oracle-hdr">
+      <span class="oracle-title">THE ORACLE</span>
+      <button class="btns" id="oracle-btn" onclick="runOracle()">Activate</button>
+    </div>
+    <div class="oracle-meta">Review the last hour of warnings and errors on demand, then get a recommendation from the same OpenAI connector BADGE uses.</div>
+    <div class="oracle-summary" id="oracle-summary"></div>
+    <div class="oracle-box empty" id="oracle-box">Ready to review the last hour of events.</div>
+  </div>
 </aside>
 </div><!-- /layout -->
 
@@ -322,12 +351,14 @@ let _evts=[], _evFilters={severity:'',container:'',server:''};
 let _conns=[], _editId=null, _charEditKey='';
 let _hbData=new Array(40).fill(0), _hbBucket=0;
 let _ravenFilter='', _issuePills=[];
+let _oracleState={busy:false,summary:null,analysis:'',error:''};
 const MAX_ISSUE_PILLS=20;
 
 /* ============================================================
    CHARACTER ASSETS
    ============================================================ */
 const CHARACTERS=[
+  {id:'orc',label:'Orc',src:'/assets/characters/orc.png'},
   {id:'wizard',label:'Wizard',src:'/assets/characters/wizard.png'},
   {id:'elf',label:'Elf',src:'/assets/characters/elf.png'},
   {id:'warrior',label:'Warrior',src:'/assets/characters/warrior.png'},
@@ -345,6 +376,9 @@ const CHARACTERS=[
 ];
 const CHARACTER_BY_ID=Object.fromEntries(CHARACTERS.map(c=>[c.id,c]));
 const CHARACTER_STORAGE_PREFIX='orc.map.character.';
+const MT_ZONE='America/Denver';
+const DATE_FMT=new Intl.DateTimeFormat('en-US',{timeZone:MT_ZONE,year:'numeric',month:'short',day:'2-digit',hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
+const TIME_FMT=new Intl.DateTimeFormat('en-US',{timeZone:MT_ZONE,hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
 
 /* ============================================================
    UTILS
@@ -358,14 +392,17 @@ function showTab(id){
   if(id==='map')loadMap();
   if(id==='events')loadEvts();
 }
-function fmt(iso){const d=new Date(iso);return d.toLocaleDateString()+' '+d.toLocaleTimeString();}
-function fmtShort(iso){return new Date(iso).toLocaleTimeString();}
+function fmt(iso){return iso?DATE_FMT.format(new Date(iso)):'';}
+function fmtShort(iso){return iso?TIME_FMT.format(new Date(iso)):'';}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function hashStr(s){let h=0;for(let i=0;i<s.length;i++)h=((h<<5)-h+s.charCodeAt(i))|0;return Math.abs(h);}
 function storageGet(k){try{return localStorage.getItem(k);}catch{return null;}}
 function storageSet(k,v){try{localStorage.setItem(k,v);}catch{}}
 function stackCharacterKey(stack){return `${stack.server}::${stack.name}`;}
-function defaultCharacterId(stack){return CHARACTERS[hashStr(stackCharacterKey(stack))%CHARACTERS.length].id;}
+function defaultCharacterId(stack){
+  if(stack&&CHARACTER_BY_ID[stack.character])return stack.character;
+  return CHARACTERS[hashStr(stackCharacterKey(stack))%CHARACTERS.length].id;
+}
 function selectedCharacterId(stack){
   const saved=storageGet(CHARACTER_STORAGE_PREFIX+stackCharacterKey(stack));
   return CHARACTER_BY_ID[saved]?saved:defaultCharacterId(stack);
@@ -409,6 +446,52 @@ function chooseStackCharacter(id){
 }
 function jumpToEventsFromEl(el){
   jumpToEvents(el.dataset.server||'',el.dataset.container||'',el.dataset.severity||'');
+}
+function renderOracle(){
+  const box=document.getElementById('oracle-box');
+  const summary=document.getElementById('oracle-summary');
+  const btn=document.getElementById('oracle-btn');
+  btn.disabled=!!_oracleState.busy;
+  btn.textContent=_oracleState.busy?'Consulting...':'Activate';
+  if(_oracleState.summary){
+    const s=_oracleState.summary;
+    summary.innerHTML=`
+      <span class="sp"><span class="se2">${s.errors||0}</span><span class="muted"> err</span></span>
+      <span class="sp"><span class="sw2">${s.warnings||0}</span><span class="muted"> warn</span></span>
+      <span class="sp"><span>${s.total_events||0}</span><span class="muted"> events / 1h</span></span>`;
+  }else{
+    summary.innerHTML='';
+  }
+  if(_oracleState.busy){
+    box.className='oracle-box busy';
+    box.textContent='Gathering the last hour of events and asking the Oracle for a recommendation...';
+    return;
+  }
+  if(_oracleState.error){
+    box.className='oracle-box error';
+    box.textContent=_oracleState.error;
+    return;
+  }
+  if(_oracleState.analysis){
+    box.className='oracle-box';
+    box.textContent=_oracleState.analysis;
+    return;
+  }
+  box.className='oracle-box empty';
+  box.textContent='Ready to review the last hour of events.';
+}
+async function runOracle(){
+  _oracleState={busy:true,summary:_oracleState.summary,analysis:'',error:''};
+  renderOracle();
+  try{
+    const r=await fetch('/oracle/review',{method:'POST'});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||'Oracle request failed.');
+    _oracleState={busy:false,summary:d.summary||null,analysis:d.analysis||'No recommendation returned.',error:''};
+  }catch(e){
+    _oracleState={busy:false,summary:_oracleState.summary,analysis:'',error:e.message||'Oracle request failed.'};
+  }
+  renderOracle();
 }
 
 /* ============================================================
@@ -582,7 +665,7 @@ function renderEvts(){
     <td class="msg" title="${esc(e.message)}">${esc(e.message)}</td>
   </tr>`).join('');
   document.getElementById('ev-body').innerHTML=`<div class="scroll"><table>
-    <thead><tr><th>Time</th><th>Server</th><th>Container</th><th>Severity</th><th>Message</th></tr></thead>
+    <thead><tr><th>Time (MT)</th><th>Server</th><th>Container</th><th>Severity</th><th>Message</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
 
@@ -610,7 +693,7 @@ async function loadConns(){
       </tr>`;
     }).join('');
     document.getElementById('conn-body').innerHTML=`<table>
-      <thead><tr><th>Name</th><th>URL</th><th>Type</th><th>Status</th><th>Last Polled</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Name</th><th>URL</th><th>Type</th><th>Status</th><th>Last Polled (MT)</th><th>Actions</th></tr></thead>
       <tbody>${rows}</tbody></table>`;
   }catch{document.getElementById('conn-body').innerHTML='<div class="empty">Could not load connections.</div>';}
 }
@@ -784,10 +867,11 @@ async function loadAll(){
   _conns=await fetch('/connections').then(r=>r.json()).catch(()=>_conns);
   _populateServerDropdown();
   await Promise.all([loadStatus(),loadEvts(),loadMap()]);
-  document.getElementById('upd').textContent=new Date().toLocaleTimeString();
+  document.getElementById('upd').textContent=fmtShort(new Date().toISOString());
 }
 window.addEventListener('resize',()=>{resizeCanvas();drawHb();});
 resizeCanvas();drawHb();
+renderOracle();
 loadAll();
 setInterval(loadAll,30000);
 connectRaven();
@@ -868,6 +952,149 @@ def health() -> dict:
         ok = s.query(func.count(Connection.id)).filter(Connection.last_status == "ok").scalar() or 0
         err = s.query(func.count(Connection.id)).filter(Connection.last_status == "error").scalar() or 0
     return {"status": "ok", "service": "orc-api", "connections": {"total": total, "ok": ok, "error": err}}
+
+
+def _oracle_summary(window_hours: int = 1) -> dict:
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+    with SessionLocal() as s:
+        rows = (
+            s.query(ObservedEvent, Connection)
+            .outerjoin(Connection, ObservedEvent.connection_id == Connection.id)
+            .filter(
+                ObservedEvent.occurred_at >= cutoff,
+                ObservedEvent.severity.in_(["warning", "error", "critical"]),
+            )
+            .order_by(ObservedEvent.occurred_at.desc())
+            .all()
+        )
+
+    container_rollup: dict[tuple[str, str, str], dict] = {}
+    message_rollup: Counter[tuple[str, str, str]] = Counter()
+    totals = {"total_events": len(rows), "errors": 0, "warnings": 0}
+
+    for event, conn in rows:
+        server = conn.name if conn else "Unknown server"
+        stack = event.stack_name or _infer_stack(event.container_name)
+        key = (server, stack, event.container_name)
+        bucket = container_rollup.setdefault(
+            key,
+            {
+                "server": server,
+                "stack": stack,
+                "container": event.container_name,
+                "errors": 0,
+                "warnings": 0,
+                "latest_at": event.occurred_at.isoformat(),
+                "messages": Counter(),
+            },
+        )
+        severity = "error" if event.severity in ("error", "critical") else "warning"
+        if severity == "error":
+            bucket["errors"] += 1
+            totals["errors"] += 1
+        else:
+            bucket["warnings"] += 1
+            totals["warnings"] += 1
+        bucket["messages"][event.message[:220]] += 1
+        bucket["latest_at"] = max(bucket["latest_at"], event.occurred_at.isoformat())
+        message_rollup[(server, event.container_name, event.message[:220])] += 1
+
+    top_containers = []
+    for item in sorted(
+        container_rollup.values(),
+        key=lambda x: (-x["errors"], -x["warnings"], x["container"].lower()),
+    )[:20]:
+        top_containers.append(
+            {
+                "server": item["server"],
+                "stack": item["stack"],
+                "container": item["container"],
+                "errors": item["errors"],
+                "warnings": item["warnings"],
+                "latest_at": item["latest_at"],
+                "top_messages": [
+                    {"message": msg, "count": count}
+                    for msg, count in item["messages"].most_common(3)
+                ],
+            }
+        )
+
+    top_messages = [
+        {"server": server, "container": container, "message": message, "count": count}
+        for (server, container, message), count in message_rollup.most_common(20)
+    ]
+
+    return {
+        "window_hours": window_hours,
+        "window_start": cutoff.isoformat(),
+        "window_end": datetime.now(timezone.utc).isoformat(),
+        "total_events": totals["total_events"],
+        "errors": totals["errors"],
+        "warnings": totals["warnings"],
+        "unique_containers": len(container_rollup),
+        "top_containers": top_containers,
+        "top_messages": top_messages,
+    }
+
+
+def _oracle_prompt(summary: dict) -> list[dict[str, str]]:
+    system_prompt = (
+        "You are The Oracle inside ORC, an operations advisor reviewing the last hour "
+        "of container warnings and errors collected from Portainer-managed applications. "
+        "Be concise, practical, and specific. Focus on the most affected stacks and "
+        "containers. Respond in plain text with exactly these sections:\n"
+        "Summary:\n"
+        "- bullet points\n"
+        "Most likely causes:\n"
+        "- bullet points\n"
+        "Recommended next steps:\n"
+        "1. numbered actions\n"
+        "2. numbered actions\n"
+        "3. numbered actions"
+    )
+    return [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": (
+                "Review this one-hour event summary and recommend the best next fixes.\n\n"
+                + json.dumps(summary, indent=2)
+            ),
+        },
+    ]
+
+
+def _oracle_review(summary: dict) -> str:
+    if not summary["total_events"]:
+        return "Summary:\n- No warnings or errors were found in the last hour.\n\nMost likely causes:\n- Systems were quiet during the review window.\n\nRecommended next steps:\n1. Keep monitoring.\n2. Re-run the Oracle when new issues appear.\n3. Use the Events tab if you want a manual spot check."
+
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="The Oracle is not configured. Set OPENAI_API_KEY using the same Portainer env pattern as BADGE.",
+        )
+
+    model = os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
+    payload = {
+        "model": model,
+        "temperature": 0.2,
+        "messages": _oracle_prompt(summary),
+    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    try:
+        resp = httpx.post(OPENAI_API_URL, headers=headers, json=payload, timeout=45.0)
+        resp.raise_for_status()
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"].strip()
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text[:400] if exc.response is not None else str(exc)
+        raise HTTPException(status_code=502, detail=f"Oracle request failed: {detail}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Oracle request failed: {exc}") from exc
+
+    return content or "Summary:\n- The Oracle did not return any content."
 
 
 # ---------------------------------------------------------------------------
@@ -1084,6 +1311,25 @@ def get_events(
     }
 
 
+@app.post("/oracle/review")
+def review_with_oracle() -> dict:
+    summary = _oracle_summary(window_hours=1)
+    analysis = _oracle_review(summary)
+    return {
+        "summary": {
+            "total_events": summary["total_events"],
+            "errors": summary["errors"],
+            "warnings": summary["warnings"],
+            "unique_containers": summary["unique_containers"],
+            "window_start": summary["window_start"],
+            "window_end": summary["window_end"],
+        },
+        "analysis": analysis,
+        "model": os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def _infer_stack(cname: str) -> str:
     parts = cname.split("-")
     return "-".join(parts[:-2]) if len(parts) >= 3 else cname
@@ -1103,7 +1349,7 @@ def _stack_character(name: str) -> str:
     if "orc" in n: return "orc"
     if any(x in n for x in ("ai", "ml", "kpi", "chatbot", "advisor", "analytics", "tower")): return "wizard"
     if any(x in n for x in ("simulator", "sppm", "presentation", "ux2")): return "fighter"
-    return ("orc", "ranger", "wizard", "fighter")[abs(hash(name)) % 4]
+    return ("orc", "rogue", "wizard", "fighter")[abs(hash(name)) % 4]
 
 
 @app.get("/overview")
