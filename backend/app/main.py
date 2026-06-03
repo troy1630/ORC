@@ -89,19 +89,43 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
   url('/assets/kingdoms/pale-strategy-map.png') center/cover no-repeat;
 box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 #pane-map::before,#pane-network::before,#pane-netview::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at center,rgba(255,255,255,.04),rgba(13,17,23,.06) 52%,rgba(13,17,23,.18) 100%);pointer-events:none}
+#pane-netview{background-color:#070b12;background-image:linear-gradient(rgba(6,10,18,.76),rgba(6,10,18,.9)),repeating-linear-gradient(0deg,transparent 0 34px,rgba(88,166,255,.1) 35px,transparent 36px),repeating-linear-gradient(90deg,transparent 0 42px,rgba(63,185,80,.08) 43px,transparent 44px),linear-gradient(135deg,transparent 0 16px,rgba(88,166,255,.16) 17px,transparent 18px,transparent 66px,rgba(63,185,80,.12) 67px,transparent 68px);box-shadow:inset 0 0 0 1px rgba(88,166,255,.12),inset 0 0 90px rgba(0,0,0,.45)}
+#pane-netview::before{background:radial-gradient(circle at center,rgba(88,166,255,.08),transparent 46%),linear-gradient(90deg,rgba(88,166,255,.12) 1px,transparent 1px),linear-gradient(0deg,rgba(63,185,80,.08) 1px,transparent 1px);background-size:auto,96px 96px,96px 96px;opacity:.58}
 #pane-overview{min-height:calc(100vh - 92px);padding:12px;background:#0f141b}
 #pane-home{min-height:calc(100vh - 92px);padding:12px;background:#0f141b}
 .home-grid{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:12px;min-height:calc(100vh - 116px)}
 .dash-section{border:1px solid var(--bdr);border-radius:8px;background:var(--sur);padding:12px;min-width:0}
 .dash-title{font-size:.78rem;font-weight:850;letter-spacing:.04em;text-transform:uppercase;color:var(--txt);margin-bottom:9px}
-.issue-list,.metric-list,.recent-list{display:flex;flex-direction:column;gap:7px;min-width:0}
-.home-issue-row{cursor:pointer}
-.home-issue-row .sub-type{margin-right:4px}
-.metric-connection{border:1px solid #21262d;border-radius:7px;background:#0d1117;padding:9px;min-width:0}
-.metric-conn-name{font-size:.82rem;font-weight:850;margin-bottom:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.metric-stack{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:9px;align-items:center;border-left:1px solid #30363d;margin-left:6px;padding:5px 0 5px 10px;color:var(--mut);font-size:.74rem}
-.metric-stack-name{color:var(--txt);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.metric-chip{border:1px solid #21262d;border-radius:999px;background:#161b22;padding:2px 7px;white-space:nowrap}
+.issue-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;min-width:0}
+.metric-list,.recent-list{display:flex;flex-direction:column;gap:7px;min-width:0}
+.home-issue-row{cursor:pointer;min-height:28px;padding:3px 50px 3px 7px}
+.home-issue-main{min-width:0;display:flex;flex-direction:column;gap:1px}
+.home-issue-row .sub-name{font-size:.65rem;line-height:1.08}
+.home-issue-server{color:var(--mut);font-size:.55rem;line-height:1.08;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-issue-row .sub-type{margin-right:4px;font-size:.54rem;padding:1px 4px}
+.home-issue-row .status-dot{width:16px;height:16px;font-size:.48rem}
+.metric-table-head,.metric-summary,.metric-stack{display:grid;grid-template-columns:minmax(210px,1fr) 74px 74px 92px 152px;gap:10px;align-items:center}
+.metric-table-head{color:var(--mut);font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:0 10px 4px}
+.metric-connection{border:1px solid #21262d;border-radius:7px;background:#0d1117;min-width:0;overflow:hidden}
+.metric-connection summary{list-style:none;cursor:pointer}
+.metric-connection summary::-webkit-details-marker{display:none}
+.metric-summary{padding:8px 10px;color:var(--txt)}
+.metric-summary:hover{background:#111821}
+.metric-name{display:flex;align-items:center;gap:8px;min-width:0;font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.metric-caret{width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:6px solid var(--mut);transition:transform .14s;flex-shrink:0}
+.metric-connection[open] .metric-caret{transform:rotate(90deg)}
+.metric-num{font-size:.73rem;font-variant-numeric:tabular-nums;text-align:right;color:var(--txt)}
+.metric-children{border-top:1px solid #21262d;background:#0b1118}
+.metric-stack{padding:6px 10px;color:var(--mut);font-size:.74rem}
+.metric-stack+.metric-stack{border-top:1px solid rgba(33,38,45,.72)}
+.metric-stack-name{position:relative;color:var(--txt);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:20px}
+.metric-stack-name::before{content:"";position:absolute;left:4px;top:0;width:9px;height:50%;border-left:1px solid #30363d;border-bottom:1px solid #30363d}
+.home-health{display:flex;align-items:center;justify-content:flex-end;gap:7px;min-width:0}
+.home-health-bar{width:82px;height:7px;border-radius:999px;overflow:hidden;background:rgba(139,148,158,.22);flex-shrink:0}
+.home-health-bar span{display:block;height:100%;border-radius:inherit;background:var(--grn)}
+.home-health.warn .home-health-bar span{background:var(--yel)}
+.home-health.err .home-health-bar span{background:var(--red)}
+.home-health-pct{font-size:.68rem;font-weight:850;font-variant-numeric:tabular-nums;min-width:34px;text-align:right}
 .recent-list{max-height:270px;overflow:auto;padding-right:2px}
 .recent-issue{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:9px;align-items:center;border:1px solid #21262d;border-radius:7px;background:#0d1117;padding:7px 9px;cursor:pointer}
 .recent-issue:hover{border-color:var(--pur)}
@@ -201,6 +225,14 @@ box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 .net-worker.left .net-dot{left:auto;right:34px}
 .net-dot.err{background:var(--red)}.net-dot.warn{background:var(--yel);color:#211300}.net-dot.none{display:none}
 .net-worker-name{display:block;max-width:86px;background:rgba(48,54,61,.88);border:1px solid rgba(230,237,243,.12);border-radius:5px;padding:2px 5px;font-size:.62rem;line-height:1.05;font-weight:750;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.net-detail-bubble{position:absolute;z-index:20;left:calc(100% + 10px);top:50%;transform:translate(4px,-50%);width:230px;border:1px solid rgba(88,166,255,.32);border-radius:8px;background:rgba(13,17,23,.96);box-shadow:0 14px 28px rgba(0,0,0,.38);padding:8px 9px;opacity:0;pointer-events:none;transition:opacity .12s,transform .12s;color:var(--txt);text-align:left}
+.net-worker.left .net-detail-bubble{left:auto;right:calc(100% + 10px);transform:translate(-4px,-50%)}
+.net-worker:hover .net-detail-bubble{opacity:1;transform:translate(0,-50%)}
+.net-worker.left:hover .net-detail-bubble{transform:translate(0,-50%)}
+.net-detail-title{font-size:.74rem;font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:5px}
+.net-detail-grid{display:grid;grid-template-columns:68px minmax(0,1fr);gap:3px 8px;font-size:.65rem;line-height:1.22}
+.net-detail-grid span:nth-child(odd){color:var(--mut)}
+.net-detail-grid span:nth-child(even){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* EVENTS */
 .card{background:var(--sur);border:1px solid var(--bdr);border-radius:8px}
 .fbtn{background:#21262d;border:1px solid var(--bdr);border-radius:6px;color:var(--mut);cursor:pointer;font-size:.78rem;padding:3px 11px}
@@ -230,11 +262,10 @@ tr:last-child td{border-bottom:none}
 .hb-lbl{position:absolute;z-index:2;left:14px;right:14px;top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px;pointer-events:none}
 .hb-title{font-size:.76rem;font-weight:800;letter-spacing:.06em;display:flex;align-items:center;gap:7px;text-shadow:0 2px 5px rgba(0,0,0,.9)}
 .raven-mark{width:48px;height:48px;object-fit:contain;filter:drop-shadow(0 0 1px rgba(255,255,255,.95)) drop-shadow(0 0 4px rgba(230,237,243,.7)) drop-shadow(0 4px 8px rgba(0,0,0,.7));margin-top:-2px;flex-shrink:0}
-.hb-st{font-size:.68rem;color:var(--mut);text-shadow:0 2px 5px rgba(0,0,0,.9)}
+.hb-st{display:none}
 .hb-canvas-wrap{height:76px;background:#0d1117;border:1px solid #21262d;border-radius:10px;padding:10px 8px 6px;overflow:hidden}
 canvas{display:block;width:100%;height:58px}
 .raven-sl{padding:5px 10px;border-bottom:1px solid var(--bdr);font-size:.7rem;color:var(--mut);flex-shrink:0;min-height:26px;display:flex;align-items:center;gap:5px;overflow:hidden}
-.raven-sl.live{color:var(--txt)}
 .sl-icon{flex-shrink:0}.sl-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .feed-hdr{display:flex;gap:4px;padding:5px 8px;border-bottom:1px solid var(--bdr);flex-shrink:0}
 .ff{background:#21262d;border:1px solid var(--bdr);border-radius:12px;color:var(--mut);cursor:pointer;font-size:.64rem;padding:2px 0;flex:1;text-align:center}
@@ -298,7 +329,9 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .aside-width-grip{display:none}
   .main{padding:12px}
   #pane-home,#pane-map,#pane-overview,#pane-network,#pane-netview{padding:10px}
-  .metric-stack{grid-template-columns:minmax(0,1fr) auto;gap:6px}
+  .issue-list{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+  .metric-table-head,.metric-summary,.metric-stack{grid-template-columns:minmax(150px,1fr) 52px 54px 70px}
+  .metric-table-head span:nth-child(5),.metric-summary .home-health,.metric-stack .home-health{display:none}
   .kingdom{padding:8px}
   .kingdom-hdr{align-items:flex-start}
   .kingdom-castle,.kingdom-logo{width:34px;height:34px}
@@ -430,7 +463,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   <div class="hb-wrap">
     <div class="hb-lbl">
       <span class="hb-title"><img class="raven-mark" src="/assets/kingdoms/raven.png" alt="">RAVEN</span>
-      <span class="hb-st" id="hb-status">connecting…</span>
+      <span class="hb-st" id="hb-status"></span>
     </div>
     <div class="hb-canvas-wrap"><canvas id="hb-cv" height="48"></canvas></div>
   </div>
@@ -550,7 +583,10 @@ const CHARACTERS=[
   {id:'herder',label:'Herder',src:'/assets/characters/herder.png'},
   {id:'sorceress',label:'Sorceress',src:'/assets/characters/sorceress.png'}
 ];
+const BLACK_LOGO_SRC='/assets/characters/black-hd-logo.png';
+const BLACK_LOGO={id:'corp-black-hd',label:'Black HD Logo',src:BLACK_LOGO_SRC};
 const CORPORATE_LOGOS=[
+  BLACK_LOGO,
   {id:'corp-db',label:'Database',src:'/assets/characters/corporate-worker-0.png'},
   {id:'corp-worker',label:'Worker App',src:'/assets/characters/corporate-worker-1.png'},
   {id:'corp-redis',label:'Redis',src:'/assets/characters/corporate-worker-2.png'},
@@ -642,11 +678,7 @@ function selectedCharacterId(stack){
   return CHARACTER_BY_ID[saved]?saved:defaultCharacterId(stack);
 }
 function defaultCorporateLogo(stack){
-  const text=`${stack?.name||''} ${(stack?.containers||[]).map(c=>`${c.name||''} ${c.full_name||''} ${c.type||''}`).join(' ')}`.toLowerCase();
-  if(/\b(redis|cache)\b/.test(text))return CORPORATE_LOGO_BY_ID['corp-redis'];
-  if(/\b(db|database|postgres|postgresql|mysql|mariadb|mongo|sql)\b/.test(text))return CORPORATE_LOGO_BY_ID['corp-db'];
-  if(/\b(ui|web|front|frontend|portal|dashboard|homepage|nginx)\b/.test(text))return CORPORATE_LOGO_BY_ID['corp-ui'];
-  return CORPORATE_LOGO_BY_ID['corp-worker'];
+  return BLACK_LOGO;
 }
 function stackFriendlyName(stack){
   return stackSetting(stackCharacterKey(stack),'FriendlyName')||stack.name;
@@ -656,7 +688,7 @@ function stackLogo(stack){
   return stackSetting(key,'Logo')||legacyCorporateLogoForKey(key);
 }
 function selectedStackLogo(stack){
-  return stackLogo(stack)||defaultCorporateLogo(stack).src;
+  return stackLogo(stack)||BLACK_LOGO_SRC;
 }
 function containerDisplayName(name){
   return storageGet(CONTAINER_NAME_PREFIX+name)||name;
@@ -668,7 +700,7 @@ function serverDisplayName(k){
   return k.server_name||k.server||'Unknown server';
 }
 function serverLogo(k){
-  return k.server_logo||'';
+  return k.server_logo||BLACK_LOGO_SRC;
 }
 function issueCounts(app){
   return {
@@ -793,6 +825,34 @@ function stackIssueCount(stack){
     return sum+c.errors+c.warnings;
   },0);
 }
+function healthForContainers(containers){
+  const totals=(containers||[]).reduce((acc,app)=>{
+    const c=issueCounts(app);
+    acc.defects+=c.errors+c.warnings;
+    acc.lines+=observedLineCount(app);
+    return acc;
+  },{defects:0,lines:0});
+  const denominator=Math.max(totals.lines,totals.defects);
+  const pct=denominator>0?Math.round((1-Math.min(totals.defects,denominator)/denominator)*100):100;
+  const percent=Math.max(0,Math.min(100,pct));
+  return {percent,cls:percent>=95?'ok':percent>=80?'warn':'err',defects:totals.defects,lines:totals.lines};
+}
+function homeHealthHtml(health){
+  const title=`Health = 1 - (${health.defects} defects / ${health.lines} lines queried)`;
+  return `<span class="home-health ${esc(health.cls)}" title="${esc(title)}">
+    <span class="home-health-bar"><span style="width:${health.percent}%"></span></span>
+    <span class="home-health-pct">${health.percent}%</span>
+  </span>`;
+}
+function metricTotalsForStacks(stacks){
+  const containers=(stacks||[]).flatMap(stack=>stack.containers||[]);
+  return {
+    polls:(stacks||[]).reduce((sum,stack)=>sum+stackPollCount(stack),0),
+    issues:(stacks||[]).reduce((sum,stack)=>sum+stackIssueCount(stack),0),
+    containers:containers.length,
+    health:healthForContainers(containers)
+  };
+}
 function renderHomeIssues(stacks){
   const el=document.getElementById('home-issues');
   if(!el)return;
@@ -815,7 +875,10 @@ function renderHomeIssues(stacks){
     <div class="sub-row home-issue-row" onclick="jumpToEventsFromEl(this)"
       data-server="${esc(row.stack.server)}" data-container="${esc(row.containerName)}" data-severity="${esc(row.severity)}"
       title="Open Event Log for ${esc(row.containerName)}">
-      <span class="sub-name">${esc(containerFriendlyName(row.app))}</span>
+      <span class="home-issue-main">
+        <span class="sub-name">${esc(containerFriendlyName(row.app))}</span>
+        <span class="home-issue-server">${esc(row.stack.server_name||row.stack.server||'Unknown server')}</span>
+      </span>
       <span class="sub-type">${esc(row.app.type||'api')}</span>
       ${statusCircles(row.counts.errors,row.counts.warnings,false)}
     </div>`).join('');
@@ -828,23 +891,35 @@ function renderHomeMetrics(stacks){
     el.innerHTML='<div class="empty">No connection metrics yet.</div>';
     return;
   }
-  el.innerHTML=kingdoms.map(k=>{
+  const head=`<div class="metric-table-head">
+    <span>Connection</span><span>Polls</span><span>Issues</span><span>Containers</span><span>Health</span>
+  </div>`;
+  el.innerHTML=head+kingdoms.map(k=>{
     k.stacks.sort((a,b)=>stackFriendlyName(a).localeCompare(stackFriendlyName(b)));
+    const totals=metricTotalsForStacks(k.stacks);
     const stackRows=k.stacks.map(stack=>{
       const polls=stackPollCount(stack);
       const issues=stackIssueCount(stack);
       const containers=(stack.containers||[]).length;
-      return `<div class="metric-stack">
-        <span class="metric-stack-name">|_ ${esc(stackFriendlyName(stack))}</span>
-        <span class="metric-chip">${polls} poll${polls!==1?'s':''}</span>
-        <span class="metric-chip">${issues} issue${issues!==1?'s':''}</span>
-        <span class="metric-chip">${containers} container${containers!==1?'s':''}</span>
+      const health=healthForContainers(stack.containers||[]);
+      return `<div class="metric-stack" title="${esc(stack.name)}">
+        <span class="metric-stack-name">${esc(stackFriendlyName(stack))}</span>
+        <span class="metric-num">${polls}</span>
+        <span class="metric-num">${issues}</span>
+        <span class="metric-num">${containers}</span>
+        ${homeHealthHtml(health)}
       </div>`;
     }).join('');
-    return `<section class="metric-connection">
-      <div class="metric-conn-name">${esc(serverDisplayName(k))}</div>
-      ${stackRows}
-    </section>`;
+    return `<details class="metric-connection">
+      <summary class="metric-summary" title="Expand ${esc(serverDisplayName(k))}">
+        <span class="metric-name"><span class="metric-caret"></span>${esc(serverDisplayName(k))}</span>
+        <span class="metric-num">${totals.polls}</span>
+        <span class="metric-num">${totals.issues}</span>
+        <span class="metric-num">${totals.containers}</span>
+        ${homeHealthHtml(totals.health)}
+      </summary>
+      <div class="metric-children">${stackRows}</div>
+    </details>`;
   }).join('');
 }
 function renderHomeRecent(){
@@ -1336,8 +1411,9 @@ function renderTopology(stacks,stageId,artMode='character'){
   const hubHtml=world.hubs.map(node=>{
     const health=kingdomHealth(node.kingdom||{});
     const healthTitle=`Health = 1 - (${health.defects} defects / ${health.lines} lines queried)`;
+    const hubArt=artMode==='logo'?serverLogo(node.kingdom||{}):'/assets/kingdoms/castle.png';
     return `<div class="net-hub" data-node-id="${esc(node.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" title="${esc(serverDisplayName(node.kingdom||{}))}">
-      <img src="/assets/kingdoms/castle.png" alt="">
+      <img src="${esc(hubArt)}" alt="">
       <span class="net-hub-meta">
         <span class="net-hub-label">${esc(serverDisplayName(node.kingdom||{}))}</span>
         <span class="net-health ${esc(health.cls)}" title="${esc(healthTitle)}">
@@ -1367,16 +1443,32 @@ function renderTopology(stacks,stageId,artMode='character'){
     const dot=counts.errors>0?'err':counts.warnings>0?'warn':'none';
     const dotCount=counts.errors>0?counts.errors:counts.warnings;
     const dotText=dotCount>99?'99+':String(dotCount);
-    const workerPool=artMode==='logo'?CORPORATE_LOGOS.map(c=>c.src):WORKER_ASSETS;
-    const workerAsset=workerPool[hashStr(app.full_name||app.name)%workerPool.length];
+    const workerPool=WORKER_ASSETS;
+    const workerAsset=artMode==='logo'?BLACK_LOGO_SRC:workerPool[hashStr(app.full_name||app.name)%workerPool.length];
     const displayName=containerFriendlyName(app);
     const side=node.x<node.stackNode.x?'left':'right';
     const containerName=app.full_name||app.name||'';
+    const pollCount=Number(app.polls ?? app.poll_count ?? 0);
+    const lineCount=observedLineCount(app);
+    const serverName=node.stack.server_name||node.stack.server||'Unknown server';
+    const issueText=`${counts.errors} error${counts.errors!==1?'s':''}, ${counts.warnings} warning${counts.warnings!==1?'s':''}`;
     const checking=_networkChecking.server===node.stack.server&&_networkChecking.container===containerName;
-    return `<div class="net-worker ${side} ${checking?'checking':''}" data-node-id="${esc(node.id)}" data-stack-node-id="${esc(node.stackNode.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" onclick="jumpToEventsFromEl(this)" data-server="${esc(node.stack.server)}" data-container="${esc(containerName)}" data-severity="${esc(dot==='err'?'error':dot==='warn'?'warning':'')}" title="${esc(containerName)}">
+    return `<div class="net-worker ${side} ${checking?'checking':''}" data-node-id="${esc(node.id)}" data-stack-node-id="${esc(node.stackNode.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" onclick="jumpToEventsFromEl(this)" data-server="${esc(node.stack.server)}" data-container="${esc(containerName)}" data-severity="${esc(dot==='err'?'error':dot==='warn'?'warning':'')}" aria-label="${esc(containerName)}">
       <span class="worker-avatar"><img src="${esc(workerAsset)}" alt=""></span>
       <span class="net-dot ${dot}">${esc(dotText)}</span>
       <span class="net-worker-name">${esc(displayName)}</span>
+      <span class="net-detail-bubble" role="tooltip">
+        <span class="net-detail-title">${esc(displayName)}</span>
+        <span class="net-detail-grid">
+          <span>Server</span><span>${esc(serverName)}</span>
+          <span>Stack</span><span>${esc(stackFriendlyName(node.stack))}</span>
+          <span>Container</span><span>${esc(containerName)}</span>
+          <span>Type</span><span>${esc(app.type||'api')}</span>
+          <span>Issues</span><span>${esc(issueText)}</span>
+          <span>Polls</span><span>${Number.isFinite(pollCount)?pollCount:0}</span>
+          <span>Lines</span><span>${lineCount}</span>
+        </span>
+      </span>
     </div>`;
   }).join('');
   stage.innerHTML=`<div class="net-pan-surface" data-topology-mode="${esc(artMode)}" style="width:${world.width}px;height:${world.height}px">
@@ -1626,10 +1718,10 @@ function setRF(f){
   ['all','critical','error','warning'].forEach(k=>document.getElementById('rf-'+k).classList.toggle('on',k===(f||'all')));
   renderFeed();
 }
-function setStatus(icon,text,live){
+function setStatus(icon,text,_state){
   document.getElementById('sl-icon').textContent=icon;
   document.getElementById('sl-txt').textContent=text;
-  document.getElementById('raven-sl').className='raven-sl'+(live?' live':'');
+  document.getElementById('raven-sl').className='raven-sl';
 }
 function issueKey(msg){
   if(msg.type==='issue_event'&&msg.event_id)return `event:${msg.event_id}`;
@@ -1788,15 +1880,10 @@ function drawHb(){
   d.forEach((v,i)=>{const x=i*step,y=h-(v/max)*(h-6)-3;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
   ctx.lineTo((d.length-1)*step,h);ctx.lineTo(0,h);ctx.closePath();
   ctx.fillStyle=grad;ctx.fill();
-  // line — red when active, muted when idle
-  const cur=d[d.length-1];
+  // line
   ctx.beginPath();
   d.forEach((v,i)=>{const x=i*step,y=h-(v/max)*(h-6)-3;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
-  ctx.strokeStyle=cur>0?'#f85149':'#30363d';ctx.lineWidth=1.5;ctx.stroke();
-  // label
-  ctx.fillStyle=cur>0?'#f85149':'#8b949e';
-  ctx.font='10px monospace';ctx.textAlign='right';
-  ctx.fillText(cur>0?`${cur} issues/5s`:'idle',w-4,11);
+  ctx.strokeStyle='#f85149';ctx.lineWidth=1.5;ctx.stroke();
 }
 function tickHb(){_hbData.push(_hbBucket);_hbBucket=0;if(_hbData.length>40)_hbData.shift();drawHb();}
 setInterval(tickHb,5000);
@@ -1806,13 +1893,13 @@ setInterval(tickHb,5000);
    ============================================================ */
 function connectRaven(){
   const es=new EventSource('/raven/stream');
-  document.getElementById('hb-status').textContent='connecting…';
-  es.onopen=()=>document.getElementById('hb-status').textContent='live';
+  document.getElementById('hb-status').textContent='';
+  es.onopen=()=>{};
   es.onmessage=e=>{
-    try{const msg=JSON.parse(e.data);if(msg.type==='connected'){document.getElementById('hb-status').textContent='live';return;}handleRaven(msg);}
+    try{const msg=JSON.parse(e.data);if(msg.type==='connected')return;handleRaven(msg);}
     catch{}
   };
-  es.onerror=()=>{document.getElementById('hb-status').textContent='reconnecting…';es.close();setTimeout(connectRaven,5000);};
+  es.onerror=()=>{es.close();setTimeout(connectRaven,5000);};
 }
 
 function setupNetworkPan(){
