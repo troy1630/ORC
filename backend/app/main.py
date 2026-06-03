@@ -137,26 +137,31 @@ box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 .logo-preview{width:42px;height:42px;border-radius:8px;object-fit:cover;background:#0d1117;border:1px solid var(--bdr);flex-shrink:0}
 .logo-preview.empty{display:none}
 .net-tools{position:absolute;z-index:3;right:14px;top:14px;display:flex;gap:5px;background:rgba(13,17,23,.72);border:1px solid rgba(230,237,243,.12);border-radius:8px;padding:5px}
-.network-stage{position:relative;z-index:1;transform-origin:top left;transition:transform .12s ease;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;align-items:start;padding-top:36px}
-.network-kingdom{position:relative;min-height:210px;border:1px solid rgba(163,113,247,.38);border-radius:12px;background:rgba(13,17,23,.58);padding:14px;overflow:hidden}
+.network-stage{position:relative;z-index:1;transform-origin:top left;transition:transform .12s ease;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:18px;align-items:start;padding-top:42px}
+.network-kingdom{position:relative;height:var(--kh,420px);min-height:360px;border:1px solid rgba(163,113,247,.42);border-radius:48% / 34%;background:radial-gradient(ellipse at 50% 50%,rgba(33,38,45,.74) 0%,rgba(13,17,23,.64) 61%,rgba(13,17,23,.34) 100%);padding:0;overflow:hidden;box-shadow:inset 0 0 38px rgba(163,113,247,.1),0 14px 32px rgba(0,0,0,.2);isolation:isolate}
 .network-kingdom.er{border-color:rgba(248,81,73,.7)}
 .network-kingdom.warn{border-color:rgba(210,153,34,.7)}
-.network-title{display:flex;align-items:center;gap:8px;color:var(--txt);font-size:.78rem;font-weight:800;margin-bottom:14px;min-width:0}
-.network-title .status-circles{position:static;margin-left:auto}
+.network-title{position:absolute;z-index:4;top:13px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;color:var(--txt);font-size:.76rem;font-weight:800;max-width:calc(100% - 58px);min-width:0;background:rgba(48,54,61,.88);border:1px solid rgba(230,237,243,.16);border-radius:999px;padding:5px 9px;box-shadow:0 8px 18px rgba(0,0,0,.23)}
+.network-title>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.network-title .status-circles{position:static;margin-left:auto;flex-shrink:0}
 .network-title .status-dot{width:18px;height:18px;font-size:.5rem}
-.network-title img{width:28px;height:28px;border-radius:7px;object-fit:cover;background:#0d1117;border:1px solid rgba(230,237,243,.18);flex-shrink:0}
-.network-stack{position:relative;display:grid;grid-template-columns:72px 1fr;gap:8px 16px;align-items:center;min-height:96px;margin:6px 0 14px}
-.net-stack-node{position:relative;width:68px;height:68px;border-radius:50%;overflow:hidden;border:1px solid rgba(230,237,243,.25);box-shadow:0 0 0 3px rgba(13,17,23,.68),0 8px 20px rgba(0,0,0,.28);background:#0d1117}
+.network-title img{width:28px;height:28px;border-radius:50%;object-fit:cover;background:#0d1117;border:1px solid rgba(230,237,243,.18);flex-shrink:0}
+.network-field{position:absolute;z-index:1;inset:58px 22px 22px;transform:scale(var(--field-scale,1));transform-origin:center center}
+.network-stack{position:absolute;left:var(--x);top:var(--y);width:0;height:0;transform:translate(-50%,-50%);isolation:isolate}
+.net-links{position:absolute;z-index:0;left:-150px;top:-150px;width:300px;height:300px;overflow:visible;pointer-events:none}
+.net-links line{stroke:rgba(139,148,158,.48);stroke-width:1.45;stroke-dasharray:5 4}
+.net-links line.err{stroke:rgba(248,81,73,.74)}.net-links line.warn{stroke:rgba(210,153,34,.78)}
+.net-stack-node{position:absolute;z-index:3;left:0;top:0;transform:translate(-50%,-50%);width:92px;height:92px;border-radius:50%;overflow:hidden;border:1px solid rgba(230,237,243,.28);box-shadow:0 0 0 4px rgba(13,17,23,.68),0 10px 24px rgba(0,0,0,.32);background:#0d1117;cursor:pointer}
 .net-stack-node img{width:100%;height:100%;object-fit:cover;filter:saturate(.9) contrast(1.05);opacity:.82;-webkit-mask-image:radial-gradient(circle at center,#000 55%,rgba(0,0,0,.62) 72%,transparent 90%);mask-image:radial-gradient(circle at center,#000 55%,rgba(0,0,0,.62) 72%,transparent 90%)}
-.net-stack-name{position:absolute;left:0;bottom:-19px;min-width:88px;max-width:180px;background:rgba(48,54,61,.94);border:1px solid rgba(230,237,243,.12);border-radius:5px;padding:3px 7px;font-size:.66rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
-.net-workers{display:flex;flex-wrap:wrap;gap:9px 12px;align-items:center}
-.net-worker{display:flex;align-items:center;gap:5px;min-width:112px;max-width:185px;cursor:pointer}
-.worker-avatar{position:relative;width:26px;height:26px;border-radius:50%;overflow:hidden;background:#0d1117;border:1px solid rgba(230,237,243,.16);flex-shrink:0}
-.worker-avatar img{width:200%;height:200%;object-fit:cover;position:absolute}
-.worker-avatar.w0 img{left:0;top:0}.worker-avatar.w1 img{left:-100%;top:0}.worker-avatar.w2 img{left:0;top:-100%}.worker-avatar.w3 img{left:-100%;top:-100%}
-.net-dot{width:10px;height:10px;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.65);flex-shrink:0}
-.net-dot.err{background:var(--red)}.net-dot.warn{background:var(--yel)}.net-dot.none{display:none}
-.net-worker-name{font-size:.66rem;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.net-stack-name{position:absolute;left:7px;right:7px;bottom:7px;min-width:0;max-width:none;background:rgba(48,54,61,.94);border:1px solid rgba(230,237,243,.14);border-radius:5px;padding:3px 5px;font-size:.61rem;line-height:1.05;font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;color:var(--txt)}
+.net-workers{position:absolute;left:0;top:0}
+.net-worker{position:absolute;left:var(--wx);top:var(--wy);transform:translate(-50%,-50%);display:flex;align-items:center;gap:6px;min-width:0;max-width:156px;cursor:pointer;z-index:2;filter:drop-shadow(0 7px 10px rgba(0,0,0,.28))}
+.net-worker.left{flex-direction:row-reverse}.net-worker.left .net-worker-name{text-align:right}
+.worker-avatar{position:relative;width:58px;height:58px;overflow:visible;background:transparent;border:0;flex:0 0 58px}
+.worker-avatar img{width:100%;height:100%;object-fit:contain;position:static;display:block}
+.net-dot{position:absolute;left:41px;top:1px;width:23px;height:23px;border-radius:50%;box-shadow:0 0 0 2px #0d1117,0 2px 8px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-size:.61rem;line-height:1;font-weight:900;color:#fff;flex-shrink:0}
+.net-dot.err{background:var(--red)}.net-dot.warn{background:var(--yel);color:#211300}.net-dot.none{display:none}
+.net-worker-name{display:block;max-width:86px;background:rgba(48,54,61,.88);border:1px solid rgba(230,237,243,.12);border-radius:5px;padding:2px 5px;font-size:.62rem;line-height:1.05;font-weight:750;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* EVENTS */
 .card{background:var(--sur);border:1px solid var(--bdr);border-radius:8px}
 .fbtn{background:#21262d;border:1px solid var(--bdr);border-radius:6px;color:var(--mut);cursor:pointer;font-size:.78rem;padding:3px 11px}
@@ -459,9 +464,19 @@ const CHARACTERS=[
   {id:'blacksmith',label:'Blacksmith',src:'/assets/characters/blacksmith.png'},
   {id:'shepherd',label:'Shepherd',src:'/assets/characters/shepherd.png'},
   {id:'herder',label:'Herder',src:'/assets/characters/herder.png'},
-  {id:'sorceress',label:'Sorceress',src:'/assets/characters/sorceress.png'}
+  {id:'sorceress',label:'Sorceress',src:'/assets/characters/sorceress.png'},
+  {id:'corp-db',label:'Database',src:'/assets/characters/corporate-worker-0.png'},
+  {id:'corp-worker',label:'Worker App',src:'/assets/characters/corporate-worker-1.png'},
+  {id:'corp-redis',label:'Redis',src:'/assets/characters/corporate-worker-2.png'},
+  {id:'corp-ui',label:'UI Panel',src:'/assets/characters/corporate-worker-3.png'}
 ];
 const CHARACTER_BY_ID=Object.fromEntries(CHARACTERS.map(c=>[c.id,c]));
+const WORKER_ASSETS=[
+  '/assets/characters/worker-medieval-0.png',
+  '/assets/characters/worker-medieval-1.png',
+  '/assets/characters/worker-medieval-2.png',
+  '/assets/characters/worker-medieval-3.png'
+];
 const CHARACTER_STORAGE_PREFIX='orc.map.character.';
 const STACK_STORAGE_PREFIX='orc.stack.';
 const CONTAINER_NAME_PREFIX='orc.container.name.';
@@ -795,12 +810,101 @@ function zoomNetwork(delta){
   _networkZoom=Math.min(1.8,Math.max(0.55,_networkZoom+delta));
   renderNetwork(_stacks);
 }
+function networkRand(key,salt){
+  return (hashStr(`${key}::${salt}`)%10000)/10000;
+}
+function networkWorkerOrbit(count){
+  return count?Math.min(112,Math.max(74,66+Math.min(count,8)*6)):78;
+}
+function clampToNetworkOval(x,y,cx,cy,rx,ry,margin){
+  const safeRx=Math.max(40,rx-margin);
+  const safeRy=Math.max(40,ry-margin);
+  const dx=x-cx,dy=y-cy;
+  const v=(dx*dx)/(safeRx*safeRx)+(dy*dy)/(safeRy*safeRy);
+  if(v<=1)return {x,y};
+  const s=.98/Math.sqrt(v);
+  return {x:cx+dx*s,y:cy+dy*s};
+}
+function layoutNetworkStacks(stacks){
+  const count=Math.max(1,stacks.length);
+  const totalContainers=stacks.reduce((sum,s)=>sum+(s.containers||[]).length,0);
+  const logicalW=560;
+  const logicalH=Math.max(318,Math.min(780,250+count*72+Math.sqrt(totalContainers)*28));
+  const cx=logicalW/2,cy=logicalH/2+6,rx=logicalW/2-74,ry=logicalH/2-58;
+  const ordered=[...stacks].sort((a,b)=>(b.containers.length-a.containers.length)||a.name.localeCompare(b.name));
+  const placed=[];
+  ordered.forEach((stack,idx)=>{
+    const key=stackCharacterKey(stack);
+    const orbit=networkWorkerOrbit(stack.containers.length);
+    const impact=orbit+80;
+    let best=null;
+    const attempts=Math.max(120,count*28);
+    for(let t=0;t<attempts;t++){
+      const angle=networkRand(key,t)*Math.PI*2;
+      const spread=Math.sqrt(networkRand(key,`r${t}`))*(.96-Math.min(.28,impact/430));
+      let x=cx+Math.cos(angle)*(rx*Math.max(.08,spread));
+      let y=cy+Math.sin(angle)*(ry*Math.max(.08,spread));
+      ({x,y}=clampToNetworkOval(x,y,cx,cy,rx,ry,Math.min(96,impact*.34)));
+      let minGap=999,penalty=0;
+      placed.forEach(p=>{
+        const d=Math.hypot(x-p.x,(y-p.y)*1.06);
+        const gap=d-((impact+p.impact)*.62);
+        minGap=Math.min(minGap,gap);
+        if(gap<0)penalty+=Math.abs(gap);
+      });
+      const edge=1-((x-cx)*(x-cx))/(rx*rx)-((y-cy)*(y-cy))/(ry*ry);
+      const centerBias=-Math.hypot(x-cx,y-cy)*.012;
+      const score=(minGap*2)+(edge*34)+centerBias-(penalty*5)-(idx*.04);
+      if(!best||score>best.score)best={x,y,score};
+    }
+    placed.push({key,x:best.x,y:best.y,orbit,impact});
+  });
+  const pressure=Math.max(.48,Math.min(.72,1-Math.max(0,count-4)*.035));
+  for(let iter=0;iter<72;iter++){
+    for(let i=0;i<placed.length;i++){
+      for(let j=i+1;j<placed.length;j++){
+        const a=placed[i],b=placed[j];
+        let dx=b.x-a.x,dy=(b.y-a.y)*1.06;
+        let d=Math.hypot(dx,dy)||1;
+        const target=(a.impact+b.impact)*pressure;
+        if(d<target){
+          const push=(target-d)*.13;
+          dx/=d;dy/=d;
+          a.x-=dx*push;a.y-=dy*push;
+          b.x+=dx*push;b.y+=dy*push;
+          Object.assign(a,clampToNetworkOval(a.x,a.y,cx,cy,rx,ry,Math.min(96,a.impact*.34)));
+          Object.assign(b,clampToNetworkOval(b.x,b.y,cx,cy,rx,ry,Math.min(96,b.impact*.34)));
+        }
+      }
+    }
+  }
+  const placements={};
+  placed.forEach(p=>{
+    placements[p.key]={x:(p.x/logicalW*100).toFixed(2),y:(p.y/logicalH*100).toFixed(2),orbit:p.orbit};
+  });
+  const densityPenalty=(Math.max(0,totalContainers-16)*.018)+(Math.max(0,count-3)*.055);
+  const fieldScale=Math.max(.62,Math.min(1,1-densityPenalty));
+  return {height:Math.round(logicalH+80),fieldScale:fieldScale.toFixed(2),placements};
+}
+function networkWorkerNodes(apps,key,orbit){
+  const n=apps.length;
+  const offset=networkRand(key,'orbit')*Math.PI*2;
+  return apps.map((app,i)=>{
+    const itemKey=app.full_name||app.name||`${key}:${i}`;
+    const wobble=(networkRand(itemKey,'wobble')-.5)*.24;
+    const r=orbit+(networkRand(itemKey,'radius')-.5)*Math.min(18,Math.max(5,n*2));
+    const angle=offset+(Math.PI*2*i/Math.max(1,n))+wobble;
+    const x=Math.cos(angle)*r;
+    const y=Math.sin(angle)*r*.84;
+    return {app,x,y,left:x<0};
+  });
+}
 function renderNetwork(stacks){
   const stage=document.getElementById('network-stage');
   if(!stacks.length){stage.innerHTML='<div class="empty">No stacks found. Add a connection in the Connections tab.</div>';return;}
   const kingdoms=groupKingdoms(stacks);
   if(!kingdoms.length){stage.innerHTML='<div class="empty">No containers found for the configured connections.</div>';return;}
-  const autoScale=kingdoms.length>4?Math.max(0.62,Math.min(1,4/kingdoms.length+0.28)):1;
+  const autoScale=kingdoms.length>4?Math.max(0.58,Math.min(1,3.2/kingdoms.length+0.22)):1;
   const scale=Math.min(_networkZoom,autoScale*_networkZoom);
   stage.style.transform=`scale(${scale})`;
   stage.style.width=`${100/scale}%`;
@@ -808,24 +912,38 @@ function renderNetwork(stacks){
     const totals=k.stacks.reduce((acc,stack)=>{stack.containers.forEach(app=>{const c=issueCounts(app);acc.errors+=c.errors;acc.warnings+=c.warnings;});return acc;},{errors:0,warnings:0});
     const kingdomCls=totals.errors>0?'er':totals.warnings>0?'warn':'';
     const logo=serverLogo(k)||'/assets/kingdoms/castle.png';
+    const layout=layoutNetworkStacks(k.stacks);
     const stacksHtml=k.stacks.sort((a,b)=>a.name.localeCompare(b.name)).map(stack=>{
       const key=stackCharacterKey(stack);
+      const placement=layout.placements[key]||{x:50,y:50,orbit:networkWorkerOrbit(stack.containers.length)};
       const charId=selectedCharacterId(stack);
       const ch=CHARACTER_BY_ID[charId]||CHARACTERS[0];
       const stackTotals=stack.containers.reduce((acc,app)=>{const c=issueCounts(app);acc.errors+=c.errors;acc.warnings+=c.warnings;return acc;},{errors:0,warnings:0});
       const severity=stackTotals.errors>0?'error':stackTotals.warnings>0?'warning':'';
-      const workers=stack.containers.map(app=>{
+      const apps=[...stack.containers].sort((a,b)=>containerFriendlyName(a).localeCompare(containerFriendlyName(b)));
+      const workerNodes=networkWorkerNodes(apps,key,placement.orbit);
+      const lines=workerNodes.map(node=>{
+        const counts=issueCounts(node.app);
+        const cls=counts.errors>0?'err':counts.warnings>0?'warn':'';
+        return `<line class="${esc(cls)}" x1="0" y1="0" x2="${node.x.toFixed(1)}" y2="${node.y.toFixed(1)}"></line>`;
+      }).join('');
+      const workers=workerNodes.map(node=>{
+        const app=node.app;
         const counts=issueCounts(app);
         const dot=counts.errors>0?'err':counts.warnings>0?'warn':'none';
-        const workerClass='w'+(hashStr(app.full_name||app.name)%4);
+        const dotCount=counts.errors>0?counts.errors:counts.warnings;
+        const dotText=dotCount>99?'99+':String(dotCount);
+        const workerAsset=WORKER_ASSETS[hashStr(app.full_name||app.name)%WORKER_ASSETS.length];
         const displayName=containerFriendlyName(app);
-        return `<div class="net-worker" onclick="jumpToEventsFromEl(this)" data-server="${esc(stack.server)}" data-container="${esc(app.full_name)}" data-severity="${esc(dot==='err'?'error':dot==='warn'?'warning':'')}" title="${esc(app.full_name)}">
-          <span class="worker-avatar ${workerClass}"><img src="/assets/characters/workers.png" alt=""></span>
-          <span class="net-dot ${dot}"></span>
+        const side=node.left?'left':'right';
+        return `<div class="net-worker ${side}" style="--wx:${node.x.toFixed(1)}px;--wy:${node.y.toFixed(1)}px" onclick="jumpToEventsFromEl(this)" data-server="${esc(stack.server)}" data-container="${esc(app.full_name)}" data-severity="${esc(dot==='err'?'error':dot==='warn'?'warning':'')}" title="${esc(app.full_name)}">
+          <span class="worker-avatar"><img src="${esc(workerAsset)}" alt=""></span>
+          <span class="net-dot ${dot}">${esc(dotText)}</span>
           <span class="net-worker-name">${esc(displayName)}</span>
         </div>`;
       }).join('');
-      return `<div class="network-stack">
+      return `<div class="network-stack" style="--x:${placement.x}%;--y:${placement.y}%">
+        <svg class="net-links" viewBox="-150 -150 300 300" aria-hidden="true">${lines}</svg>
         <div class="net-stack-node" onclick="jumpToEvents('${esc(stack.server)}','${esc(stack.name)}','${esc(severity)}')" title="${esc(stack.name)}">
           <img src="${esc(stackLogo(stack)||ch.src)}" alt="${esc(stackFriendlyName(stack))}">
           <span class="net-stack-name">${esc(stackFriendlyName(stack))}</span>
@@ -833,9 +951,9 @@ function renderNetwork(stacks){
         <div class="net-workers">${workers}</div>
       </div>`;
     }).join('');
-    return `<section class="network-kingdom ${kingdomCls}">
+    return `<section class="network-kingdom ${kingdomCls}" style="--kh:${layout.height}px;--field-scale:${layout.fieldScale}">
       <div class="network-title"><img src="${esc(logo)}" alt=""><span>${esc(serverDisplayName(k))}</span>${statusCircles(totals.errors,totals.warnings)}</div>
-      ${stacksHtml}
+      <div class="network-field">${stacksHtml}</div>
     </section>`;
   }).join('');
 }
