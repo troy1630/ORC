@@ -64,6 +64,7 @@ class IngestionCheckpoint(Base):
     endpoint_id: Mapped[int] = mapped_column(Integer)
     container_id: Mapped[str] = mapped_column(String(64))
     last_unix_ts: Mapped[int] = mapped_column(BigInteger, default=0)
+    poll_count: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
 def init_db(retries: int = 10, delay: float = 3.0) -> None:
@@ -88,6 +89,7 @@ def _migrate() -> None:
     stmts = [
         "ALTER TABLE observed_events ADD COLUMN IF NOT EXISTS connection_id INTEGER REFERENCES connections(id) ON DELETE SET NULL",
         "ALTER TABLE ingestion_checkpoints ADD COLUMN IF NOT EXISTS connection_id INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE ingestion_checkpoints ADD COLUMN IF NOT EXISTS poll_count BIGINT NOT NULL DEFAULT 0",
         "ALTER TABLE connections ADD COLUMN IF NOT EXISTS poll_interval_seconds INTEGER",
         "ALTER TABLE connections ADD COLUMN IF NOT EXISTS server_name VARCHAR(128)",
         "ALTER TABLE connections ADD COLUMN IF NOT EXISTS logo_data TEXT",

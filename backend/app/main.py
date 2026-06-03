@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, text as _sa_text
 
 from .config import REDIS_URL, REPO_ROOT
-from .db import Connection, ObservedEvent, SessionLocal, init_db
+from .db import Connection, IngestionCheckpoint, ObservedEvent, SessionLocal, init_db
 from .raven import CHANNEL
 from .portainer import PortainerClient
 from .registry import load_registry
@@ -65,7 +65,8 @@ _HTML = """<!doctype html>
 body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 /* NAV */
 .nav{background:rgba(22,27,34,.96);border-bottom:1px solid var(--bdr);padding:0 18px;display:flex;align-items:center;gap:14px;height:64px;flex-shrink:0;backdrop-filter:blur(12px)}
-.brand{font-weight:800;font-size:1.14rem;margin-right:8px;display:flex;align-items:center;gap:10px;letter-spacing:.02em}
+.brand{background:none;border:0;color:var(--txt);cursor:pointer;padding:0;font:inherit;font-weight:800;font-size:1.14rem;margin-right:8px;display:flex;align-items:center;gap:10px;letter-spacing:.02em}
+.brand:hover .brand-mark{border-color:rgba(163,113,247,.5)}
 .brand-mark{width:46px;height:46px;border-radius:50%;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;background:#0d1117;border:1px solid rgba(230,237,243,.24);box-shadow:0 0 0 1px rgba(0,0,0,.55) inset,0 8px 18px rgba(0,0,0,.28);flex-shrink:0}
 .brand-mark img{width:148%;height:148%;object-fit:cover;object-position:center 36%;filter:saturate(.95) contrast(1.06);-webkit-mask-image:radial-gradient(circle at center,#000 46%,rgba(0,0,0,.75) 63%,transparent 84%);mask-image:radial-gradient(circle at center,#000 46%,rgba(0,0,0,.75) 63%,transparent 84%)}
 .tabs{display:flex;height:100%;overflow-x:auto;scrollbar-width:none}
@@ -89,6 +90,26 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
 box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 #pane-map::before,#pane-network::before,#pane-netview::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at center,rgba(255,255,255,.04),rgba(13,17,23,.06) 52%,rgba(13,17,23,.18) 100%);pointer-events:none}
 #pane-overview{min-height:calc(100vh - 92px);padding:12px;background:#0f141b}
+#pane-home{min-height:calc(100vh - 92px);padding:12px;background:#0f141b}
+.home-grid{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:12px;min-height:calc(100vh - 116px)}
+.dash-section{border:1px solid var(--bdr);border-radius:8px;background:var(--sur);padding:12px;min-width:0}
+.dash-title{font-size:.78rem;font-weight:850;letter-spacing:.04em;text-transform:uppercase;color:var(--txt);margin-bottom:9px}
+.issue-list,.metric-list,.recent-list{display:flex;flex-direction:column;gap:7px;min-width:0}
+.home-issue-row{cursor:pointer}
+.home-issue-row .sub-type{margin-right:4px}
+.metric-connection{border:1px solid #21262d;border-radius:7px;background:#0d1117;padding:9px;min-width:0}
+.metric-conn-name{font-size:.82rem;font-weight:850;margin-bottom:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.metric-stack{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:9px;align-items:center;border-left:1px solid #30363d;margin-left:6px;padding:5px 0 5px 10px;color:var(--mut);font-size:.74rem}
+.metric-stack-name{color:var(--txt);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.metric-chip{border:1px solid #21262d;border-radius:999px;background:#161b22;padding:2px 7px;white-space:nowrap}
+.recent-list{max-height:270px;overflow:auto;padding-right:2px}
+.recent-issue{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:9px;align-items:center;border:1px solid #21262d;border-radius:7px;background:#0d1117;padding:7px 9px;cursor:pointer}
+.recent-issue:hover{border-color:var(--pur)}
+.recent-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;font-size:.77rem}
+.recent-msg{grid-column:2 / 4;color:var(--mut);font-size:.7rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recent-sev{font-size:.62rem;font-weight:850;text-transform:uppercase;border-radius:999px;padding:3px 7px}
+.recent-sev.err{background:rgba(248,81,73,.16);color:var(--red);border:1px solid rgba(248,81,73,.34)}
+.recent-sev.warn{background:rgba(210,153,34,.16);color:var(--yel);border:1px solid rgba(210,153,34,.34)}
 .map-grid{position:relative;z-index:1;display:flex;flex-direction:column;gap:11px}
 .kingdom{border:1px solid rgba(163,113,247,.42);border-radius:9px;padding:10px;background:rgba(13,17,23,.62);box-shadow:0 10px 24px rgba(0,0,0,.16);backdrop-filter:blur(2px)}
 .kingdom.corp{background:#151a22;border-color:#2f3844;box-shadow:none;backdrop-filter:none}
@@ -276,7 +297,8 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .aside{display:none}
   .aside-width-grip{display:none}
   .main{padding:12px}
-  #pane-map,#pane-overview,#pane-network,#pane-netview{padding:10px}
+  #pane-home,#pane-map,#pane-overview,#pane-network,#pane-netview{padding:10px}
+  .metric-stack{grid-template-columns:minmax(0,1fr) auto;gap:6px}
   .kingdom{padding:8px}
   .kingdom-hdr{align-items:flex-start}
   .kingdom-castle,.kingdom-logo{width:34px;height:34px}
@@ -287,9 +309,9 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 </head>
 <body>
 <nav class="nav">
-  <span class="brand"><span class="brand-mark"><img src="/assets/characters/orc.png" alt=""></span><span>ORC</span></span>
+  <button class="brand" type="button" onclick="showTab('home')" title="Dashboard"><span class="brand-mark"><img src="/assets/characters/orc.png" alt=""></span><span>ORC</span></button>
   <div class="tabs">
-    <button class="tab on" id="tab-map" onclick="showTab('map')">Map</button>
+    <button class="tab" id="tab-map" onclick="showTab('map')">Map</button>
     <button class="tab" id="tab-overview" onclick="showTab('overview')">Overview</button>
     <button class="tab" id="tab-network" onclick="showTab('network')">Network</button>
     <button class="tab" id="tab-netview" onclick="showTab('netview')">Net View</button>
@@ -319,8 +341,26 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 <div class="layout">
 <div class="main">
 
+  <!-- HOME -->
+  <div class="pane on" id="pane-home">
+    <div class="home-grid">
+      <section class="dash-section">
+        <div class="dash-title">Containers with issues</div>
+        <div class="issue-list" id="home-issues"><div class="empty">Loading issue containers...</div></div>
+      </section>
+      <section class="dash-section">
+        <div class="dash-title">Metrics</div>
+        <div class="metric-list" id="home-metrics"><div class="empty">Loading metrics...</div></div>
+      </section>
+      <section class="dash-section">
+        <div class="dash-title">Last 7 issues</div>
+        <div class="recent-list" id="home-recent"><div class="empty">Loading recent issues...</div></div>
+      </section>
+    </div>
+  </div>
+
   <!-- MAP -->
-  <div class="pane on" id="pane-map">
+  <div class="pane" id="pane-map">
     <div class="map-grid" id="map-grid"><div class="empty">Loading stack map…</div></div>
   </div>
 
@@ -477,7 +517,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 /* ============================================================
    STATE
    ============================================================ */
-let _evts=[], _evFilters={severity:'',container:'',server:''};
+let _evts=[], _homeRecent=[], _evFilters={severity:'',container:'',server:''};
 let _conns=[], _editId=null, _charEditKey='', _charDraftCharacter='', _charLogoDraft='', _charDefaultLogo='';
 let _stacks=[], _connLogoDraft='', _networkZoom=1;
 let _networkPan={x:0,y:0,worldKey:'',centeredStageId:'',centeredVisible:false,dragging:false,startX:0,startY:0,originX:0,originY:0,suppressClick:false};
@@ -543,7 +583,9 @@ function showTab(id){
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   document.getElementById('pane-'+id).classList.add('on');
-  document.getElementById('tab-'+id).classList.add('on');
+  const tab=document.getElementById('tab-'+id);
+  if(tab)tab.classList.add('on');
+  if(id==='home')renderHomeDashboard();
   if(id==='conn')loadConns();
   if(id==='map')loadMap();
   if(id==='overview')loadOverview();
@@ -554,7 +596,7 @@ function showTab(id){
 function tabsForViewMode(mode=_viewMode){
   return mode==='corporate'?['overview','netview','events','conn']:['map','network','events','conn'];
 }
-function tabAllowed(id){return tabsForViewMode().includes(id);}
+function tabAllowed(id){return id==='home'||tabsForViewMode().includes(id);}
 function firstTabForMode(){return tabsForViewMode()[0];}
 function setViewMode(mode,persist=true){
   _viewMode=mode==='corporate'?'corporate':'default';
@@ -616,8 +658,11 @@ function stackLogo(stack){
 function selectedStackLogo(stack){
   return stackLogo(stack)||defaultCorporateLogo(stack).src;
 }
+function containerDisplayName(name){
+  return storageGet(CONTAINER_NAME_PREFIX+name)||name;
+}
 function containerFriendlyName(app){
-  return storageGet(CONTAINER_NAME_PREFIX+(app.full_name||app.name))||app.name;
+  return containerDisplayName(app.full_name||app.name||'');
 }
 function serverDisplayName(k){
   return k.server_name||k.server||'Unknown server';
@@ -736,7 +781,112 @@ function clearConnLogo(){
   document.getElementById('f-logo').value='';
   showLogoPreview('f-logo-preview','');
 }
+function stackPollCount(stack){
+  return (stack.containers||[]).reduce((sum,app)=>{
+    const n=Number(app.polls ?? app.poll_count ?? 0);
+    return sum+(Number.isFinite(n)&&n>0?n:0);
+  },0);
+}
+function stackIssueCount(stack){
+  return (stack.containers||[]).reduce((sum,app)=>{
+    const c=issueCounts(app);
+    return sum+c.errors+c.warnings;
+  },0);
+}
+function renderHomeIssues(stacks){
+  const el=document.getElementById('home-issues');
+  if(!el)return;
+  const rows=[];
+  (stacks||[]).forEach(stack=>{
+    (stack.containers||[]).forEach(app=>{
+      const counts=issueCounts(app);
+      if(counts.errors<=0&&counts.warnings<=0)return;
+      const severity=counts.errors>0?'error':'warning';
+      const containerName=app.full_name||app.name||'';
+      rows.push({stack,app,counts,severity,containerName,total:counts.errors+counts.warnings});
+    });
+  });
+  rows.sort((a,b)=>b.counts.errors-a.counts.errors||b.counts.warnings-a.counts.warnings||a.containerName.localeCompare(b.containerName));
+  if(!rows.length){
+    el.innerHTML='<div class="empty">No containers have warning or error dots in this window.</div>';
+    return;
+  }
+  el.innerHTML=rows.map(row=>`
+    <div class="sub-row home-issue-row" onclick="jumpToEventsFromEl(this)"
+      data-server="${esc(row.stack.server)}" data-container="${esc(row.containerName)}" data-severity="${esc(row.severity)}"
+      title="Open Event Log for ${esc(row.containerName)}">
+      <span class="sub-name">${esc(containerFriendlyName(row.app))}</span>
+      <span class="sub-type">${esc(row.app.type||'api')}</span>
+      ${statusCircles(row.counts.errors,row.counts.warnings,false)}
+    </div>`).join('');
+}
+function renderHomeMetrics(stacks){
+  const el=document.getElementById('home-metrics');
+  if(!el)return;
+  const kingdoms=groupKingdoms(stacks||[]);
+  if(!kingdoms.length){
+    el.innerHTML='<div class="empty">No connection metrics yet.</div>';
+    return;
+  }
+  el.innerHTML=kingdoms.map(k=>{
+    k.stacks.sort((a,b)=>stackFriendlyName(a).localeCompare(stackFriendlyName(b)));
+    const stackRows=k.stacks.map(stack=>{
+      const polls=stackPollCount(stack);
+      const issues=stackIssueCount(stack);
+      const containers=(stack.containers||[]).length;
+      return `<div class="metric-stack">
+        <span class="metric-stack-name">|_ ${esc(stackFriendlyName(stack))}</span>
+        <span class="metric-chip">${polls} poll${polls!==1?'s':''}</span>
+        <span class="metric-chip">${issues} issue${issues!==1?'s':''}</span>
+        <span class="metric-chip">${containers} container${containers!==1?'s':''}</span>
+      </div>`;
+    }).join('');
+    return `<section class="metric-connection">
+      <div class="metric-conn-name">${esc(serverDisplayName(k))}</div>
+      ${stackRows}
+    </section>`;
+  }).join('');
+}
+function renderHomeRecent(){
+  const el=document.getElementById('home-recent');
+  if(!el)return;
+  const issues=(_homeRecent||[]).filter(e=>['critical','error','warning'].includes(e.severity)).slice(0,7);
+  if(!issues.length){
+    el.innerHTML='<div class="empty">No recent issues in this window.</div>';
+    return;
+  }
+  el.innerHTML=issues.map(e=>{
+    const sev=e.severity==='warning'?'warning':'error';
+    const cls=e.severity==='warning'?'warn':'err';
+    const container=e.container_name||'';
+    const display=containerDisplayName(container);
+    return `<div class="recent-issue" onclick="jumpToEventsFromEl(this)"
+      data-server="${esc(e.server||'')}" data-container="${esc(container)}" data-severity="${esc(sev)}"
+      title="Open Event Log for ${esc(container)}">
+      <span class="recent-sev ${cls}">${esc(e.severity)}</span>
+      <span class="recent-name">${esc(display)}</span>
+      <span class="muted small">${esc(fmtShort(e.occurred_at))}</span>
+      <span class="recent-msg">${esc(e.message||'')}</span>
+    </div>`;
+  }).join('');
+}
+function renderHomeDashboard(){
+  renderHomeIssues(_stacks);
+  renderHomeMetrics(_stacks);
+  renderHomeRecent();
+}
+async function loadHomeRecent(){
+  try{
+    const d=await fetch(`/events?limit=80&hours=${_windowHours}`).then(r=>r.json());
+    _homeRecent=(d.items||[]).filter(e=>['critical','error','warning'].includes(e.severity)).slice(0,7);
+    renderHomeDashboard();
+  }catch{
+    const el=document.getElementById('home-recent');
+    if(el)el.innerHTML='<div class="empty">Could not load recent issues.</div>';
+  }
+}
 function renderVisualViews(){
+  renderHomeDashboard();
   if(_stacks.length){
     renderMap(_stacks);
     renderOverview(_stacks);
@@ -835,6 +985,8 @@ async function loadStacks(){
     _stacks=d.stacks||[];
     renderVisualViews();
   }catch(e){
+    document.getElementById('home-issues').innerHTML='<div class="empty">Could not load issue containers.</div>';
+    document.getElementById('home-metrics').innerHTML='<div class="empty">Could not load metrics.</div>';
     document.getElementById('map-grid').innerHTML='<div class="empty">Could not load stack map.</div>';
     document.getElementById('overview-grid').innerHTML='<div class="empty">Could not load overview.</div>';
     document.getElementById('network-stage').innerHTML='<div class="empty">Could not load network.</div>';
@@ -1813,7 +1965,8 @@ function setupInputs(){
 async function loadAll(){
   _conns=await fetch('/connections').then(r=>r.json()).catch(()=>_conns);
   _populateServerDropdown();
-  await Promise.all([loadStatus(),loadEvts(),loadStacks(),loadRavenBacklog()]);
+  await Promise.all([loadStatus(),loadEvts(),loadStacks(),loadRavenBacklog(),loadHomeRecent()]);
+  renderHomeDashboard();
   document.getElementById('upd').textContent=fmtShort(new Date().toISOString());
 }
 window.addEventListener('resize',()=>{resizeCanvas();drawHb();});
@@ -2222,7 +2375,6 @@ def test_connection(cid: int) -> dict:
 @app.post("/connections/{cid}/poll")
 def poll_now(cid: int) -> dict:
     """Immediately scan all containers on one connection (runs in API process)."""
-    from .db import IngestionCheckpoint
     from .ingest import parse_logs
     from . import raven as _raven
 
@@ -2265,24 +2417,29 @@ def poll_now(cid: int) -> dict:
                     chk = session.query(IngestionCheckpoint).filter_by(
                         connection_id=conn_id, endpoint_id=eid, container_id=cid_c
                     ).first()
-                    since = chk.last_unix_ts if chk else 0
+                    if not chk:
+                        chk = IngestionCheckpoint(
+                            connection_id=conn_id, endpoint_id=eid,
+                            container_id=cid_c, last_unix_ts=0, poll_count=0,
+                        )
+                        session.add(chk)
+                        session.flush()
+
+                    since = chk.last_unix_ts or 0
                     raw = client.get_container_logs(eid, cid_c, since=since)
                     events, last_ts = parse_logs(raw, conn_id, eid, cid_c, cname)
                     event_count = len(events)
                     err_c = sum(1 for e in events if e.severity in ("error", "critical"))
                     warn_c = sum(1 for e in events if e.severity == "warning")
+                    chk.poll_count = (chk.poll_count or 0) + 1
+
                     if events:
                         session.add_all(events)
                         session.flush()
                         issue_payloads = _raven.issue_event_payloads(name, events)
-                        if chk:
-                            chk.last_unix_ts = last_ts
-                        else:
-                            session.add(IngestionCheckpoint(
-                                connection_id=conn_id, endpoint_id=eid,
-                                container_id=cid_c, last_unix_ts=last_ts,
-                            ))
-                        session.commit()
+                        chk.last_unix_ts = last_ts
+
+                    session.commit()
                 for payload in issue_payloads:
                     _raven.publish(payload)
                 _raven.publish({
@@ -2449,9 +2606,17 @@ def get_overview(hours: int = 24) -> dict:
             ObservedEvent.occurred_at >= cutoff
         ).group_by(ObservedEvent.connection_id, ObservedEvent.container_id).all()
 
+        poll_rows = s.query(
+            IngestionCheckpoint.connection_id, IngestionCheckpoint.container_id,
+            func.sum(IngestionCheckpoint.poll_count).label("n")
+        ).group_by(
+            IngestionCheckpoint.connection_id, IngestionCheckpoint.container_id
+        ).all()
+
     errs  = {(r.connection_id, r.container_id): int(r.n) for r in err_rows}
     warns = {(r.connection_id, r.container_id): int(r.n) for r in warn_rows}
     lines = {(r.connection_id, r.container_id): int(r.n) for r in line_rows}
+    polls = {(r.connection_id, r.container_id): int(r.n) for r in poll_rows}
 
     stacks_out = []
     for conn in connections:
@@ -2478,6 +2643,7 @@ def get_overview(hours: int = 24) -> dict:
                         "warnings": warns.get((conn.id, cid), 0),
                         "total_lines": lines.get((conn.id, cid), 0),
                         "lines_queried": lines.get((conn.id, cid), 0),
+                        "polls": polls.get((conn.id, cid), 0),
                     })
             except Exception:
                 continue
