@@ -75,6 +75,7 @@ class AgentRuntimeState(Base):
     name: Mapped[str] = mapped_column(String(128))
     role: Mapped[str] = mapped_column(String(128), default="specialist")
     icon: Mapped[str] = mapped_column(String(512), default="")
+    logo_data: Mapped[str | None] = mapped_column(Text, nullable=True)
     trust_mode: Mapped[str] = mapped_column(String(32), default="recommend_only")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -190,6 +191,7 @@ def _migrate() -> None:
         "ALTER TABLE connections ADD COLUMN IF NOT EXISTS server_name VARCHAR(128)",
         "ALTER TABLE connections ADD COLUMN IF NOT EXISTS logo_data TEXT",
         "ALTER TABLE agent_runtime_states ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE agent_runtime_states ADD COLUMN IF NOT EXISTS logo_data TEXT",
         "ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS execution_allowed BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE",
     ]
@@ -197,5 +199,12 @@ def _migrate() -> None:
         for sql in stmts:
             try:
                 conn.execute(text(sql))
+            except Exception:
+                pass
+        if engine.dialect.name == "sqlite":
+            try:
+                cols = {row[1] for row in conn.execute(text("PRAGMA table_info(agent_runtime_states)")).fetchall()}
+                if "logo_data" not in cols:
+                    conn.execute(text("ALTER TABLE agent_runtime_states ADD COLUMN logo_data TEXT"))
             except Exception:
                 pass

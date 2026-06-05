@@ -101,6 +101,7 @@ class AgentCreateIn(BaseModel):
     allowed_skills: str = ""
     rules: str = ""
     icon: str = ""
+    logo_data: str = ""
 
 
 class SkillBuildIn(BaseModel):
@@ -145,12 +146,14 @@ class LearningCreateIn(BaseModel):
 TRUST_MODES = {"recommend_only", "approval_required", "autonomous"}
 COOKIE_NAME = "orc_session"
 SESSION_DAYS = 7
+DEFAULT_CORPORATE_LOGO = "/assets/characters/black-hd-logo.png"
 DEFAULT_ORCHESTRATION_AGENTS = [
     {
         "agent_id": "raven",
         "name": "Raven",
         "role": "observer and message bus",
         "icon": "/assets/kingdoms/raven.png",
+        "logo_data": DEFAULT_CORPORATE_LOGO,
         "trust_mode": "recommend_only",
     },
     {
@@ -158,27 +161,34 @@ DEFAULT_ORCHESTRATION_AGENTS = [
         "name": "The Oracle",
         "role": "investigator",
         "icon": "/assets/kingdoms/oracle.png",
+        "logo_data": DEFAULT_CORPORATE_LOGO,
         "trust_mode": "recommend_only",
     },
     {
         "agent_id": "gate-keeper",
         "name": "Gate Keeper",
         "role": "approval and policy",
-        "icon": "/assets/characters/warrior.png",
+        "icon": "/assets/characters/agent-gate-keeper.png",
+        "logo_data": DEFAULT_CORPORATE_LOGO,
+        "legacy_icons": ["/assets/characters/warrior.png"],
         "trust_mode": "approval_required",
     },
     {
         "agent_id": "executioner",
         "name": "Executioner",
         "role": "approved execution",
-        "icon": "/assets/characters/blacksmith.png",
+        "icon": "/assets/characters/agent-executioner.png",
+        "logo_data": DEFAULT_CORPORATE_LOGO,
+        "legacy_icons": ["/assets/characters/blacksmith.png"],
         "trust_mode": "approval_required",
     },
     {
         "agent_id": "sage",
         "name": "Sage",
         "role": "learning and skill authoring",
-        "icon": "/assets/characters/wizard.png",
+        "icon": "/assets/characters/agent-sage.png",
+        "logo_data": DEFAULT_CORPORATE_LOGO,
+        "legacy_icons": ["/assets/characters/wizard.png"],
         "trust_mode": "recommend_only",
     },
     {
@@ -186,6 +196,7 @@ DEFAULT_ORCHESTRATION_AGENTS = [
         "name": "ORC Orchestrator",
         "role": "router",
         "icon": "/assets/characters/orc.png",
+        "logo_data": DEFAULT_CORPORATE_LOGO,
         "trust_mode": "approval_required",
     },
 ]
@@ -438,11 +449,19 @@ def _default_agent_icon(agent_id: str, role: str = "") -> str:
     r = role.lower()
     if "observer" in r:
         return "/assets/kingdoms/raven.png"
+    if "gate" in r or "approval" in r or "policy" in r:
+        return "/assets/characters/agent-gate-keeper.png"
+    if "execution" in r or "execute" in r:
+        return "/assets/characters/agent-executioner.png"
+    if "learning" in r or "skill" in r or "sage" in r:
+        return "/assets/characters/agent-sage.png"
+    if "blacksmith" in r or "code" in r or "builder" in r:
+        return "/assets/characters/blacksmith.png"
     if "scribe" in r or "document" in r:
         return "/assets/characters/bard.png"
     if "communicator" in r:
         return "/assets/characters/cleric.png"
-    return "/assets/characters/orc.png"
+    return "/assets/characters/agent-scout.png"
 
 
 def _ensure_orchestration_agents(session) -> None:
@@ -454,7 +473,8 @@ def _ensure_orchestration_agents(session) -> None:
                 "agent_id": item.item_id,
                 "name": item.name,
                 "role": item.role_or_category,
-                "icon": _default_agent_icon(item.item_id, item.role_or_category),
+                "icon": item.icon or _default_agent_icon(item.item_id, item.role_or_category),
+                "logo_data": DEFAULT_CORPORATE_LOGO,
                 "trust_mode": "approval_required" if item.approval_required else "recommend_only",
             },
         )
@@ -464,8 +484,10 @@ def _ensure_orchestration_agents(session) -> None:
     for agent_id, item in desired.items():
         row = existing.get(agent_id)
         if row:
-            if not row.icon:
+            if not row.icon or row.icon in item.get("legacy_icons", []):
                 row.icon = item["icon"]
+            if not row.logo_data:
+                row.logo_data = item.get("logo_data", DEFAULT_CORPORATE_LOGO)
             if not row.name:
                 row.name = item["name"]
             if not row.role:
@@ -477,6 +499,7 @@ def _ensure_orchestration_agents(session) -> None:
                 name=item["name"],
                 role=item["role"],
                 icon=item["icon"],
+                logo_data=item.get("logo_data", DEFAULT_CORPORATE_LOGO),
                 trust_mode=item["trust_mode"],
                 enabled=True,
                 created_at=now,
@@ -514,6 +537,7 @@ def _agent_dict(row: AgentRuntimeState) -> dict:
         "name": row.name,
         "role": row.role,
         "icon": row.icon or _default_agent_icon(row.agent_id, row.role),
+        "logo_data": row.logo_data or DEFAULT_CORPORATE_LOGO,
         "trust_mode": row.trust_mode,
         "enabled": row.enabled,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -650,14 +674,11 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
 .main{overflow-y:auto;padding:14px}
 .pane{display:none}.pane.on{display:block}
 /* STACK MAP */
-#pane-map,#pane-network,#pane-netview{position:relative;min-height:calc(100vh - 92px);padding:12px;border-radius:14px;overflow:hidden;background:
+#pane-overview,#pane-network{position:relative;min-height:calc(100vh - 92px);padding:12px;border-radius:14px;overflow:hidden;background:#0f141b;box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
+html[data-view-mode="character"] #pane-overview,html[data-view-mode="character"] #pane-network{background:
   linear-gradient(rgba(13,17,23,.18),rgba(13,17,23,.34)),
-  url('/assets/kingdoms/pale-strategy-map.png') center/cover no-repeat;
-box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
-#pane-map::before,#pane-network::before,#pane-netview::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at center,rgba(255,255,255,.04),rgba(13,17,23,.06) 52%,rgba(13,17,23,.18) 100%);pointer-events:none}
-#pane-netview{background-color:#070b12;background-image:linear-gradient(rgba(6,10,18,.76),rgba(6,10,18,.9)),repeating-linear-gradient(0deg,transparent 0 34px,rgba(88,166,255,.1) 35px,transparent 36px),repeating-linear-gradient(90deg,transparent 0 42px,rgba(63,185,80,.08) 43px,transparent 44px),linear-gradient(135deg,transparent 0 16px,rgba(88,166,255,.16) 17px,transparent 18px,transparent 66px,rgba(63,185,80,.12) 67px,transparent 68px);box-shadow:inset 0 0 0 1px rgba(88,166,255,.12),inset 0 0 90px rgba(0,0,0,.45)}
-#pane-netview::before{background:radial-gradient(circle at center,rgba(88,166,255,.08),transparent 46%),linear-gradient(90deg,rgba(88,166,255,.12) 1px,transparent 1px),linear-gradient(0deg,rgba(63,185,80,.08) 1px,transparent 1px);background-size:auto,96px 96px,96px 96px;opacity:.58}
-#pane-overview{min-height:calc(100vh - 92px);padding:12px;background:#0f141b}
+  url('/assets/kingdoms/pale-strategy-map.png') center/cover no-repeat}
+html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="character"] #pane-network::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at center,rgba(255,255,255,.04),rgba(13,17,23,.06) 52%,rgba(13,17,23,.18) 100%);pointer-events:none}
 #pane-home{min-height:calc(100vh - 92px);padding:12px;background:#0f141b}
 .home-grid{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:12px;min-height:calc(100vh - 116px)}
 .dash-section{border:1px solid var(--bdr);border-radius:8px;background:var(--sur);padding:12px;min-width:0}
@@ -721,7 +742,7 @@ box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 .char-frame{position:relative;display:flex;align-items:center;justify-content:center;width:100%;aspect-ratio:1.62/1;background:#0d1117;border:1px solid #21262d;border-radius:6px;overflow:hidden;cursor:pointer;padding:0;color:inherit;font:inherit}
 .char-frame:hover{border-color:var(--pur)}
 .char-img{display:block;width:100%;height:100%;object-fit:contain}
-.corp .char-img{object-fit:cover}
+.corp .char-img{object-fit:contain;padding:14px}
 .stack-banner{position:absolute;left:0;right:0;bottom:0;height:27px;display:flex;align-items:center;justify-content:center;padding:0 32px 0 8px;background:rgba(48,54,61,.94);backdrop-filter:blur(3px);font-size:.72rem;font-weight:800;letter-spacing:0;text-shadow:0 1px 2px rgba(0,0,0,.45);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .status-circles{position:absolute;top:6px;left:6px;display:flex;gap:4px}
 .kingdom-score .status-circles{position:static}
@@ -748,7 +769,7 @@ box-shadow:inset 0 0 0 1px rgba(230,237,243,.06)}
 .char-choice:hover,.char-choice.on{border-color:var(--pur);background:#21262d}
 .char-choice img{display:block;width:100%;aspect-ratio:1.62/1;object-fit:cover;border-radius:5px;margin-bottom:5px}
 .char-choice span{display:block;font-size:.72rem;font-weight:650;text-align:center}
-.logo-choice img{object-fit:contain;background:#0d1117}
+.logo-choice img,.agent-logo-choice img{object-fit:contain;background:#0d1117}
 .file-row{display:flex;align-items:center;gap:9px;min-width:0}
 .logo-preview{width:42px;height:42px;border-radius:8px;object-fit:cover;background:#0d1117;border:1px solid var(--bdr);flex-shrink:0}
 .logo-preview.empty{display:none}
@@ -887,6 +908,7 @@ canvas{display:block;width:100%;height:58px}
 .agent-list,.approval-list,.learning-list,.skill-list{display:flex;flex-direction:column;gap:8px;min-width:0}
 .agent-card{display:grid;grid-template-columns:42px minmax(0,1fr);gap:9px;border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:9px;min-width:0}
 .agent-avatar{width:42px;height:42px;border-radius:50%;object-fit:cover;background:#05080d;border:1px solid rgba(230,237,243,.16)}
+.agent-avatar.corp,.chat-avatar.corp{object-fit:contain;padding:4px;background:#0d1117}
 .agent-name{font-size:.83rem;font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .agent-role{font-size:.68rem;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
 .agent-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center;margin-top:8px}
@@ -957,7 +979,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .aside{display:none}
   .aside-width-grip{display:none}
   .main{padding:12px}
-  #pane-home,#pane-map,#pane-overview,#pane-network,#pane-netview,#pane-orchestration{padding:10px}
+  #pane-home,#pane-overview,#pane-network,#pane-orchestration{padding:10px}
   .issue-list{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
   .metric-table-head,.metric-summary,.metric-stack{grid-template-columns:minmax(150px,1fr) 52px 54px 70px}
   .metric-table-head span:nth-child(5),.metric-summary .home-health,.metric-stack .home-health{display:none}
@@ -996,16 +1018,14 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 <nav class="nav">
   <button class="brand" type="button" onclick="showTab('home')" title="Dashboard"><span class="brand-mark"><img src="/assets/characters/orc.png" alt=""></span><span>ORC</span></button>
   <div class="tabs">
-    <button class="tab" id="tab-map" onclick="showTab('map')">Map</button>
     <button class="tab" id="tab-overview" onclick="showTab('overview')">Overview</button>
     <button class="tab" id="tab-network" onclick="showTab('network')">Network</button>
-    <button class="tab" id="tab-netview" onclick="showTab('netview')">Net View</button>
     <button class="tab" id="tab-events" onclick="showTab('events')">Events</button>
     <button class="tab" id="tab-conn" onclick="showTab('conn')">Connections</button>
     <button class="tab" id="tab-orchestration" onclick="showTab('orchestration')">Orchestration</button>
   </div>
   <div class="nav-r">
-    <button class="nav-sel" id="view-mode-toggle" onclick="toggleViewMode()" title="Switch default/corporate view">Default</button>
+    <button class="nav-sel" id="view-mode-toggle" onclick="toggleViewMode()" title="Switch Corporate/Character view">Corporate View</button>
     <span class="sp"><span class="dot" id="api-dot"></span><span id="api-txt">API</span></span>
     <span class="sp"><span id="srv-txt" style="color:var(--mut)">—</span> <span style="color:var(--mut)">srv</span></span>
     <span class="sp" style="cursor:pointer" onclick="showTab('events');setEvFilter('severity','error')">
@@ -1047,11 +1067,6 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     </div>
   </div>
 
-  <!-- MAP -->
-  <div class="pane" id="pane-map">
-    <div class="map-grid" id="map-grid"><div class="empty">Loading stack map…</div></div>
-  </div>
-
   <!-- OVERVIEW -->
   <div class="pane" id="pane-overview">
     <div class="map-grid" id="overview-grid"><div class="empty">Loading overview...</div></div>
@@ -1065,16 +1080,6 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
       <button class="btns" onclick="resetNetworkView()">&#8982;</button>
     </div>
     <div class="network-stage" id="network-stage"><div class="empty">Loading network...</div></div>
-  </div>
-
-  <!-- NET VIEW -->
-  <div class="pane" id="pane-netview">
-    <div class="net-tools">
-      <button class="btns" onclick="zoomNetwork(-0.1)">-</button>
-      <button class="btns" onclick="zoomNetwork(0.1)">+</button>
-      <button class="btns" onclick="resetNetworkView()">&#8982;</button>
-    </div>
-    <div class="network-stage" id="netview-stage"><div class="empty">Loading net view...</div></div>
   </div>
 
   <!-- EVENTS -->
@@ -1176,6 +1181,16 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
               <div class="orch-field wide"><label>Purpose</label><textarea class="orch-textarea" id="agent-purpose"></textarea></div>
               <div class="orch-field wide"><label>Allowed Skills</label><textarea class="orch-textarea" id="agent-skills"></textarea></div>
               <div class="orch-field wide"><label>Rules</label><textarea class="orch-textarea" id="agent-rules"></textarea></div>
+              <div class="orch-field wide"><label>Character</label><div class="char-grid" id="agent-character-grid"></div></div>
+              <div class="orch-field wide"><label>Corporate Logo</label><div class="char-grid" id="agent-logo-grid"></div></div>
+              <div class="orch-field wide">
+                <label>Upload Logo</label>
+                <div class="file-row">
+                  <img class="logo-preview" id="agent-logo-preview" src="/assets/characters/black-hd-logo.png" alt="">
+                  <input id="agent-logo" type="file" accept="image/*">
+                  <button class="btns" type="button" onclick="clearAgentLogo()">Clear</button>
+                </div>
+              </div>
               <button class="btnp wide" onclick="createAgent()">Create Agent</button>
             </div>
           </section>
@@ -1382,9 +1397,10 @@ let _stacks=[], _connLogoDraft='', _networkZoom=1;
 let _networkPan={x:0,y:0,worldKey:'',centeredStageId:'',centeredVisible:false,dragging:false,startX:0,startY:0,originX:0,originY:0,suppressClick:false};
 let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,moved:false};
 let _networkChecking={server:'',container:''};
-let _viewMode='default';
+let _viewMode='corporate';
 let _orch={agents:[],skills:[],messages:[],approvals:[],learnings:[],paths:{}};
 let _orchTab='chat', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null, _skillEditId='';
+let _agentDraftIcon='/assets/characters/agent-scout.png', _agentLogoDraft='';
 let _hbData=new Array(40).fill(0), _hbBucket=0;
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
 let _oracleState={busy:false,summary:null,analysis:'',error:''};
@@ -1397,6 +1413,9 @@ const MAX_ISSUE_PILLS=20;
 const CHARACTERS=[
   {id:'orc',label:'Orc',src:'/assets/characters/orc.png'},
   {id:'wizard',label:'Wizard',src:'/assets/characters/wizard.png'},
+  {id:'executioner',label:'Executioner',src:'/assets/characters/agent-executioner.png'},
+  {id:'sage',label:'Sage',src:'/assets/characters/agent-sage.png'},
+  {id:'gate-keeper',label:'Gate Keeper',src:'/assets/characters/agent-gate-keeper.png'},
   {id:'elf',label:'Elf',src:'/assets/characters/elf.png'},
   {id:'warrior',label:'Warrior',src:'/assets/characters/warrior.png'},
   {id:'fighter',label:'Fighter',src:'/assets/characters/fighter.png'},
@@ -1407,9 +1426,19 @@ const CHARACTERS=[
   {id:'farmer',label:'Farmer',src:'/assets/characters/farmer.png'},
   {id:'vendor',label:'Vendor',src:'/assets/characters/vendor.png'},
   {id:'blacksmith',label:'Blacksmith',src:'/assets/characters/blacksmith.png'},
+  {id:'scout',label:'Scout',src:'/assets/characters/agent-scout.png'},
   {id:'shepherd',label:'Shepherd',src:'/assets/characters/shepherd.png'},
   {id:'herder',label:'Herder',src:'/assets/characters/herder.png'},
   {id:'sorceress',label:'Sorceress',src:'/assets/characters/sorceress.png'}
+];
+const AGENT_CHARACTERS=[
+  {id:'executioner',label:'Executioner',src:'/assets/characters/agent-executioner.png'},
+  {id:'sage',label:'Sage',src:'/assets/characters/agent-sage.png'},
+  {id:'gate-keeper',label:'Gate Keeper',src:'/assets/characters/agent-gate-keeper.png'},
+  {id:'blacksmith',label:'Blacksmith',src:'/assets/characters/blacksmith.png'},
+  {id:'scout',label:'Scout',src:'/assets/characters/agent-scout.png'},
+  {id:'raven',label:'Raven',src:'/assets/kingdoms/raven.png'},
+  {id:'oracle',label:'Oracle',src:'/assets/kingdoms/oracle.png'}
 ];
 const BLACK_LOGO_SRC='/assets/characters/black-hd-logo.png';
 const BLACK_LOGO={id:'corp-black-hd',label:'Black HD Logo',src:BLACK_LOGO_SRC};
@@ -1482,7 +1511,7 @@ async function logout(){
 }
 async function startApp(){
   renderOracle();
-  setViewMode(storageGet(VIEW_MODE_KEY)||'default',false);
+  setViewMode(storageGet(VIEW_MODE_KEY)||'corporate',false);
   setWindowHours(storageGet('orc.window.hours')||24,false);
   await loadAll();
   if(!_loadAllTimer)_loadAllTimer=setInterval(loadAll,30000);
@@ -1508,36 +1537,33 @@ function showTab(id){
   if(tab)tab.classList.add('on');
   if(id==='home')renderHomeDashboard();
   if(id==='conn')loadConns();
-  if(id==='map')loadMap();
   if(id==='overview')loadOverview();
   if(id==='network')loadNetwork();
-  if(id==='netview')loadNetView();
   if(id==='events')loadEvts();
   if(id==='orchestration'){showOrchTab(_orchTab||'chat');loadOrchestration();}
 }
 function tabsForViewMode(mode=_viewMode){
-  return mode==='corporate'?['overview','netview','events','conn','orchestration']:['map','network','events','conn','orchestration'];
+  return ['overview','network','events','conn','orchestration'];
 }
 function tabAllowed(id){return id==='home'||tabsForViewMode().includes(id);}
 function firstTabForMode(){return tabsForViewMode()[0];}
+function normalizeViewMode(mode){
+  if(mode==='default')return 'character';
+  return mode==='character'?'character':'corporate';
+}
 function setViewMode(mode,persist=true){
-  _viewMode=mode==='corporate'?'corporate':'default';
+  _viewMode=normalizeViewMode(mode);
   if(persist)storageSet(VIEW_MODE_KEY,_viewMode);
-  const hiddenByMode={
-    default:['overview','netview'],
-    corporate:['map','network']
-  };
-  ['map','overview','network','netview','events','conn','orchestration'].forEach(id=>{
-    const tab=document.getElementById('tab-'+id);
-    if(tab)tab.hidden=hiddenByMode[_viewMode].includes(id);
-  });
+  document.documentElement.setAttribute('data-view-mode',_viewMode);
   const btn=document.getElementById('view-mode-toggle');
-  if(btn)btn.textContent=_viewMode==='corporate'?'Corporate':'Default';
+  if(btn)btn.textContent=_viewMode==='corporate'?'Corporate View':'Character View';
   const active=document.querySelector('.pane.on')?.id.replace('pane-','')||'';
   if(!tabAllowed(active))showTab(firstTabForMode());
+  renderVisualViews();
+  renderOrchestration();
 }
 function toggleViewMode(){
-  setViewMode(_viewMode==='corporate'?'default':'corporate');
+  setViewMode(_viewMode==='corporate'?'character':'corporate');
 }
 function fmt(iso){return iso?DATE_FMT.format(new Date(iso)):'';}
 function fmtShort(iso){return iso?TIME_FMT.format(new Date(iso)):'';}
@@ -1598,6 +1624,46 @@ function ravenServerDisplay(msg){
 }
 function serverLogo(k){
   return k.server_logo||BLACK_LOGO_SRC;
+}
+function agentArt(agent){
+  return _viewMode==='corporate'
+    ? (agent.logo_data||BLACK_LOGO_SRC)
+    : (agent.icon||'/assets/characters/agent-scout.png');
+}
+function renderAgentBuilderChoices(){
+  const charGrid=document.getElementById('agent-character-grid');
+  if(charGrid){
+    charGrid.innerHTML=AGENT_CHARACTERS.map(c=>`
+      <button class="char-choice ${c.src===_agentDraftIcon?'on':''}" data-agent-icon="${esc(c.src)}" type="button" onclick="chooseAgentCharacter('${esc(c.src)}')">
+        <img src="${esc(c.src)}" alt="${esc(c.label)}"><span>${esc(c.label)}</span>
+      </button>`).join('');
+  }
+  const logoGrid=document.getElementById('agent-logo-grid');
+  if(logoGrid){
+    logoGrid.innerHTML=CORPORATE_LOGOS.map(c=>{
+      const active=(_agentLogoDraft||BLACK_LOGO_SRC)===c.src;
+      return `<button class="char-choice agent-logo-choice ${active?'on':''}" data-agent-logo="${esc(c.src)}" type="button" onclick="chooseAgentLogo('${esc(c.src)}')">
+        <img src="${esc(c.src)}" alt="${esc(c.label)}"><span>${esc(c.label)}</span>
+      </button>`;
+    }).join('');
+  }
+  showLogoPreview('agent-logo-preview',_agentLogoDraft||BLACK_LOGO_SRC);
+}
+function chooseAgentCharacter(src){
+  _agentDraftIcon=src||'/assets/characters/agent-scout.png';
+  document.querySelectorAll('[data-agent-icon]').forEach(b=>b.classList.toggle('on',b.dataset.agentIcon===_agentDraftIcon));
+}
+function chooseAgentLogo(src){
+  _agentLogoDraft=src||'';
+  const file=document.getElementById('agent-logo');
+  if(file)file.value='';
+  renderAgentBuilderChoices();
+}
+function clearAgentLogo(){
+  _agentLogoDraft='';
+  const file=document.getElementById('agent-logo');
+  if(file)file.value='';
+  renderAgentBuilderChoices();
 }
 function issueCounts(app){
   return {
@@ -1671,7 +1737,7 @@ function chooseStackCharacter(id){
 function setStackLogoDraft(src){
   _charLogoDraft=src||'';
   showLogoPreview('char-logo-preview',_charLogoDraft||_charDefaultLogo);
-  document.querySelectorAll('.logo-choice').forEach(b=>b.classList.toggle('on',(_charLogoDraft||_charDefaultLogo)===b.dataset.logoSrc));
+  document.querySelectorAll('#logo-grid .logo-choice').forEach(b=>b.classList.toggle('on',(_charLogoDraft||_charDefaultLogo)===b.dataset.logoSrc));
 }
 function chooseStackLogo(src){
   if(!_charEditKey)return;
@@ -1860,10 +1926,8 @@ async function loadHomeRecent(){
 function renderVisualViews(){
   renderHomeDashboard();
   if(_stacks.length){
-    renderMap(_stacks);
     renderOverview(_stacks);
     renderNetwork(_stacks);
-    renderNetView(_stacks);
   }
 }
 function jumpToEventsFromEl(el){
@@ -1959,16 +2023,12 @@ async function loadStacks(){
   }catch(e){
     document.getElementById('home-issues').innerHTML='<div class="empty">Could not load issue containers.</div>';
     document.getElementById('home-metrics').innerHTML='<div class="empty">Could not load metrics.</div>';
-    document.getElementById('map-grid').innerHTML='<div class="empty">Could not load stack map.</div>';
     document.getElementById('overview-grid').innerHTML='<div class="empty">Could not load overview.</div>';
     document.getElementById('network-stage').innerHTML='<div class="empty">Could not load network.</div>';
-    document.getElementById('netview-stage').innerHTML='<div class="empty">Could not load net view.</div>';
   }
 }
-async function loadMap(){if(_stacks.length)renderMap(_stacks);else await loadStacks();}
 async function loadOverview(){if(_stacks.length)renderOverview(_stacks);else await loadStacks();}
 async function loadNetwork(){if(_stacks.length)renderNetwork(_stacks);else await loadStacks();}
-async function loadNetView(){if(_stacks.length)renderNetView(_stacks);else await loadStacks();}
 
 function groupKingdoms(stacks){
   const kingdomMap=new Map();
@@ -1982,14 +2042,13 @@ function groupKingdoms(stacks){
   });
   return [...kingdomMap.values()].filter(k=>k.stacks.some(s=>s.containers.length)).sort((a,b)=>serverDisplayName(a).localeCompare(serverDisplayName(b)));
 }
-function renderMap(stacks){renderStackGrid(stacks,'map-grid','map');}
-function renderOverview(stacks){renderStackGrid(stacks,'overview-grid','overview');}
-function renderStackGrid(stacks,targetId,mode){
+function renderOverview(stacks){renderStackGrid(stacks,'overview-grid');}
+function renderStackGrid(stacks,targetId){
   const grid=document.getElementById(targetId);
   if(!stacks.length){grid.innerHTML='<div class="empty">No stacks found. Add a connection in the Connections tab.</div>';return;}
   const kingdoms=groupKingdoms(stacks);
   if(!kingdoms.length){grid.innerHTML='<div class="empty">No containers found for the configured connections.</div>';return;}
-  const corporate=mode==='overview';
+  const corporate=_viewMode==='corporate';
   grid.innerHTML=kingdoms.map(k=>{
     k.stacks.sort((a,b)=>a.name.localeCompare(b.name));
     const totals=k.stacks.reduce((acc,stack)=>{
@@ -2069,7 +2128,6 @@ function resetNetworkView(){
   _networkPan.centeredStageId='';
   _networkPan.centeredVisible=false;
   renderNetwork(_stacks);
-  renderNetView(_stacks);
 }
 function networkRand(key,salt){
   return (hashStr(`${key}::${salt}`)%10000)/10000;
@@ -2288,7 +2346,7 @@ function setNetworkNodePosition(el,x,y,persist=true){
 function renderTopology(stacks,stageId,artMode='character'){
   const stage=document.getElementById(stageId);
   if(!stage)return;
-  const label=artMode==='logo'?'net view':'network';
+  const label='network';
   if(!stacks.length){stage.innerHTML='<div class="empty">No stacks found. Add a connection in the Connections tab.</div>';return;}
   const kingdoms=groupKingdoms(stacks);
   if(!kingdoms.length){stage.innerHTML=`<div class="empty">No containers found for the configured ${label}.</div>`;return;}
@@ -2376,10 +2434,9 @@ function renderTopology(stacks,stageId,artMode='character'){
   </div>`;
   applyNetworkTransform();
 }
-function renderNetwork(stacks){renderTopology(stacks,'network-stage','character');}
-function renderNetView(stacks){renderTopology(stacks,'netview-stage','logo');}
+function renderNetwork(stacks){renderTopology(stacks,'network-stage',_viewMode==='corporate'?'logo':'character');}
 function activeTopologyStage(){
-  return document.querySelector('#pane-network.on .network-stage,#pane-netview.on .network-stage')||null;
+  return document.querySelector('#pane-network.on .network-stage')||null;
 }
 function findNetworkWorker(server,container,stage=activeTopologyStage()){
   if(!stage||!container)return null;
@@ -2611,7 +2668,7 @@ async function pollNow(id,btn){
    ORCHESTRATION
    ============================================================ */
 function orchAgent(id){
-  return _orch.agents.find(a=>a.id===id)||{id:id||'',name:id||'system',role:'agent',icon:'/assets/characters/orc.png',trust_mode:'recommend_only',enabled:true};
+  return _orch.agents.find(a=>a.id===id)||{id:id||'',name:id||'system',role:'agent',icon:'/assets/characters/agent-scout.png',logo_data:BLACK_LOGO_SRC,trust_mode:'recommend_only',enabled:true};
 }
 function orchVal(id){return (document.getElementById(id)?.value||'').trim();}
 function orchChecked(id){return !!document.getElementById(id)?.checked;}
@@ -2650,7 +2707,7 @@ function renderAgents(){
   const canAdmin=_currentUser?.role==='admin';
   el.innerHTML=_orch.agents.map(a=>`
     <div class="agent-card" data-agent-id="${esc(a.id)}">
-      <img class="agent-avatar" src="${esc(a.icon||'/assets/characters/orc.png')}" alt="">
+      <img class="agent-avatar ${_viewMode==='corporate'?'corp':''}" src="${esc(agentArt(a))}" alt="">
       <div style="min-width:0">
         <div class="agent-name" title="${esc(a.name)}">${esc(a.name)}</div>
         <div class="agent-role" title="${esc(a.role)}">${esc(a.role)}</div>
@@ -2691,7 +2748,7 @@ function renderChat(){
     const src=orchAgent(m.source_agent),tgt=orchAgent(m.target_agent);
     const right=['gate-keeper','executioner','orc-orchestrator'].includes(m.source_agent);
     return `<div class="chat-row ${right?'right':''}">
-      <img class="chat-avatar" src="${esc(src.icon)}" alt="">
+      <img class="chat-avatar ${_viewMode==='corporate'?'corp':''}" src="${esc(agentArt(src))}" alt="">
       <div class="chat-bubble">
         <div class="chat-meta"><span>${esc(src.name)}</span><span>${m.target_agent?'to '+esc(tgt.name):'broadcast'}</span><span>${esc(m.message_type)}</span><span>${esc(fmtShort(m.created_at))}</span></div>
         <div class="chat-text">${esc(m.summary)}</div>
@@ -2790,12 +2847,15 @@ async function setAgentTrustFromEl(el){
   }catch(e){alert('Trust update failed: '+e.message);}
 }
 async function createAgent(){
-  const body={agent_name:orchVal('agent-name'),agent_id:orchVal('agent-id'),role:orchVal('agent-role')||'specialist',risk_level:orchVal('agent-risk')||'low',approval_required:orchChecked('agent-approval'),purpose:orchVal('agent-purpose'),allowed_skills:orchVal('agent-skills'),rules:orchVal('agent-rules')};
+  const body={agent_name:orchVal('agent-name'),agent_id:orchVal('agent-id'),role:orchVal('agent-role')||'specialist',risk_level:orchVal('agent-risk')||'low',approval_required:orchChecked('agent-approval'),purpose:orchVal('agent-purpose'),allowed_skills:orchVal('agent-skills'),rules:orchVal('agent-rules'),icon:_agentDraftIcon,logo_data:_agentLogoDraft};
   if(!body.agent_name||!body.purpose){alert('Agent name and purpose are required.');return;}
   try{
     await postJson('/orchestration/agents',body);
     ['agent-name','agent-id','agent-role','agent-purpose','agent-skills','agent-rules'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('agent-approval').checked=false;
+    _agentDraftIcon='/assets/characters/agent-scout.png';
+    _agentLogoDraft='';
+    renderAgentBuilderChoices();
     await loadOrchestration();
   }catch(e){alert('Create agent failed: '+e.message);}
 }
@@ -3251,6 +3311,12 @@ function setupInputs(){
   if(cLogo)cLogo.addEventListener('change',async e=>{
     setStackLogoDraft(await readImageFile(e.target.files?.[0]));
   });
+  const aLogo=document.getElementById('agent-logo');
+  if(aLogo)aLogo.addEventListener('change',async e=>{
+    _agentLogoDraft=await readImageFile(e.target.files?.[0]);
+    renderAgentBuilderChoices();
+  });
+  renderAgentBuilderChoices();
   const savedFeed=storageGet(RAVEN_FEED_HEIGHT_KEY);
   if(savedFeed)document.documentElement.style.setProperty('--raven-feed-height',savedFeed+'px');
   const handle=document.getElementById('oracle-resizer');
@@ -3528,6 +3594,7 @@ def create_orchestration_agent(body: AgentCreateIn) -> dict:
             f"role: {body.role.strip() or 'specialist'}",
             f"risk_level: {body.risk_level.strip() or 'low'}",
             f"approval_required: {_bool_text(body.approval_required)}",
+            f"icon: {body.icon.strip() or _default_agent_icon(agent_id, body.role)}",
             "",
             "## Purpose",
             "",
@@ -3564,6 +3631,7 @@ def create_orchestration_agent(body: AgentCreateIn) -> dict:
                 name=body.agent_name.strip(),
                 role=body.role.strip() or "specialist",
                 icon=body.icon.strip() or _default_agent_icon(agent_id, body.role),
+                logo_data=body.logo_data.strip() or None,
                 trust_mode="approval_required" if body.approval_required else "recommend_only",
                 enabled=True,
                 created_at=now,
@@ -3574,6 +3642,7 @@ def create_orchestration_agent(body: AgentCreateIn) -> dict:
             row.name = body.agent_name.strip()
             row.role = body.role.strip() or row.role
             row.icon = body.icon.strip() or row.icon
+            row.logo_data = body.logo_data.strip() or row.logo_data
             row.updated_at = now
         s.commit()
         s.refresh(row)

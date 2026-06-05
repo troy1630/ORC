@@ -34,6 +34,7 @@ def load_registry(root: Path, kind: str) -> list[RegistryItem]:
                 version=parsed.get("version", "0.0.0"),
                 role_or_category=parsed.get("role", parsed.get("category", "unknown")),
                 approval_required=_to_bool(parsed.get("approval_required")),
+                icon=parsed.get("icon", ""),
             )
         )
 

@@ -9,3 +9,4 @@ class RegistryItem:
     version: str
     role_or_category: str
     approval_required: bool | None = None
+    icon: str = ""
