@@ -1627,7 +1627,7 @@ function ravenServerDisplay(msg){
 }
 function evServerDisplay(serverKey){
   const conn=_conns.find(c=>c.name===serverKey);
-  return _viewMode==='corporate'?(conn?.server_name||serverKey):serverKey;
+  return conn?.server_name||serverKey||'Unknown server';
 }
 function serverLogo(k){
   return k.server_logo||BLACK_LOGO_SRC;
@@ -2566,7 +2566,7 @@ function _populateServerDropdown(){
   if(!sel)return;
   const cur=sel.value;
   sel.innerHTML='<option value="">All servers</option>'+
-    _conns.map(c=>`<option value="${esc(c.name)}"${c.name===cur?' selected':''}>${esc(evServerDisplay(c.name))}</option>`).join('');
+    _conns.map(c=>`<option value="${esc(c.name)}"${c.name===cur?' selected':''}>${esc(c.server_name||c.name)}</option>`).join('');
 }
 function renderEvts(){
   const S={critical:'sc2',error:'se2',warning:'sw2',info:'si2',debug:'si2'};
@@ -2577,7 +2577,7 @@ function renderEvts(){
   }
   const rows=_evts.map(e=>`<tr>
     <td class="mono muted">${fmt(e.occurred_at)}</td>
-    <td style="color:var(--pur);font-size:.76rem;cursor:pointer" onclick="jumpToEvents('${esc(e.server)}','','error')">${esc(evServerDisplay(e.server))}</td>
+    <td style="color:var(--pur);font-size:.76rem;cursor:pointer" onclick="jumpToEvents('${esc(e.server)}','','error')">${esc(e.server_name||evServerDisplay(e.server))}</td>
     <td class="mono" style="color:var(--blu);cursor:pointer" onclick="jumpToEvents('${esc(e.server)}','${esc(e.container_name)}','error')">${esc(e.container_name)}</td>
     <td><span class="${S[e.severity]||'si2'}">${e.severity}</span></td>
     <td class="msg" title="${esc(e.message)}">${esc(e.message)}</td>
@@ -4364,6 +4364,7 @@ def get_events(
             {
                 "id": e.id,
                 "server": c.name if c else "—",
+                "server_name": c.server_name if c and c.server_name else (c.name if c else "—"),
                 "container_name": e.container_name,
                 "severity": e.severity,
                 "message": e.message,
