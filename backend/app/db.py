@@ -139,6 +139,22 @@ class LearningEntry(Base):
     )
 
 
+class AIUsageLog(Base):
+    __tablename__ = "ai_usage_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    agent_id: Mapped[str] = mapped_column(String(128))
+    endpoint: Mapped[str] = mapped_column(String(64), default="agent_chat")
+    model: Mapped[str] = mapped_column(String(64))
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    request_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    response_ms: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class UserAccount(Base):
     __tablename__ = "user_accounts"
 

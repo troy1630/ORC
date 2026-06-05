@@ -4,7 +4,8 @@ import re
 import hashlib
 import hmac
 import secrets
-from collections import Counter
+import time as _time
+from collections import Counter, defaultdict
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
@@ -20,6 +21,7 @@ from sqlalchemy import func, text as _sa_text
 
 from .config import REDIS_URL, REPO_ROOT
 from .db import (
+    AIUsageLog,
     AgentMessage,
     AgentRuntimeState,
     ApprovalRequest,
@@ -141,6 +143,11 @@ class LearningCreateIn(BaseModel):
     incident_ref: str = ""
     outcome: str = "proposed"
     summary: str
+
+
+class AgentChatIn(BaseModel):
+    message: str
+    thread_id: str = "operations"
 
 
 TRUST_MODES = {"recommend_only", "approval_required", "autonomous"}
@@ -1029,8 +1036,8 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     <button class="tab" id="tab-overview" onclick="showTab('overview')">Overview</button>
     <button class="tab" id="tab-network" onclick="showTab('network')">Network</button>
     <button class="tab" id="tab-events" onclick="showTab('events')">Events</button>
-    <button class="tab" id="tab-conn" onclick="showTab('conn')">Connections</button>
     <button class="tab" id="tab-orchestration" onclick="showTab('orchestration')">Orchestration</button>
+    <button class="tab" id="tab-admin" onclick="showTab('admin')" style="display:none">Admin</button>
   </div>
   <div class="nav-r">
     <button class="nav-sel" id="view-mode-toggle" onclick="toggleViewMode()" title="Switch Corporate/Character view">Corporate View</button>
@@ -1112,14 +1119,51 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     </div>
   </div>
 
-  <!-- CONNECTIONS -->
-  <div class="pane" id="pane-conn">
-    <div class="card" style="padding:16px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-        <div style="font-weight:600">Portainer Connections</div>
-        <button class="btnp" onclick="openModal()">+ Add Connection</button>
+  <!-- ADMIN -->
+  <div class="pane" id="pane-admin">
+    <div class="orch-shell">
+      <div class="orch-top">
+        <div class="orch-title">Admin</div>
       </div>
-      <div id="conn-body"><div class="empty">Loading…</div></div>
+      <div class="orch-subtabs">
+        <button class="orch-tab on" id="admin-tab-connections" onclick="showAdminTab('connections')">Connections</button>
+        <button class="orch-tab" id="admin-tab-ai-usage" onclick="showAdminTab('ai-usage')">AI Usage</button>
+      </div>
+
+      <!-- ADMIN: Connections -->
+      <section class="orch-view on" id="admin-view-connections">
+        <div class="card" style="padding:16px;margin-top:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <div style="font-weight:600">Portainer Connections</div>
+            <button class="btnp" onclick="openModal()">+ Add Connection</button>
+          </div>
+          <div id="conn-body"><div class="empty">Loading…</div></div>
+        </div>
+      </section>
+
+      <!-- ADMIN: AI Usage -->
+      <section class="orch-view" id="admin-view-ai-usage">
+        <div style="margin-top:12px">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+            <div style="font-weight:600;font-size:1rem">AI Usage</div>
+            <select id="ai-usage-days" onchange="loadAiUsage()" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border,#333);background:var(--card,#1e1e1e);color:inherit;font-size:0.82rem;">
+              <option value="7" selected>Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+            </select>
+            <button class="btns" onclick="loadAiUsage()">Refresh</button>
+          </div>
+          <div id="ai-usage-cards" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px"></div>
+          <div class="card" style="padding:16px;margin-bottom:16px">
+            <div style="font-weight:600;margin-bottom:10px">Usage by Agent</div>
+            <div id="ai-usage-table"><div class="empty">Loading...</div></div>
+          </div>
+          <div class="card" style="padding:16px">
+            <div style="font-weight:600;margin-bottom:10px">Daily Token Usage</div>
+            <canvas id="ai-usage-chart" width="700" height="160" style="max-width:100%;display:block"></canvas>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 
@@ -1148,13 +1192,15 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
         <div class="orch-page-grid single">
           <section class="orch-panel orch-chat">
             <div class="orch-panel-head">
-              <div class="orch-panel-title">Command the Orchestrator ORC</div>
+              <div class="orch-panel-title">Agent Chat</div>
               <div class="orch-count" id="orch-message-count"></div>
             </div>
             <div class="chat-list" id="orch-chat-list"><div class="empty">Loading messages...</div></div>
+            <div id="chat-typing" style="display:none;padding:4px 12px;font-size:0.8rem;color:var(--muted,#888);font-style:italic;">Agent is thinking...</div>
             <div class="chat-compose">
-              <input class="orch-input" id="msg-summary" placeholder="Tell ORC what you need..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAgentMessage();}">
-              <button class="btnp" onclick="sendAgentMessage()">Send to ORC</button>
+              <select id="chat-agent-target" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border,#333);background:var(--card,#1e1e1e);color:inherit;font-size:0.85rem;min-width:160px;"></select>
+              <input class="orch-input" id="msg-summary" placeholder="Message the selected agent..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAgentMessage();}">
+              <button class="btnp" id="chat-send-btn" onclick="sendAgentMessage()">Send</button>
             </div>
           </section>
         </div>
@@ -1402,7 +1448,7 @@ let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,m
 let _networkChecking={server:'',container:''};
 let _viewMode='corporate';
 let _orch={agents:[],skills:[],messages:[],approvals:[],learnings:[],paths:{}};
-let _orchTab='chat', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null, _skillEditId='';
+let _orchTab='chat', _adminTab='connections', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null, _skillEditId='';
 let _agentDraftIcon='/assets/characters/agent-scout.png', _agentLogoDraft='';
 let _hbData=new Array(60).fill(0), _hbBucket=0, _hbAlerts=[], _hbAlertBuf=[];
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
@@ -1484,7 +1530,9 @@ function setAuthView(user){
   if(loggedIn){
     document.getElementById('user-name').textContent=_currentUser.username;
     document.getElementById('user-role').textContent=_currentUser.role;
-    document.getElementById('orch-tab-setup').style.display=_currentUser.role==='admin'?'':'none';
+    const isAdmin=_currentUser.role==='admin';
+    document.getElementById('orch-tab-setup').style.display=isAdmin?'':'none';
+    document.getElementById('tab-admin').style.display=isAdmin?'':'none';
   }
 }
 async function checkAuth(){
@@ -1531,22 +1579,35 @@ function showOrchTab(id){
   if(view)view.classList.add('on');
   if(_orchTab==='setup')loadUsers();
 }
+function showAdminTab(id){
+  if(_currentUser?.role!=='admin'){showTab('overview');return;}
+  _adminTab=id||'connections';
+  document.querySelectorAll('#pane-admin .orch-tab').forEach(t=>t.classList.remove('on'));
+  document.querySelectorAll('#pane-admin .orch-view').forEach(v=>v.classList.remove('on'));
+  const tab=document.getElementById('admin-tab-'+_adminTab);
+  const view=document.getElementById('admin-view-'+_adminTab);
+  if(tab)tab.classList.add('on');
+  if(view)view.classList.add('on');
+  if(_adminTab==='connections')loadConns();
+  if(_adminTab==='ai-usage')loadAiUsage();
+}
 function showTab(id){
+  if(id==='admin'&&_currentUser?.role!=='admin')id=firstTabForMode();
   if(!tabAllowed(id))id=firstTabForMode();
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
-  document.getElementById('pane-'+id).classList.add('on');
+  document.getElementById('pane-'+id)?.classList.add('on');
   const tab=document.getElementById('tab-'+id);
   if(tab)tab.classList.add('on');
   if(id==='home')renderHomeDashboard();
-  if(id==='conn')loadConns();
   if(id==='overview')loadOverview();
   if(id==='network')loadNetwork();
   if(id==='events')loadEvts();
   if(id==='orchestration'){showOrchTab(_orchTab||'chat');loadOrchestration();}
+  if(id==='admin'){showAdminTab(_adminTab||'connections');}
 }
 function tabsForViewMode(mode=_viewMode){
-  return ['overview','network','events','conn','orchestration'];
+  return ['overview','network','events','orchestration','admin'];
 }
 function tabAllowed(id){return id==='home'||tabsForViewMode().includes(id);}
 function firstTabForMode(){return tabsForViewMode()[0];}
@@ -2588,6 +2649,82 @@ function renderEvts(){
 }
 
 /* ============================================================
+   ADMIN — AI USAGE
+   ============================================================ */
+async function loadAiUsage(){
+  const days=document.getElementById('ai-usage-days')?.value||7;
+  try{
+    const d=await fetch(`/admin/ai-usage?days=${days}`).then(r=>r.json());
+    renderAiUsageCards(d.totals||{});
+    renderAiUsageTable(d.rows||[]);
+    renderAiUsageChart(d.daily||[]);
+  }catch(e){
+    document.getElementById('ai-usage-table').innerHTML=`<div class="empty">Could not load AI usage: ${esc(e.message)}</div>`;
+  }
+}
+function renderAiUsageCards(t){
+  const el=document.getElementById('ai-usage-cards');
+  if(!el)return;
+  const cost=((t.prompt_tokens||0)*0.15/1e6+(t.completion_tokens||0)*0.60/1e6).toFixed(4);
+  el.innerHTML=[
+    {label:'Total Calls',value:t.calls||0},
+    {label:'Prompt Tokens',value:(t.prompt_tokens||0).toLocaleString()},
+    {label:'Completion Tokens',value:(t.completion_tokens||0).toLocaleString()},
+    {label:'Total Tokens',value:(t.total_tokens||0).toLocaleString()},
+    {label:'Est. Cost (USD)',value:'$'+cost},
+  ].map(c=>`<div class="card" style="padding:14px 20px;min-width:130px;text-align:center"><div style="font-size:1.4rem;font-weight:700">${esc(String(c.value))}</div><div class="muted" style="font-size:0.78rem;margin-top:4px">${esc(c.label)}</div></div>`).join('');
+}
+function renderAiUsageTable(rows){
+  const el=document.getElementById('ai-usage-table');
+  if(!el)return;
+  if(!rows.length){el.innerHTML='<div class="empty">No AI calls recorded yet.</div>';return;}
+  const grouped={};
+  rows.forEach(r=>{
+    const k=r.agent_id+'|'+r.model;
+    if(!grouped[k])grouped[k]={agent_id:r.agent_id,model:r.model,calls:0,prompt_tokens:0,completion_tokens:0,total_tokens:0};
+    grouped[k].calls+=r.calls;
+    grouped[k].prompt_tokens+=r.prompt_tokens;
+    grouped[k].completion_tokens+=r.completion_tokens;
+    grouped[k].total_tokens+=r.total_tokens;
+  });
+  const agg=Object.values(grouped).sort((a,b)=>b.total_tokens-a.total_tokens);
+  el.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+    <thead><tr style="border-bottom:1px solid var(--border,#333)">${['Agent','Model','Calls','Prompt Tokens','Completion Tokens','Total Tokens','Est. Cost'].map(h=>`<th style="text-align:left;padding:6px 10px;color:var(--muted)">${h}</th>`).join('')}</tr></thead>
+    <tbody>${agg.map(r=>{
+      const cost=((r.prompt_tokens||0)*0.15/1e6+(r.completion_tokens||0)*0.60/1e6).toFixed(4);
+      return `<tr style="border-bottom:1px solid var(--border,#222)"><td style="padding:6px 10px">${esc(r.agent_id)}</td><td style="padding:6px 10px">${esc(r.model)}</td><td style="padding:6px 10px">${r.calls}</td><td style="padding:6px 10px">${r.prompt_tokens.toLocaleString()}</td><td style="padding:6px 10px">${r.completion_tokens.toLocaleString()}</td><td style="padding:6px 10px">${r.total_tokens.toLocaleString()}</td><td style="padding:6px 10px">$${cost}</td></tr>`;
+    }).join('')}</tbody></table>`;
+}
+function renderAiUsageChart(daily){
+  const canvas=document.getElementById('ai-usage-chart');
+  if(!canvas||!daily.length)return;
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width,H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+  const maxTokens=Math.max(...daily.map(d=>d.total_tokens),1);
+  const barW=Math.floor((W-40)/daily.length)-4;
+  const pad={l:40,r:10,t:10,b:30};
+  const chartH=H-pad.t-pad.b;
+  ctx.fillStyle='#1e293b';
+  daily.forEach((d,i)=>{
+    const h=Math.floor((d.total_tokens/maxTokens)*chartH);
+    const x=pad.l+i*(barW+4);
+    const y=pad.t+chartH-h;
+    ctx.fillStyle='#3b82f6';
+    ctx.fillRect(x,y,barW,h);
+    if(i%Math.ceil(daily.length/7)===0){
+      ctx.fillStyle='#888';
+      ctx.font='10px sans-serif';
+      ctx.fillText((d.date||'').slice(5),x,H-6);
+    }
+  });
+  ctx.fillStyle='#888';
+  ctx.font='10px sans-serif';
+  ctx.fillText(maxTokens.toLocaleString(),2,pad.t+8);
+  ctx.fillText('0',2,H-pad.b);
+}
+
+/* ============================================================
    CONNECTIONS
    ============================================================ */
 async function loadConns(){
@@ -2705,6 +2842,11 @@ function fillOrchSelects(){
     const el=document.getElementById(id);
     if(el)el.innerHTML=optionHtml(_orch.agents,el.value);
   });
+  const chatTarget=document.getElementById('chat-agent-target');
+  if(chatTarget){
+    const cur=chatTarget.value||'orc-orchestrator';
+    chatTarget.innerHTML=(_orch.agents||[]).filter(a=>a.enabled).map(a=>`<option value="${esc(a.id)}"${a.id===cur?' selected':''}>${esc(a.name||a.id)}</option>`).join('');
+  }
 }
 function renderAgents(){
   const el=document.getElementById('orch-agents');
@@ -2949,12 +3091,20 @@ async function createSkill(){
 async function sendAgentMessage(){
   const summary=orchVal('msg-summary');
   if(!summary.trim()){document.getElementById('msg-summary').focus();return;}
-  const body={source_agent:'operator',target_agent:'orc-orchestrator',message_type:'instruction',summary};
+  const agentId=document.getElementById('chat-agent-target')?.value||'orc-orchestrator';
+  const btn=document.getElementById('chat-send-btn');
+  const typing=document.getElementById('chat-typing');
+  if(btn){btn.disabled=true;btn.textContent='Sending...';}
+  if(typing)typing.style.display='block';
   try{
-    await postJson('/orchestration/messages',body);
+    await postJson(`/orchestration/agents/${encodeURIComponent(agentId)}/chat`,{message:summary});
     document.getElementById('msg-summary').value='';
     await loadOrchestration();
   }catch(e){alert('Send failed: '+e.message);}
+  finally{
+    if(btn){btn.disabled=false;btn.textContent='Send';}
+    if(typing)typing.style.display='none';
+  }
 }
 async function createApproval(){
   const body={title:orchVal('approval-title'),requester_agent:orchVal('approval-agent')||'oracle',action_type:orchVal('approval-action')||'container_refresh',target:orchVal('approval-target'),rationale:orchVal('approval-rationale'),risk_level:'high',requested_by:'operator'};
@@ -3738,6 +3888,52 @@ def create_agent_message(body: AgentMessageIn) -> dict:
         return _message_dict(row)
 
 
+@app.post("/orchestration/agents/{agent_id}/chat")
+def agent_chat(agent_id: str, body: AgentChatIn, request: Request) -> dict:
+    _require_user(request)
+    user_message = body.message.strip()
+    if not user_message:
+        raise HTTPException(400, "message is required")
+
+    with SessionLocal() as s:
+        agent = s.query(AgentRuntimeState).filter_by(agent_id=agent_id).first()
+        if not agent:
+            raise HTTPException(404, f"Agent '{agent_id}' not found")
+        if not agent.enabled:
+            raise HTTPException(409, f"Agent '{agent.name}' is disabled")
+
+        thread_id = body.thread_id.strip() or "operations"
+
+        # Store operator message first
+        _record_agent_message(s, "operator", agent_id, "instruction", user_message)
+
+        # Build conversation history (last 20 messages for this thread)
+        history_rows = (
+            s.query(AgentMessage)
+            .filter(AgentMessage.thread_id == thread_id)
+            .order_by(AgentMessage.created_at.desc())
+            .limit(20)
+            .all()
+        )
+        history_rows = list(reversed(history_rows))
+
+        messages: list[dict] = [{"role": "system", "content": _agent_system_prompt(agent)}]
+        for row in history_rows:
+            role = "user" if row.source_agent == "operator" else "assistant"
+            messages.append({"role": role, "content": row.summary})
+
+        # Append current message if not already last in history
+        if not history_rows or history_rows[-1].source_agent != "operator" or history_rows[-1].summary != user_message:
+            messages.append({"role": "user", "content": user_message})
+
+        reply = _llm_call(messages, agent_id, "agent_chat", s)
+        if not reply:
+            reply = f"*(No response from {agent.name})*"
+
+        reply_row = _record_agent_message(s, agent_id, "operator", "response", reply)
+        return {"reply": reply, "agent_id": agent_id, "created_at": reply_row.created_at.isoformat()}
+
+
 @app.post("/orchestration/skills", status_code=201)
 def create_skill(body: SkillBuildIn) -> dict:
     skill_id = _slug(body.skill_id or body.skill_name, "skill")
@@ -4074,6 +4270,61 @@ def _oracle_pattern(message: str) -> str:
     return text[:220]
 
 
+_AGENT_DESCRIPTIONS: dict[str, str] = {
+    "raven": (
+        "You are Raven, the observer and message bus of the ORC platform. "
+        "You watch operational activity across containers and infrastructure, publish structured events, "
+        "and route messages between agents. You do NOT decide on remediations or mutate infrastructure. "
+        "When answering questions, focus on observation, event patterns, and routing context."
+    ),
+    "oracle": (
+        "You are The Oracle, the investigator of the ORC platform. "
+        "You investigate container changes and anomalies, explain root causes, and recommend next actions. "
+        "You show evidence before making recommendations and clearly separate facts from hypotheses. "
+        "You route risky actions to Gate Keeper for approval."
+    ),
+    "gate-keeper": (
+        "You are Gate Keeper, the approval and policy authority of the ORC platform. "
+        "You review risky proposed actions, enforce policy, and decide whether execution should proceed. "
+        "You require human approval for git pulls, restarts, redeploys, and credential changes. "
+        "You record who requested what and why for every decision."
+    ),
+    "executioner": (
+        "You are Executioner, the approved-action executor of the ORC platform. "
+        "You only perform infrastructure actions (git pulls, container refreshes, restarts) "
+        "when an approved request exists. You never act without a matching approval. "
+        "You record every action taken."
+    ),
+    "sage": (
+        "You are Sage, the learning and skill authoring agent of the ORC platform. "
+        "You capture lessons from incidents, document outcomes, and propose reusable skills. "
+        "You do not execute actions. You keep documentation readable and mark entries as drafts "
+        "until an admin approves them."
+    ),
+    "orc-orchestrator": (
+        "You are ORC Orchestrator, the master coordinator of the ORC platform. "
+        "You coordinate agents, correlate evidence across sources, assemble multi-step workflows, "
+        "and route decisions for approval. You never remediate without approval. "
+        "You link conclusions to evidence and escalate ambiguity."
+    ),
+}
+
+_AGENT_SYSTEM_BASE = (
+    "\n\nYou are operating inside ORC, a policy-driven agent orchestration platform for "
+    "infrastructure monitoring and safe automated remediation. "
+    "The operator is a human administrator who communicates with you through the ORC chat interface. "
+    "Be concise, accurate, and stay in character. Use Markdown formatting where helpful."
+)
+
+
+def _agent_system_prompt(agent: AgentRuntimeState) -> str:
+    description = _AGENT_DESCRIPTIONS.get(
+        agent.agent_id,
+        f"You are {agent.name}, a {agent.role} agent inside the ORC platform.",
+    )
+    return description + _AGENT_SYSTEM_BASE
+
+
 def _oracle_prompt(summary: dict) -> list[dict[str, str]]:
     system_prompt = (
         "You are The Oracle inside ORC, an operations advisor reviewing the last hour "
@@ -4099,39 +4350,59 @@ def _oracle_prompt(summary: dict) -> list[dict[str, str]]:
     ]
 
 
-def _oracle_review(summary: dict) -> str:
-    if not summary["total_events"]:
-        return (
-            "**No issues found in the last hour.**\n\n"
-            "**What I should do:** Keep monitoring and re-run the Oracle when Raven captures fresh warnings or errors."
-        )
-
+def _llm_call(messages: list[dict], agent_id: str, endpoint: str, session) -> str:
+    """Call OpenAI, log usage, and return the response text."""
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise HTTPException(
             status_code=503,
-            detail="The Oracle is not configured. Set OPENAI_API_KEY using the same Portainer env pattern as BADGE.",
+            detail="AI is not configured. Set OPENAI_API_KEY in the environment.",
         )
 
     model = os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
-    payload = {
-        "model": model,
-        "messages": _oracle_prompt(summary),
-    }
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {"model": model, "messages": messages}
 
+    t0 = _time.monotonic()
     try:
-        resp = httpx.post(OPENAI_API_URL, headers=headers, json=payload, timeout=45.0)
+        resp = httpx.post(OPENAI_API_URL, headers=headers, json=payload, timeout=60.0)
         resp.raise_for_status()
         data = resp.json()
         content = data["choices"][0]["message"]["content"].strip()
     except httpx.HTTPStatusError as exc:
         detail = exc.response.text[:400] if exc.response is not None else str(exc)
-        raise HTTPException(status_code=502, detail=f"Oracle request failed: {detail}") from exc
+        raise HTTPException(status_code=502, detail=f"LLM request failed: {detail}") from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Oracle request failed: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
+    finally:
+        response_ms = int((_time.monotonic() - t0) * 1000)
 
-    return content or "Summary:\n- The Oracle did not return any content."
+    usage = data.get("usage", {})
+    try:
+        log = AIUsageLog(
+            agent_id=agent_id,
+            endpoint=endpoint,
+            model=model,
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            total_tokens=usage.get("total_tokens", 0),
+            response_ms=response_ms,
+        )
+        session.add(log)
+        session.commit()
+    except Exception:
+        pass
+
+    return content or ""
+
+
+def _oracle_review(summary: dict, session) -> str:
+    if not summary["total_events"]:
+        return (
+            "**No issues found in the last hour.**\n\n"
+            "**What I should do:** Keep monitoring and re-run the Oracle when Raven captures fresh warnings or errors."
+        )
+    return _llm_call(_oracle_prompt(summary), "oracle", "oracle_review", session)
 
 
 def _hours_window(hours: int) -> int:
@@ -4379,7 +4650,8 @@ def get_events(
 def review_with_oracle(body: OracleReviewIn | None = None) -> dict:
     friendly_names = body.friendly_names if body else {}
     summary = _oracle_summary(window_hours=1, friendly_names=friendly_names)
-    analysis = _oracle_review(summary)
+    with SessionLocal() as s:
+        analysis = _oracle_review(summary, s)
     return {
         "summary": {
             "total_events": summary["total_events"],
@@ -4393,6 +4665,50 @@ def review_with_oracle(body: OracleReviewIn | None = None) -> dict:
         "model": os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.get("/admin/ai-usage")
+def get_ai_usage(request: Request, days: int = 7) -> dict:
+    _require_admin(request)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 365)))
+    with SessionLocal() as s:
+        rows = (
+            s.query(AIUsageLog)
+            .filter(AIUsageLog.request_at >= cutoff)
+            .order_by(AIUsageLog.request_at.asc())
+            .all()
+        )
+
+    # Group by agent + model + date
+    by_day: dict = defaultdict(lambda: {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
+    by_agent: list = []
+    seen: dict = {}
+
+    totals = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    row_dicts = []
+    for row in rows:
+        date_str = row.request_at.strftime("%Y-%m-%d")
+        key = f"{row.agent_id}|{row.model}|{date_str}"
+        if key not in seen:
+            seen[key] = {"agent_id": row.agent_id, "model": row.model, "date": date_str,
+                         "calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        seen[key]["calls"] += 1
+        seen[key]["prompt_tokens"] += row.prompt_tokens
+        seen[key]["completion_tokens"] += row.completion_tokens
+        seen[key]["total_tokens"] += row.total_tokens
+
+        by_day[date_str]["calls"] += 1
+        by_day[date_str]["prompt_tokens"] += row.prompt_tokens
+        by_day[date_str]["completion_tokens"] += row.completion_tokens
+        by_day[date_str]["total_tokens"] += row.total_tokens
+
+        totals["calls"] += 1
+        totals["prompt_tokens"] += row.prompt_tokens
+        totals["completion_tokens"] += row.completion_tokens
+        totals["total_tokens"] += row.total_tokens
+
+    daily = [{"date": k, **v} for k, v in sorted(by_day.items())]
+    return {"rows": list(seen.values()), "daily": daily, "totals": totals}
 
 
 def _infer_stack(cname: str) -> str:
