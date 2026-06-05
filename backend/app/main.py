@@ -3191,7 +3191,7 @@ function drawHb(){
   ctx.strokeStyle='#3fb950';ctx.lineWidth=1.8;ctx.stroke();
   _hbAlerts.forEach(a=>{
     const idx=N-1-a.age;if(idx<0||idx>=N)return;
-    const px=pts[idx].x,py=pts[idx].y;
+    const px=pts[idx].x,py=top;
     const col=a.severity==='warning'?'#d29922':'#f85149';
     ctx.beginPath();ctx.arc(px,py,5,0,Math.PI*2);
     ctx.fillStyle=col;ctx.fill();
