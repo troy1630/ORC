@@ -1216,7 +1216,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
             <div class="agent-list" id="orch-agents"><div class="empty">Loading agents...</div></div>
           </section>
           <section class="orch-panel">
-            <div class="orch-panel-head"><div class="orch-panel-title">Agent Builder</div></div>
+            <div class="orch-panel-head"><div class="orch-panel-title" id="agent-builder-title">Agent Builder</div></div>
             <div class="orch-form">
               <div class="orch-field"><label>Name</label><input class="orch-input" id="agent-name" placeholder="Reliability Scout"></div>
               <div class="orch-field"><label>ID</label><input class="orch-input" id="agent-id" placeholder="reliability-scout"></div>
@@ -1236,7 +1236,10 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
                   <button class="btns" type="button" onclick="clearAgentLogo()">Clear</button>
                 </div>
               </div>
-              <button class="btnp wide" onclick="createAgent()">Create Agent</button>
+              <div class="approval-actions wide">
+                <button class="btnp" id="agent-save-btn" onclick="createAgent()">Create Agent</button>
+                <button class="btns" id="agent-cancel-btn" onclick="resetAgentForm()" style="display:none">Cancel</button>
+              </div>
             </div>
           </section>
         </div>
@@ -1448,7 +1451,7 @@ let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,m
 let _networkChecking={server:'',container:''};
 let _viewMode='corporate';
 let _orch={agents:[],skills:[],messages:[],approvals:[],learnings:[],paths:{}};
-let _orchTab='chat', _adminTab='connections', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null, _skillEditId='';
+let _orchTab='chat', _adminTab='connections', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null, _skillEditId='', _agentEditId='';
 let _agentDraftIcon='/assets/characters/agent-scout.png', _agentLogoDraft='';
 let _hbData=new Array(60).fill(0), _hbBucket=0, _hbAlerts=[], _hbAlertBuf=[];
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
@@ -2856,7 +2859,7 @@ function renderAgents(){
   el.innerHTML=_orch.agents.map(a=>`
     <div class="agent-card" data-agent-id="${esc(a.id)}">
       <img class="agent-avatar ${_viewMode==='corporate'?'corp':''}" src="${esc(agentArt(a))}" alt="">
-      <div style="min-width:0">
+      <div style="min-width:0;flex:1">
         <div class="agent-name" title="${esc(a.name)}">${esc(a.name)}</div>
         <div class="agent-role" title="${esc(a.role)}">${esc(a.role)}</div>
         <div class="agent-controls">
@@ -2866,9 +2869,68 @@ function renderAgents(){
             <option value="autonomous"${a.trust_mode==='autonomous'?' selected':''}>autonomous</option>
           </select>
           <label class="agent-enabled"><input type="checkbox" ${a.enabled?'checked':''} onchange="setAgentTrustFromEl(this)" ${canAdmin?'':'disabled'}> enabled</label>
+          ${canAdmin?`<button class="btns" type="button" data-agent-id="${esc(a.id)}" onclick="openAgentFromEl(this)" style="margin-left:auto">Edit</button>`:''}
         </div>
       </div>
     </div>`).join('');
+}
+function setAgentEditMode(agentId){
+  _agentEditId=agentId||'';
+  const save=document.getElementById('agent-save-btn');
+  const cancel=document.getElementById('agent-cancel-btn');
+  const idField=document.getElementById('agent-id');
+  const title=document.getElementById('agent-builder-title');
+  if(save)save.textContent=_agentEditId?'Save Agent':'Create Agent';
+  if(cancel)cancel.style.display=_agentEditId?'':'none';
+  if(idField)idField.disabled=!!_agentEditId;
+  if(title)title.textContent=_agentEditId?'Edit Agent':'Agent Builder';
+}
+function resetAgentForm(){
+  ['agent-name','agent-id','agent-role','agent-purpose','agent-skills','agent-rules'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){el.value='';el.disabled=false;}
+  });
+  const risk=document.getElementById('agent-risk');
+  const approval=document.getElementById('agent-approval');
+  if(risk)risk.value='low';
+  if(approval)approval.checked=false;
+  _agentDraftIcon='/assets/characters/agent-scout.png';
+  _agentLogoDraft='';
+  renderAgentBuilderChoices();
+  setAgentEditMode('');
+}
+function fillAgentForm(a){
+  const set=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
+  set('agent-name', a.name||'');
+  set('agent-id', a.id||'');
+  set('agent-role', a.role||'');
+  set('agent-purpose', a.purpose||'');
+  set('agent-skills', a.allowed_skills||'');
+  set('agent-rules', a.rules||'');
+  const risk=document.getElementById('agent-risk');
+  if(risk)risk.value=a.risk_level||'low';
+  const approval=document.getElementById('agent-approval');
+  if(approval)approval.checked=!!a.approval_required;
+  if(a.icon){_agentDraftIcon=a.icon;}
+  if(a.logo_data){_agentLogoDraft=a.logo_data;}
+  renderAgentBuilderChoices();
+  setAgentEditMode(a.id);
+  showOrchTab('agents');
+  document.getElementById('agent-name')?.focus();
+}
+async function openAgentFromEl(btn){
+  const agentId=btn?.dataset?.agentId||'';
+  if(!agentId)return;
+  const original=btn.textContent;
+  btn.textContent='…';btn.disabled=true;
+  try{
+    const r=await fetch(`/orchestration/agents/${encodeURIComponent(agentId)}`);
+    const d=await r.json().catch(()=>({}));
+    if(r.status===401){setAuthView(null);throw new Error('Login required');}
+    if(!r.ok)throw new Error(d.detail||d.message||'Could not load agent');
+    fillAgentForm(d);
+  }catch(e){alert('Open agent failed: '+e.message);}
+  finally{btn.textContent=original;btn.disabled=false;}
 }
 function renderSkills(){
   const el=document.getElementById('orch-skills');
@@ -3000,17 +3062,13 @@ async function setAgentTrustFromEl(el){
   }catch(e){alert('Trust update failed: '+e.message);}
 }
 async function createAgent(){
-  const body={agent_name:orchVal('agent-name'),agent_id:orchVal('agent-id'),role:orchVal('agent-role')||'specialist',risk_level:orchVal('agent-risk')||'low',approval_required:orchChecked('agent-approval'),purpose:orchVal('agent-purpose'),allowed_skills:orchVal('agent-skills'),rules:orchVal('agent-rules'),icon:_agentDraftIcon,logo_data:_agentLogoDraft};
+  const body={agent_name:orchVal('agent-name'),agent_id:_agentEditId||orchVal('agent-id'),role:orchVal('agent-role')||'specialist',risk_level:orchVal('agent-risk')||'low',approval_required:orchChecked('agent-approval'),purpose:orchVal('agent-purpose'),allowed_skills:orchVal('agent-skills'),rules:orchVal('agent-rules'),icon:_agentDraftIcon,logo_data:_agentLogoDraft};
   if(!body.agent_name||!body.purpose){alert('Agent name and purpose are required.');return;}
   try{
     await postJson('/orchestration/agents',body);
-    ['agent-name','agent-id','agent-role','agent-purpose','agent-skills','agent-rules'].forEach(id=>document.getElementById(id).value='');
-    document.getElementById('agent-approval').checked=false;
-    _agentDraftIcon='/assets/characters/agent-scout.png';
-    _agentLogoDraft='';
-    renderAgentBuilderChoices();
+    resetAgentForm();
     await loadOrchestration();
-  }catch(e){alert('Create agent failed: '+e.message);}
+  }catch(e){alert((_agentEditId?'Save':'Create')+' agent failed: '+e.message);}
 }
 function setSkillEditMode(skillId){
   _skillEditId=skillId||'';
@@ -3847,6 +3905,52 @@ def create_orchestration_agent(body: AgentCreateIn) -> dict:
         return {"agent": _agent_dict(row), "path": str(target_file.relative_to(REPO_ROOT))}
 
 
+@app.get("/orchestration/agents/{agent_id}")
+def get_orchestration_agent(agent_id: str, request: Request) -> dict:
+    _require_user(request)
+    with SessionLocal() as s:
+        _ensure_orchestration_agents(s)
+        row = s.query(AgentRuntimeState).filter_by(agent_id=agent_id).first()
+        if not row:
+            raise HTTPException(404, "Agent not found")
+        base = _agent_dict(row)
+
+    # Enrich with content from agent.md if it exists
+    purpose = ""
+    allowed_skills = ""
+    rules = ""
+    risk_level = "low"
+    approval_required = False
+    try:
+        agent_file = _safe_markdown_path(REPO_ROOT / "agents", agent_id) / "agent.md"
+        if agent_file.exists():
+            content = agent_file.read_text(encoding="utf-8")
+            # Parse key:value header lines
+            for line in content.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("risk_level:"):
+                    risk_level = stripped.split(":", 1)[1].strip()
+                elif stripped.startswith("approval_required:"):
+                    approval_required = stripped.split(":", 1)[1].strip().lower() == "true"
+            # Parse markdown sections
+            sections: dict[str, list[str]] = {}
+            current: str | None = None
+            for line in content.splitlines():
+                if line.startswith("## "):
+                    current = line[3:].strip().lower()
+                    sections[current] = []
+                elif current is not None:
+                    sections[current].append(line)
+            purpose = "\n".join(sections.get("purpose", [])).strip()
+            allowed_skills = "\n".join(sections.get("allowed skills", [])).strip()
+            rules = "\n".join(sections.get("rules", [])).strip()
+    except Exception:
+        pass
+
+    return {**base, "purpose": purpose, "allowed_skills": allowed_skills,
+            "rules": rules, "risk_level": risk_level, "approval_required": approval_required}
+
+
 @app.put("/orchestration/agents/{agent_id}/trust")
 def update_agent_trust(agent_id: str, body: AgentTrustIn, request: Request) -> dict:
     _require_admin(request)
@@ -3896,37 +4000,23 @@ def agent_chat(agent_id: str, body: AgentChatIn, request: Request) -> dict:
         raise HTTPException(400, "message is required")
 
     with SessionLocal() as s:
+        # Verify the agent exists and is enabled
         agent = s.query(AgentRuntimeState).filter_by(agent_id=agent_id).first()
         if not agent:
             raise HTTPException(404, f"Agent '{agent_id}' not found")
         if not agent.enabled:
             raise HTTPException(409, f"Agent '{agent.name}' is disabled")
 
-        thread_id = body.thread_id.strip() or "operations"
-
-        # Store operator message first
+        # Store operator's message
         _record_agent_message(s, "operator", agent_id, "instruction", user_message)
 
-        # Build conversation history (last 20 messages for this thread)
-        history_rows = (
-            s.query(AgentMessage)
-            .filter(AgentMessage.thread_id == thread_id)
-            .order_by(AgentMessage.created_at.desc())
-            .limit(20)
-            .all()
-        )
-        history_rows = list(reversed(history_rows))
+        if agent_id == "orc-orchestrator":
+            # Full multi-agent routing loop
+            reply = _run_orc_loop(user_message, s)
+        else:
+            # Direct single-agent call with agent-filtered skill context
+            reply = _agent_chat_internal(agent_id, user_message, s)
 
-        messages: list[dict] = [{"role": "system", "content": _agent_system_prompt(agent)}]
-        for row in history_rows:
-            role = "user" if row.source_agent == "operator" else "assistant"
-            messages.append({"role": role, "content": row.summary})
-
-        # Append current message if not already last in history
-        if not history_rows or history_rows[-1].source_agent != "operator" or history_rows[-1].summary != user_message:
-            messages.append({"role": "user", "content": user_message})
-
-        reply = _llm_call(messages, agent_id, "agent_chat", s)
         if not reply:
             reply = f"*(No response from {agent.name})*"
 
@@ -3938,10 +4028,13 @@ def agent_chat(agent_id: str, body: AgentChatIn, request: Request) -> dict:
 def create_skill(body: SkillBuildIn) -> dict:
     skill_id = _slug(body.skill_id or body.skill_name, "skill")
     skills_root = REPO_ROOT / "skills"
-    target_dir = _safe_markdown_path(skills_root, skill_id)
-    target_file = target_dir / "skills.md"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target_file.write_text(_skill_markdown(body, skill_id), encoding="utf-8")
+    try:
+        target_dir = _safe_markdown_path(skills_root, skill_id)
+        target_file = target_dir / "skills.md"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_file.write_text(_skill_markdown(body, skill_id), encoding="utf-8")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to write skill file: {exc}") from exc
 
     with SessionLocal() as s:
         _record_agent_message(
@@ -4302,10 +4395,23 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
         "until an admin approves them."
     ),
     "orc-orchestrator": (
-        "You are ORC Orchestrator, the master coordinator of the ORC platform. "
-        "You coordinate agents, correlate evidence across sources, assemble multi-step workflows, "
-        "and route decisions for approval. You never remediate without approval. "
-        "You link conclusions to evidence and escalate ambiguity."
+        "You are ORC Orchestrator, the master coordinator and AI router of the ORC platform. "
+        "Your job is to receive operator requests, reason about which agents and skills are needed, "
+        "delegate sub-tasks to the appropriate agents, and synthesize their responses into a clear answer.\n\n"
+        "The agents available to you are:\n"
+        "- **raven** (observer): Monitors events, watches containers, publishes structured observations. Use for monitoring tasks, event queries, and surveillance.\n"
+        "- **oracle** (investigator): Investigates anomalies, explains root causes, recommends fixes. Use for analysis and diagnosis.\n"
+        "- **gate-keeper** (approval authority): Reviews and approves risky actions. ALWAYS route to gate-keeper before any mutating action (restart, redeploy, git pull, config change).\n"
+        "- **executioner** (executor): Carries out approved actions. Only route here after gate-keeper approval exists.\n"
+        "- **sage** (learning & skills): Looks up skill definitions, captures lessons, authors new skills. Use when you need to find or explain a skill.\n\n"
+        "ROUTING FORMAT: When you need to delegate, emit one or more route blocks exactly like this:\n"
+        "```route\nagent_id: raven\ninstruction: Monitor the UAR container every 60 seconds for one hour.\n```\n\n"
+        "RULES:\n"
+        "1. Route to sage FIRST if the operator references a skill you need to look up.\n"
+        "2. Route to gate-keeper for ANY action that changes infrastructure state.\n"
+        "3. If the request is a simple question you can answer from context, answer directly — no routing needed.\n"
+        "4. After agents respond, synthesize their answers into a clear final response for the operator.\n"
+        "5. Never fabricate agent responses — only summarize what the agents actually said."
     ),
 }
 
@@ -4323,6 +4429,164 @@ def _agent_system_prompt(agent: AgentRuntimeState) -> str:
         f"You are {agent.name}, a {agent.role} agent inside the ORC platform.",
     )
     return description + _AGENT_SYSTEM_BASE
+
+
+def _build_orc_context(session, agent_id: str = "") -> str:
+    """Build a context block for agent chat. Puts this agent's skills first."""
+    lines: list[str] = ["## ORC Platform Context\n"]
+
+    # Agents
+    agents = session.query(AgentRuntimeState).order_by(AgentRuntimeState.name).all()
+    lines.append("### Registered Agents")
+    for a in agents:
+        status = "enabled" if a.enabled else "disabled"
+        lines.append(f"- **{a.name}** (id: `{a.agent_id}`, role: {a.role}, trust: {a.trust_mode}, {status})")
+    lines.append("")
+
+    # Load all skills and split into mine vs others
+    skill_items = load_registry(REPO_ROOT, "skills")
+    mine: list = []
+    others: list = []
+    for item in skill_items:
+        skill_path = REPO_ROOT / item.path
+        try:
+            content = skill_path.read_text(encoding="utf-8")
+        except Exception:
+            content = ""
+        # Parse the agent: field from the skill file
+        assigned = ""
+        for line in content.splitlines():
+            if line.strip().startswith("agent:"):
+                assigned = line.split(":", 1)[1].strip()
+                break
+        entry = (item.name, item.item_id, content.strip(), assigned)
+        if agent_id and assigned == agent_id:
+            mine.append(entry)
+        else:
+            others.append(entry)
+
+    def _render_skill(name, sid, content, _agent):
+        return f"\n#### {name} (id: `{sid}`)\n{content}"
+
+    if agent_id and mine:
+        lines.append("### Your Assigned Skills")
+        for e in mine:
+            lines.append(_render_skill(*e))
+        lines.append("")
+
+    label = "### Other Available Skills" if (agent_id and mine) else "### Available Skills"
+    lines.append(label)
+    if not others and not mine:
+        lines.append("- No skills registered.")
+    elif not others:
+        lines.append("- No other skills.")
+    else:
+        for e in others:
+            assigned_note = f" (assigned to: {e[3]})" if e[3] else ""
+            lines.append(_render_skill(e[0], e[1], e[2], e[3]) + (f"\n*Assigned to: {e[3]}*" if e[3] else ""))
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def _parse_route_blocks(text: str) -> list[dict]:
+    """Extract ```route ... ``` blocks from an LLM response."""
+    pattern = re.compile(r"```route\s*\n(.*?)```", re.DOTALL)
+    results = []
+    for match in pattern.finditer(text):
+        block = match.group(1).strip()
+        entry: dict = {}
+        for line in block.splitlines():
+            if ":" in line:
+                k, v = line.split(":", 1)
+                entry[k.strip()] = v.strip()
+        if entry.get("agent_id") and entry.get("instruction"):
+            results.append({"agent_id": entry["agent_id"], "instruction": entry["instruction"]})
+    return results
+
+
+def _agent_chat_internal(agent_id: str, instruction: str, session, extra_context: str = "") -> str:
+    """Call an agent's LLM, store the exchange as AgentMessages, return the reply."""
+    agent = session.query(AgentRuntimeState).filter_by(agent_id=agent_id).first()
+    if not agent:
+        return f"*(Agent '{agent_id}' not found)*"
+    if not agent.enabled:
+        return f"*(Agent '{agent.name}' is disabled)*"
+
+    context = _build_orc_context(session, agent_id)
+    if extra_context:
+        context += f"\n\n{extra_context}"
+
+    messages: list[dict] = [
+        {"role": "system", "content": _agent_system_prompt(agent)},
+        {"role": "user", "content": context},
+        {"role": "assistant", "content": "Understood. I have reviewed the ORC platform context and my assigned skills."},
+        {"role": "user", "content": instruction},
+    ]
+
+    reply = _llm_call(messages, agent_id, "agent_chat", session)
+    if not reply:
+        reply = f"*(No response from {agent.name})*"
+    return reply
+
+
+def _run_orc_loop(user_message: str, session) -> str:
+    """ORC Orchestrator multi-agent routing loop. Max 2 routing hops."""
+    orc = session.query(AgentRuntimeState).filter_by(agent_id="orc-orchestrator").first()
+    if not orc:
+        return "*(ORC Orchestrator agent not found)*"
+
+    orc_context = _build_orc_context(session, "orc-orchestrator")
+
+    # Hop 1: ORC decides whether to route or answer directly
+    hop1_messages = [
+        {"role": "system", "content": _agent_system_prompt(orc)},
+        {"role": "user", "content": orc_context},
+        {"role": "assistant", "content": "Understood. I have reviewed the platform context, all registered agents, and available skills."},
+        {"role": "user", "content": user_message},
+    ]
+    orc_response = _llm_call(hop1_messages, "orc-orchestrator", "orchestration", session)
+
+    routes = _parse_route_blocks(orc_response)
+    if not routes:
+        # ORC answered directly — no routing needed
+        return orc_response
+
+    # Store ORC's routing decision as a message
+    routing_summary = orc_response
+    _record_agent_message(session, "orc-orchestrator", "", "routing_plan", routing_summary)
+
+    # Hop 2: Call each routed agent (cap at 3 routes)
+    agent_responses: list[str] = []
+    for route in routes[:3]:
+        target_id = route["agent_id"]
+        instruction = route["instruction"]
+
+        # Record the routing instruction
+        _record_agent_message(session, "orc-orchestrator", target_id, "routing", instruction)
+
+        # Get the agent's response
+        agent_reply = _agent_chat_internal(target_id, instruction, session)
+
+        # Record the agent's response
+        target_agent = session.query(AgentRuntimeState).filter_by(agent_id=target_id).first()
+        agent_name = target_agent.name if target_agent else target_id
+        _record_agent_message(session, target_id, "orc-orchestrator", "response", agent_reply)
+
+        agent_responses.append(f"### {agent_name} responded:\n{agent_reply}")
+
+    # Hop 3: ORC synthesizes all agent responses
+    agent_context = "\n\n".join(agent_responses)
+    synthesis_messages = [
+        {"role": "system", "content": _agent_system_prompt(orc)},
+        {"role": "user", "content": orc_context},
+        {"role": "assistant", "content": "Understood. I have reviewed the platform context."},
+        {"role": "user", "content": user_message},
+        {"role": "assistant", "content": routing_summary},
+        {"role": "user", "content": f"The agents have responded. Synthesize their answers into a clear final response for the operator:\n\n{agent_context}"},
+    ]
+    final_reply = _llm_call(synthesis_messages, "orc-orchestrator", "orchestration_synthesis", session)
+    return final_reply or orc_response
 
 
 def _oracle_prompt(summary: dict) -> list[dict[str, str]]:
