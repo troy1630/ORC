@@ -11,8 +11,9 @@ services:
     ports:
       - "8001:8000"
     volumes:
-      - ../agents:/app/agents:ro
-      - ../skills:/app/skills:ro
+      - ../agents:/app/agents
+      - ../skills:/app/skills
+      - ../knowledge:/app/knowledge
       - ../docs:/app/docs:ro
     depends_on:
       postgres:
@@ -33,6 +34,7 @@ services:
     volumes:
       - ../agents:/app/agents:ro
       - ../skills:/app/skills:ro
+      - ../knowledge:/app/knowledge:ro
       - ../docs:/app/docs:ro
     depends_on:
       postgres:

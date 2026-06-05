@@ -5,6 +5,7 @@ from collections import Counter
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -14,7 +15,17 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, text as _sa_text
 
 from .config import REDIS_URL, REPO_ROOT
-from .db import Connection, IngestionCheckpoint, ObservedEvent, SessionLocal, init_db
+from .db import (
+    AgentMessage,
+    AgentRuntimeState,
+    ApprovalRequest,
+    Connection,
+    IngestionCheckpoint,
+    LearningEntry,
+    ObservedEvent,
+    SessionLocal,
+    init_db,
+)
 from .raven import CHANNEL
 from .portainer import PortainerClient
 from .registry import load_registry
@@ -47,6 +58,313 @@ class ConnectionTestIn(BaseModel):
 
 class OracleReviewIn(BaseModel):
     friendly_names: dict[str, str] = Field(default_factory=dict)
+
+
+class AgentTrustIn(BaseModel):
+    trust_mode: str = "recommend_only"
+    enabled: bool = True
+
+
+class AgentMessageIn(BaseModel):
+    source_agent: str
+    target_agent: str = ""
+    message_type: str = "status"
+    summary: str
+    thread_id: str = "operations"
+    payload: dict | None = None
+
+
+class AgentCreateIn(BaseModel):
+    agent_name: str
+    agent_id: str = ""
+    role: str = "specialist"
+    risk_level: str = "low"
+    approval_required: bool = False
+    purpose: str
+    allowed_skills: str = ""
+    rules: str = ""
+    icon: str = ""
+
+
+class SkillBuildIn(BaseModel):
+    agent_id: str
+    skill_name: str
+    skill_id: str = ""
+    category: str = "automation"
+    risk_level: str = "medium"
+    approval_required: bool = True
+    purpose: str
+    inputs: str = ""
+    outputs: str = ""
+    procedure: str
+    rollback: str = ""
+    success_criteria: str = ""
+
+
+class ApprovalCreateIn(BaseModel):
+    title: str
+    requester_agent: str = "oracle"
+    action_type: str = "container_refresh"
+    target: str = ""
+    rationale: str = ""
+    risk_level: str = "medium"
+    requested_by: str = "operator"
+
+
+class ApprovalDecisionIn(BaseModel):
+    decision: str
+    decided_by: str = "operator"
+    reason: str = ""
+
+
+class LearningCreateIn(BaseModel):
+    title: str
+    source_agent: str = "sage"
+    incident_ref: str = ""
+    outcome: str = "proposed"
+    summary: str
+
+
+TRUST_MODES = {"recommend_only", "approval_required", "autonomous"}
+DEFAULT_ORCHESTRATION_AGENTS = [
+    {
+        "agent_id": "raven",
+        "name": "Raven",
+        "role": "observer and message bus",
+        "icon": "/assets/kingdoms/raven.png",
+        "trust_mode": "recommend_only",
+    },
+    {
+        "agent_id": "oracle",
+        "name": "The Oracle",
+        "role": "investigator",
+        "icon": "/assets/kingdoms/oracle.png",
+        "trust_mode": "recommend_only",
+    },
+    {
+        "agent_id": "gate-keeper",
+        "name": "Gate Keeper",
+        "role": "approval and policy",
+        "icon": "/assets/characters/warrior.png",
+        "trust_mode": "approval_required",
+    },
+    {
+        "agent_id": "executioner",
+        "name": "Executioner",
+        "role": "approved execution",
+        "icon": "/assets/characters/blacksmith.png",
+        "trust_mode": "approval_required",
+    },
+    {
+        "agent_id": "sage",
+        "name": "Sage",
+        "role": "learning and skill authoring",
+        "icon": "/assets/characters/wizard.png",
+        "trust_mode": "recommend_only",
+    },
+    {
+        "agent_id": "orc-orchestrator",
+        "name": "ORC Orchestrator",
+        "role": "router",
+        "icon": "/assets/characters/orc.png",
+        "trust_mode": "approval_required",
+    },
+]
+
+
+def _slug(value: str, fallback: str = "item") -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or fallback
+
+
+def _bool_text(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def _bullet_block(value: str) -> str:
+    lines = [line.strip(" -\t") for line in value.splitlines() if line.strip()]
+    return "\n".join(f"- {line}" for line in lines) if lines else "- Not specified"
+
+
+def _safe_markdown_path(root: Path, *parts: str) -> Path:
+    base = root.resolve()
+    target = (root / Path(*parts)).resolve()
+    try:
+        target.relative_to(base)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid Markdown path") from exc
+    return target
+
+
+def _default_agent_icon(agent_id: str, role: str = "") -> str:
+    icons = {item["agent_id"]: item["icon"] for item in DEFAULT_ORCHESTRATION_AGENTS}
+    if agent_id in icons:
+        return icons[agent_id]
+    r = role.lower()
+    if "observer" in r:
+        return "/assets/kingdoms/raven.png"
+    if "scribe" in r or "document" in r:
+        return "/assets/characters/bard.png"
+    if "communicator" in r:
+        return "/assets/characters/cleric.png"
+    return "/assets/characters/orc.png"
+
+
+def _ensure_orchestration_agents(session) -> None:
+    desired = {item["agent_id"]: item for item in DEFAULT_ORCHESTRATION_AGENTS}
+    for item in load_registry(REPO_ROOT, "agents"):
+        desired.setdefault(
+            item.item_id,
+            {
+                "agent_id": item.item_id,
+                "name": item.name,
+                "role": item.role_or_category,
+                "icon": _default_agent_icon(item.item_id, item.role_or_category),
+                "trust_mode": "approval_required" if item.approval_required else "recommend_only",
+            },
+        )
+
+    existing = {row.agent_id: row for row in session.query(AgentRuntimeState).all()}
+    now = datetime.now(timezone.utc)
+    for agent_id, item in desired.items():
+        row = existing.get(agent_id)
+        if row:
+            if not row.icon:
+                row.icon = item["icon"]
+            if not row.name:
+                row.name = item["name"]
+            if not row.role:
+                row.role = item["role"]
+            continue
+        session.add(
+            AgentRuntimeState(
+                agent_id=agent_id,
+                name=item["name"],
+                role=item["role"],
+                icon=item["icon"],
+                trust_mode=item["trust_mode"],
+                enabled=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    session.commit()
+
+
+def _ensure_seed_messages(session) -> None:
+    if session.query(func.count(AgentMessage.id)).scalar():
+        return
+    seeds = [
+        ("raven", "oracle", "observation", "Raven is ready to route operational observations into investigations."),
+        ("oracle", "gate-keeper", "recommendation", "The Oracle will keep recommendations separate from approved actions."),
+        ("gate-keeper", "executioner", "approval_request", "Gate Keeper requires human approval before any container refresh or git pull."),
+        ("sage", "orc-orchestrator", "lesson_learned", "Sage will write accepted lessons and proposed skills into Markdown."),
+    ]
+    for source, target, msg_type, summary in seeds:
+        session.add(
+            AgentMessage(
+                source_agent=source,
+                target_agent=target,
+                message_type=msg_type,
+                summary=summary,
+                payload="{}",
+            )
+        )
+    session.commit()
+
+
+def _agent_dict(row: AgentRuntimeState) -> dict:
+    return {
+        "id": row.agent_id,
+        "name": row.name,
+        "role": row.role,
+        "icon": row.icon or _default_agent_icon(row.agent_id, row.role),
+        "trust_mode": row.trust_mode,
+        "enabled": row.enabled,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _message_dict(row: AgentMessage) -> dict:
+    return {
+        "id": row.id,
+        "thread_id": row.thread_id,
+        "source_agent": row.source_agent,
+        "target_agent": row.target_agent or "",
+        "message_type": row.message_type,
+        "summary": row.summary,
+        "payload": json.loads(row.payload or "{}"),
+        "visibility": row.visibility,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+def _approval_dict(row: ApprovalRequest) -> dict:
+    return {
+        "id": row.id,
+        "title": row.title,
+        "requester_agent": row.requester_agent,
+        "approver_agent": row.approver_agent,
+        "action_type": row.action_type,
+        "target": row.target,
+        "rationale": row.rationale,
+        "risk_level": row.risk_level,
+        "status": row.status,
+        "requested_by": row.requested_by,
+        "decided_by": row.decided_by or "",
+        "decision_reason": row.decision_reason or "",
+        "execution_allowed": row.execution_allowed,
+        "requested_at": row.requested_at.isoformat(),
+        "decided_at": row.decided_at.isoformat() if row.decided_at else None,
+    }
+
+
+def _learning_dict(row: LearningEntry) -> dict:
+    return {
+        "id": row.id,
+        "title": row.title,
+        "source_agent": row.source_agent,
+        "incident_ref": row.incident_ref,
+        "outcome": row.outcome,
+        "summary": row.summary,
+        "markdown_path": row.markdown_path,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+def _record_agent_message(
+    session,
+    source: str,
+    target: str,
+    message_type: str,
+    summary: str,
+    payload: dict | None = None,
+) -> AgentMessage:
+    row = AgentMessage(
+        source_agent=source,
+        target_agent=target or None,
+        message_type=message_type,
+        summary=summary,
+        payload=json.dumps(payload or {}),
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    try:
+        from . import raven as _raven
+
+        _raven.publish(
+            {
+                "type": "agent_message",
+                "source_agent": source,
+                "target_agent": target,
+                "message_type": message_type,
+                "summary": summary,
+            }
+        )
+    except Exception:
+        pass
+    return row
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +617,55 @@ canvas{display:block;width:100%;height:58px}
 .oracle-box.empty{color:var(--mut)}
 .oracle-summary{display:flex;gap:6px;flex-wrap:wrap}
 .oracle-summary .sp{font-size:.7rem}
+/* ORCHESTRATION */
+#pane-orchestration{min-height:calc(100vh - 92px);padding:12px;background:#0f141b}
+.orch-shell{display:flex;flex-direction:column;gap:12px;min-width:0}
+.orch-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.orch-title{font-size:1rem;font-weight:850;letter-spacing:.03em}
+.orch-actions{display:flex;align-items:center;gap:7px}
+.orch-grid{display:grid;grid-template-columns:minmax(280px,.85fr) minmax(360px,1.15fr);gap:12px;align-items:start}
+.orch-stack{display:flex;flex-direction:column;gap:12px;min-width:0}
+.orch-panel{border:1px solid var(--bdr);border-radius:8px;background:var(--sur);padding:12px;min-width:0}
+.orch-panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.orch-panel-title{font-size:.78rem;font-weight:850;letter-spacing:.04em;text-transform:uppercase}
+.orch-count{font-size:.68rem;color:var(--mut)}
+.agent-list,.approval-list,.learning-list,.skill-list{display:flex;flex-direction:column;gap:8px;min-width:0}
+.agent-card{display:grid;grid-template-columns:42px minmax(0,1fr);gap:9px;border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:9px;min-width:0}
+.agent-avatar{width:42px;height:42px;border-radius:50%;object-fit:cover;background:#05080d;border:1px solid rgba(230,237,243,.16)}
+.agent-name{font-size:.83rem;font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agent-role{font-size:.68rem;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+.agent-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center;margin-top:8px}
+.trust-select,.orch-input,.orch-select,.orch-textarea{width:100%;background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.78rem;padding:6px 8px;outline:none}
+.orch-textarea{min-height:70px;resize:vertical;line-height:1.35;font-family:inherit}
+.trust-select:focus,.orch-input:focus,.orch-select:focus,.orch-textarea:focus{border-color:var(--pur)}
+.agent-enabled{display:flex;align-items:center;gap:6px;color:var(--mut);font-size:.7rem;white-space:nowrap}
+.orch-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.orch-form .wide{grid-column:1/-1}
+.orch-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.orch-field label{color:var(--mut);font-size:.7rem}
+.orch-chat{height:560px;display:flex;flex-direction:column}
+.chat-list{flex:1;overflow:auto;display:flex;flex-direction:column;gap:9px;padding:4px 2px 10px}
+.chat-row{display:flex;align-items:flex-end;gap:8px;max-width:86%}
+.chat-row.right{margin-left:auto;flex-direction:row-reverse}
+.chat-avatar{width:34px;height:34px;border-radius:50%;object-fit:cover;background:#05080d;border:1px solid rgba(230,237,243,.14);flex-shrink:0}
+.chat-bubble{border:1px solid #253041;border-radius:16px 16px 16px 5px;background:#111b27;padding:8px 10px;min-width:0}
+.chat-row.right .chat-bubble{border-radius:16px 16px 5px 16px;background:#1c2330;border-color:#384252}
+.chat-meta{font-size:.62rem;color:var(--mut);margin-bottom:3px;display:flex;gap:5px;flex-wrap:wrap}
+.chat-text{font-size:.78rem;line-height:1.35;overflow-wrap:anywhere}
+.chat-compose{border-top:1px solid #21262d;padding-top:9px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;align-items:end}
+.chat-compose .orch-input{grid-column:1 / span 2}
+.chat-compose .btnp{width:100%}
+.approval-row,.learning-row,.skill-row{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:9px;min-width:0}
+.approval-head,.learning-head,.skill-head{display:flex;align-items:center;justify-content:space-between;gap:9px;margin-bottom:5px}
+.approval-title,.learning-title,.skill-title{font-size:.8rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.approval-meta,.learning-meta,.skill-meta{font-size:.67rem;color:var(--mut);display:flex;gap:7px;flex-wrap:wrap}
+.approval-copy,.learning-copy{font-size:.72rem;color:var(--mut);line-height:1.35;margin-top:5px;overflow-wrap:anywhere}
+.status-chip{border:1px solid #30363d;border-radius:999px;padding:2px 7px;font-size:.62rem;font-weight:850;text-transform:uppercase}
+.status-chip.pending{color:var(--yel);background:rgba(210,153,34,.12);border-color:rgba(210,153,34,.34)}
+.status-chip.approved{color:var(--grn);background:rgba(63,185,80,.12);border-color:rgba(63,185,80,.34)}
+.status-chip.rejected{color:var(--red);background:rgba(248,81,73,.12);border-color:rgba(248,81,73,.34)}
+.approval-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.skill-list{max-height:220px;overflow:auto;padding-right:2px}
 /* CONNECTIONS */
 .st-ok{color:var(--grn)}.st-er{color:var(--red)}.st-no{color:var(--mut)}
 /* MODAL */
@@ -329,7 +696,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .aside{display:none}
   .aside-width-grip{display:none}
   .main{padding:12px}
-  #pane-home,#pane-map,#pane-overview,#pane-network,#pane-netview{padding:10px}
+  #pane-home,#pane-map,#pane-overview,#pane-network,#pane-netview,#pane-orchestration{padding:10px}
   .issue-list{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
   .metric-table-head,.metric-summary,.metric-stack{grid-template-columns:minmax(150px,1fr) 52px 54px 70px}
   .metric-table-head span:nth-child(5),.metric-summary .home-health,.metric-stack .home-health{display:none}
@@ -338,6 +705,10 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .kingdom-castle,.kingdom-logo{width:34px;height:34px}
   .kingdom-stacks{grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
   .network-stage{grid-template-columns:1fr}
+  .orch-grid{grid-template-columns:1fr}
+  .orch-form{grid-template-columns:1fr}
+  .orch-chat{height:520px}
+  .chat-compose{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -351,6 +722,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     <button class="tab" id="tab-netview" onclick="showTab('netview')">Net View</button>
     <button class="tab" id="tab-events" onclick="showTab('events')">Events</button>
     <button class="tab" id="tab-conn" onclick="showTab('conn')">Connections</button>
+    <button class="tab" id="tab-orchestration" onclick="showTab('orchestration')">Orchestration</button>
   </div>
   <div class="nav-r">
     <button class="nav-sel" id="view-mode-toggle" onclick="toggleViewMode()" title="Switch default/corporate view">Default</button>
@@ -456,6 +828,132 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     </div>
   </div>
 
+  <!-- ORCHESTRATION -->
+  <div class="pane" id="pane-orchestration">
+    <div class="orch-shell">
+      <div class="orch-top">
+        <div class="orch-title">Orchestration</div>
+        <div class="orch-actions">
+          <span class="sp"><span id="orch-agent-count">0</span><span class="muted"> agents</span></span>
+          <span class="sp"><span id="orch-approval-count">0</span><span class="muted"> pending</span></span>
+          <button class="btns" onclick="loadOrchestration()">Refresh</button>
+        </div>
+      </div>
+
+      <div class="orch-grid">
+        <div class="orch-stack">
+          <section class="orch-panel">
+            <div class="orch-panel-head">
+              <div class="orch-panel-title">Agents</div>
+              <div class="orch-count" id="orch-agent-path"></div>
+            </div>
+            <div class="agent-list" id="orch-agents"><div class="empty">Loading agents...</div></div>
+          </section>
+
+          <section class="orch-panel">
+            <div class="orch-panel-head">
+              <div class="orch-panel-title">Agent Builder</div>
+            </div>
+            <div class="orch-form">
+              <div class="orch-field"><label>Name</label><input class="orch-input" id="agent-name" placeholder="Reliability Scout"></div>
+              <div class="orch-field"><label>ID</label><input class="orch-input" id="agent-id" placeholder="reliability-scout"></div>
+              <div class="orch-field"><label>Role</label><input class="orch-input" id="agent-role" placeholder="observer"></div>
+              <div class="orch-field"><label>Risk</label><select class="orch-select" id="agent-risk"><option>low</option><option>medium</option><option>high</option></select></div>
+              <label class="agent-enabled wide"><input id="agent-approval" type="checkbox"> Approval required</label>
+              <div class="orch-field wide"><label>Purpose</label><textarea class="orch-textarea" id="agent-purpose"></textarea></div>
+              <div class="orch-field wide"><label>Allowed Skills</label><textarea class="orch-textarea" id="agent-skills"></textarea></div>
+              <div class="orch-field wide"><label>Rules</label><textarea class="orch-textarea" id="agent-rules"></textarea></div>
+              <button class="btnp wide" onclick="createAgent()">Create Agent</button>
+            </div>
+          </section>
+
+          <section class="orch-panel">
+            <div class="orch-panel-head">
+              <div class="orch-panel-title">Skill Registry</div>
+              <div class="orch-count" id="orch-skill-path"></div>
+            </div>
+            <div class="skill-list" id="orch-skills"><div class="empty">Loading skills...</div></div>
+          </section>
+        </div>
+
+        <div class="orch-stack">
+          <section class="orch-panel orch-chat">
+            <div class="orch-panel-head">
+              <div class="orch-panel-title">Agent Chat</div>
+              <div class="orch-count" id="orch-message-count"></div>
+            </div>
+            <div class="chat-list" id="orch-chat-list"><div class="empty">Loading messages...</div></div>
+            <div class="chat-compose">
+              <select class="orch-select" id="msg-source"></select>
+              <select class="orch-select" id="msg-target"></select>
+              <select class="orch-select" id="msg-type">
+                <option value="observation">observation</option>
+                <option value="finding">finding</option>
+                <option value="recommendation">recommendation</option>
+                <option value="approval_request">approval_request</option>
+                <option value="lesson_learned">lesson_learned</option>
+              </select>
+              <input class="orch-input" id="msg-summary" placeholder="Message">
+              <button class="btnp" onclick="sendAgentMessage()">Send</button>
+            </div>
+          </section>
+
+          <section class="orch-panel">
+            <div class="orch-panel-head">
+              <div class="orch-panel-title">Skill Builder</div>
+            </div>
+            <div class="orch-form">
+              <div class="orch-field"><label>Agent</label><select class="orch-select" id="skill-agent"></select></div>
+              <div class="orch-field"><label>Skill Name</label><input class="orch-input" id="skill-name" placeholder="refresh container from git"></div>
+              <div class="orch-field"><label>Skill ID</label><input class="orch-input" id="skill-id" placeholder="refresh-container-from-git"></div>
+              <div class="orch-field"><label>Category</label><input class="orch-input" id="skill-category" value="automation"></div>
+              <div class="orch-field"><label>Risk</label><select class="orch-select" id="skill-risk"><option>low</option><option selected>medium</option><option>high</option></select></div>
+              <label class="agent-enabled"><input id="skill-approval" type="checkbox" checked> Approval required</label>
+              <div class="orch-field wide"><label>Purpose</label><textarea class="orch-textarea" id="skill-purpose"></textarea></div>
+              <div class="orch-field wide"><label>Inputs</label><textarea class="orch-textarea" id="skill-inputs"></textarea></div>
+              <div class="orch-field wide"><label>Outputs</label><textarea class="orch-textarea" id="skill-outputs"></textarea></div>
+              <div class="orch-field wide"><label>Procedure</label><textarea class="orch-textarea" id="skill-procedure"></textarea></div>
+              <div class="orch-field wide"><label>Rollback</label><textarea class="orch-textarea" id="skill-rollback"></textarea></div>
+              <div class="orch-field wide"><label>Success Criteria</label><textarea class="orch-textarea" id="skill-success"></textarea></div>
+              <button class="btnp wide" onclick="createSkill()">Create Skill</button>
+            </div>
+          </section>
+
+          <section class="orch-panel">
+            <div class="orch-panel-head">
+              <div class="orch-panel-title">Approval Inbox</div>
+            </div>
+            <div class="orch-form">
+              <div class="orch-field"><label>Requester</label><select class="orch-select" id="approval-agent"></select></div>
+              <div class="orch-field"><label>Action</label><select class="orch-select" id="approval-action"><option value="git_pull_container_refresh">git pull + refresh</option><option value="container_restart">container restart</option><option value="container_refresh">container refresh</option></select></div>
+              <div class="orch-field wide"><label>Title</label><input class="orch-input" id="approval-title" placeholder="Refresh app from main"></div>
+              <div class="orch-field wide"><label>Target</label><input class="orch-input" id="approval-target" placeholder="stack/container/repository"></div>
+              <div class="orch-field wide"><label>Rationale</label><textarea class="orch-textarea" id="approval-rationale"></textarea></div>
+              <button class="btnp wide" onclick="createApproval()">Route to Gate Keeper</button>
+            </div>
+            <div class="approval-list" id="orch-approvals" style="margin-top:10px"><div class="empty">Loading approvals...</div></div>
+          </section>
+
+          <section class="orch-panel">
+            <div class="orch-panel-head">
+              <div class="orch-panel-title">Sage Learning</div>
+              <div class="orch-count" id="orch-knowledge-path"></div>
+            </div>
+            <div class="orch-form">
+              <div class="orch-field"><label>Source</label><select class="orch-select" id="learning-agent"></select></div>
+              <div class="orch-field"><label>Outcome</label><select class="orch-select" id="learning-outcome"><option>proposed</option><option>success</option><option>failed</option><option>false_positive</option></select></div>
+              <div class="orch-field wide"><label>Title</label><input class="orch-input" id="learning-title" placeholder="Restart cleared stale worker lock"></div>
+              <div class="orch-field wide"><label>Incident Ref</label><input class="orch-input" id="learning-ref" placeholder="incident or approval id"></div>
+              <div class="orch-field wide"><label>Summary</label><textarea class="orch-textarea" id="learning-summary"></textarea></div>
+              <button class="btnp wide" onclick="createLearning()">Record Learning</button>
+            </div>
+            <div class="learning-list" id="orch-learnings" style="margin-top:10px"><div class="empty">Loading learning entries...</div></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /main -->
 
 <!-- RAVEN -->
@@ -558,6 +1056,7 @@ let _networkPan={x:0,y:0,worldKey:'',centeredStageId:'',centeredVisible:false,dr
 let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,moved:false};
 let _networkChecking={server:'',container:''};
 let _viewMode='default';
+let _orch={agents:[],skills:[],messages:[],approvals:[],learnings:[],paths:{}};
 let _hbData=new Array(40).fill(0), _hbBucket=0;
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
 let _oracleState={busy:false,summary:null,analysis:'',error:''};
@@ -631,9 +1130,10 @@ function showTab(id){
   if(id==='network')loadNetwork();
   if(id==='netview')loadNetView();
   if(id==='events')loadEvts();
+  if(id==='orchestration')loadOrchestration();
 }
 function tabsForViewMode(mode=_viewMode){
-  return mode==='corporate'?['overview','netview','events','conn']:['map','network','events','conn'];
+  return mode==='corporate'?['overview','netview','events','conn','orchestration']:['map','network','events','conn','orchestration'];
 }
 function tabAllowed(id){return id==='home'||tabsForViewMode().includes(id);}
 function firstTabForMode(){return tabsForViewMode()[0];}
@@ -644,7 +1144,7 @@ function setViewMode(mode,persist=true){
     default:['overview','netview'],
     corporate:['map','network']
   };
-  ['map','overview','network','netview','events','conn'].forEach(id=>{
+  ['map','overview','network','netview','events','conn','orchestration'].forEach(id=>{
     const tab=document.getElementById('tab-'+id);
     if(tab)tab.hidden=hiddenByMode[_viewMode].includes(id);
   });
@@ -1725,6 +2225,207 @@ async function pollNow(id,btn){
 }
 
 /* ============================================================
+   ORCHESTRATION
+   ============================================================ */
+function orchAgent(id){
+  return _orch.agents.find(a=>a.id===id)||{id:id||'',name:id||'system',role:'agent',icon:'/assets/characters/orc.png',trust_mode:'recommend_only',enabled:true};
+}
+function orchVal(id){return (document.getElementById(id)?.value||'').trim();}
+function orchChecked(id){return !!document.getElementById(id)?.checked;}
+function optionHtml(items,selected=''){
+  return (items||[]).map(a=>`<option value="${esc(a.id)}"${a.id===selected?' selected':''}>${esc(a.name||a.id)}</option>`).join('');
+}
+async function postJson(url,body,method='POST'){
+  const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(d.detail||d.message||'Request failed');
+  return d;
+}
+async function loadOrchestration(){
+  try{
+    _orch=await fetch('/orchestration/summary').then(r=>r.json());
+    renderOrchestration();
+  }catch(e){
+    const el=document.getElementById('orch-agents');
+    if(el)el.innerHTML=`<div class="empty">Could not load orchestration: ${esc(e.message||'request failed')}</div>`;
+  }
+}
+function fillOrchSelects(){
+  const opts=optionHtml(_orch.agents);
+  ['msg-source','skill-agent','approval-agent','learning-agent'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.innerHTML=optionHtml(_orch.agents,el.value);
+  });
+  const target=document.getElementById('msg-target');
+  if(target)target.innerHTML='<option value="">all agents</option>'+optionHtml(_orch.agents,target.value);
+}
+function renderAgents(){
+  const el=document.getElementById('orch-agents');
+  if(!el)return;
+  if(!_orch.agents.length){el.innerHTML='<div class="empty">No agents registered.</div>';return;}
+  el.innerHTML=_orch.agents.map(a=>`
+    <div class="agent-card" data-agent-id="${esc(a.id)}">
+      <img class="agent-avatar" src="${esc(a.icon||'/assets/characters/orc.png')}" alt="">
+      <div style="min-width:0">
+        <div class="agent-name" title="${esc(a.name)}">${esc(a.name)}</div>
+        <div class="agent-role" title="${esc(a.role)}">${esc(a.role)}</div>
+        <div class="agent-controls">
+          <select class="trust-select" onchange="setAgentTrustFromEl(this)">
+            <option value="recommend_only"${a.trust_mode==='recommend_only'?' selected':''}>recommend only</option>
+            <option value="approval_required"${a.trust_mode==='approval_required'?' selected':''}>approval required</option>
+            <option value="autonomous"${a.trust_mode==='autonomous'?' selected':''}>autonomous</option>
+          </select>
+          <label class="agent-enabled"><input type="checkbox" ${a.enabled?'checked':''} onchange="setAgentTrustFromEl(this)"> enabled</label>
+        </div>
+      </div>
+    </div>`).join('');
+}
+function renderSkills(){
+  const el=document.getElementById('orch-skills');
+  if(!el)return;
+  if(!_orch.skills.length){el.innerHTML='<div class="empty">No skills registered.</div>';return;}
+  el.innerHTML=_orch.skills.map(s=>`
+    <div class="skill-row">
+      <div class="skill-head">
+        <div class="skill-title" title="${esc(s.name)}">${esc(s.name)}</div>
+        <span class="status-chip ${s.approval_required?'pending':'approved'}">${s.approval_required?'gated':'open'}</span>
+      </div>
+      <div class="skill-meta"><span>${esc(s.role_or_category||'unknown')}</span><span>${esc(s.version||'0.0.0')}</span><span>${esc(s.path||'')}</span></div>
+    </div>`).join('');
+}
+function renderChat(){
+  const el=document.getElementById('orch-chat-list');
+  if(!el)return;
+  const msgs=[...(_orch.messages||[])].reverse();
+  document.getElementById('orch-message-count').textContent=`${msgs.length} messages`;
+  if(!msgs.length){el.innerHTML='<div class="empty">No agent messages yet.</div>';return;}
+  el.innerHTML=msgs.map(m=>{
+    const src=orchAgent(m.source_agent),tgt=orchAgent(m.target_agent);
+    const right=['gate-keeper','executioner','orc-orchestrator'].includes(m.source_agent);
+    return `<div class="chat-row ${right?'right':''}">
+      <img class="chat-avatar" src="${esc(src.icon)}" alt="">
+      <div class="chat-bubble">
+        <div class="chat-meta"><span>${esc(src.name)}</span><span>${m.target_agent?'to '+esc(tgt.name):'broadcast'}</span><span>${esc(m.message_type)}</span><span>${esc(fmtShort(m.created_at))}</span></div>
+        <div class="chat-text">${esc(m.summary)}</div>
+      </div>
+    </div>`;
+  }).join('');
+  el.scrollTop=el.scrollHeight;
+}
+function renderApprovals(){
+  const el=document.getElementById('orch-approvals');
+  if(!el)return;
+  const approvals=_orch.approvals||[];
+  const pending=approvals.filter(a=>a.status==='pending').length;
+  document.getElementById('orch-approval-count').textContent=pending;
+  if(!approvals.length){el.innerHTML='<div class="empty">No approval requests yet.</div>';return;}
+  el.innerHTML=approvals.map(a=>`
+    <div class="approval-row">
+      <div class="approval-head">
+        <div class="approval-title" title="${esc(a.title)}">${esc(a.title)}</div>
+        <span class="status-chip ${esc(a.status)}">${esc(a.status)}</span>
+      </div>
+      <div class="approval-meta"><span>${esc(a.requester_agent)} -> ${esc(a.approver_agent)}</span><span>${esc(a.action_type)}</span><span>${esc(a.risk_level)}</span><span>${esc(fmtShort(a.requested_at))}</span></div>
+      <div class="approval-copy">${esc(a.target||'No target')}${a.rationale?' - '+esc(a.rationale):''}</div>
+      ${a.status==='pending'?`<div class="approval-actions">
+        <button class="btns" onclick="decideApproval(${a.id},'approved')">Approve</button>
+        <button class="btnd" onclick="decideApproval(${a.id},'rejected')">Reject</button>
+      </div>`:''}
+    </div>`).join('');
+}
+function renderLearnings(){
+  const el=document.getElementById('orch-learnings');
+  if(!el)return;
+  const rows=_orch.learnings||[];
+  if(!rows.length){el.innerHTML='<div class="empty">No learning entries yet.</div>';return;}
+  el.innerHTML=rows.map(l=>`
+    <div class="learning-row">
+      <div class="learning-head">
+        <div class="learning-title" title="${esc(l.title)}">${esc(l.title)}</div>
+        <span class="status-chip approved">${esc(l.outcome)}</span>
+      </div>
+      <div class="learning-meta"><span>${esc(l.source_agent)}</span><span>${esc(l.incident_ref||'no ref')}</span><span>${esc(l.markdown_path||'')}</span><span>${esc(fmtShort(l.created_at))}</span></div>
+      <div class="learning-copy">${esc(l.summary)}</div>
+    </div>`).join('');
+}
+function renderOrchestration(){
+  document.getElementById('orch-agent-count').textContent=_orch.agents.length;
+  document.getElementById('orch-agent-path').textContent=_orch.paths?.agents||'agents';
+  document.getElementById('orch-skill-path').textContent=_orch.paths?.skills||'skills';
+  document.getElementById('orch-knowledge-path').textContent=_orch.paths?.knowledge||'knowledge';
+  fillOrchSelects();
+  renderAgents();
+  renderSkills();
+  renderChat();
+  renderApprovals();
+  renderLearnings();
+}
+async function setAgentTrustFromEl(el){
+  const card=el.closest('.agent-card');
+  if(!card)return;
+  const id=card.dataset.agentId;
+  const mode=card.querySelector('.trust-select').value;
+  const enabled=card.querySelector('.agent-enabled input').checked;
+  try{
+    await postJson(`/orchestration/agents/${encodeURIComponent(id)}/trust`,{trust_mode:mode,enabled},'PUT');
+    await loadOrchestration();
+  }catch(e){alert('Trust update failed: '+e.message);}
+}
+async function createAgent(){
+  const body={agent_name:orchVal('agent-name'),agent_id:orchVal('agent-id'),role:orchVal('agent-role')||'specialist',risk_level:orchVal('agent-risk')||'low',approval_required:orchChecked('agent-approval'),purpose:orchVal('agent-purpose'),allowed_skills:orchVal('agent-skills'),rules:orchVal('agent-rules')};
+  if(!body.agent_name||!body.purpose){alert('Agent name and purpose are required.');return;}
+  try{
+    await postJson('/orchestration/agents',body);
+    ['agent-name','agent-id','agent-role','agent-purpose','agent-skills','agent-rules'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('agent-approval').checked=false;
+    await loadOrchestration();
+  }catch(e){alert('Create agent failed: '+e.message);}
+}
+async function createSkill(){
+  const body={agent_id:orchVal('skill-agent'),skill_name:orchVal('skill-name'),skill_id:orchVal('skill-id'),category:orchVal('skill-category')||'automation',risk_level:orchVal('skill-risk')||'medium',approval_required:orchChecked('skill-approval'),purpose:orchVal('skill-purpose'),inputs:orchVal('skill-inputs'),outputs:orchVal('skill-outputs'),procedure:orchVal('skill-procedure'),rollback:orchVal('skill-rollback'),success_criteria:orchVal('skill-success')};
+  if(!body.agent_id||!body.skill_name||!body.purpose||!body.procedure){alert('Agent, skill name, purpose, and procedure are required.');return;}
+  try{
+    await postJson('/orchestration/skills',body);
+    ['skill-name','skill-id','skill-purpose','skill-inputs','skill-outputs','skill-procedure','skill-rollback','skill-success'].forEach(id=>document.getElementById(id).value='');
+    await loadOrchestration();
+  }catch(e){alert('Create skill failed: '+e.message);}
+}
+async function sendAgentMessage(){
+  const body={source_agent:orchVal('msg-source'),target_agent:orchVal('msg-target'),message_type:orchVal('msg-type'),summary:orchVal('msg-summary')};
+  if(!body.source_agent||!body.summary){alert('Source and message are required.');return;}
+  try{
+    await postJson('/orchestration/messages',body);
+    document.getElementById('msg-summary').value='';
+    await loadOrchestration();
+  }catch(e){alert('Send failed: '+e.message);}
+}
+async function createApproval(){
+  const body={title:orchVal('approval-title'),requester_agent:orchVal('approval-agent')||'oracle',action_type:orchVal('approval-action')||'container_refresh',target:orchVal('approval-target'),rationale:orchVal('approval-rationale'),risk_level:'high',requested_by:'operator'};
+  if(!body.title||!body.target){alert('Title and target are required.');return;}
+  try{
+    await postJson('/orchestration/approvals',body);
+    ['approval-title','approval-target','approval-rationale'].forEach(id=>document.getElementById(id).value='');
+    await loadOrchestration();
+  }catch(e){alert('Approval request failed: '+e.message);}
+}
+async function decideApproval(id,decision){
+  const reason=prompt(decision==='approved'?'Approval reason':'Rejection reason')||'';
+  try{
+    await postJson(`/orchestration/approvals/${id}/decision`,{decision,decided_by:'operator',reason});
+    await loadOrchestration();
+  }catch(e){alert('Decision failed: '+e.message);}
+}
+async function createLearning(){
+  const body={title:orchVal('learning-title'),source_agent:orchVal('learning-agent')||'sage',incident_ref:orchVal('learning-ref'),outcome:orchVal('learning-outcome')||'proposed',summary:orchVal('learning-summary')};
+  if(!body.title||!body.summary){alert('Title and summary are required.');return;}
+  try{
+    await postJson('/orchestration/learnings',body);
+    ['learning-title','learning-ref','learning-summary'].forEach(id=>document.getElementById(id).value='');
+    await loadOrchestration();
+  }catch(e){alert('Learning entry failed: '+e.message);}
+}
+
+/* ============================================================
    RAVEN
    ============================================================ */
 function setRF(f){
@@ -1879,6 +2580,10 @@ function handleRaven(msg){
       break;
     }
     case 'poll_error': setStatus('✗',`${serverDisplay}: ${msg.error||'connection failed'}`,true);addIssuePill(msg); break;
+    case 'agent_message':
+      setStatus('✉',`${msg.source_agent||'agent'} -> ${msg.target_agent||'all'}: ${msg.message_type||'message'}`,true);
+      if(document.getElementById('pane-orchestration')?.classList.contains('on'))loadOrchestration();
+      break;
   }
 }
 
@@ -2072,6 +2777,7 @@ async function loadAll(){
   _conns=await fetch('/connections').then(r=>r.json()).catch(()=>_conns);
   _populateServerDropdown();
   await Promise.all([loadStatus(),loadEvts(),loadStacks(),loadRavenBacklog(),loadHomeRecent()]);
+  if(document.getElementById('pane-orchestration')?.classList.contains('on'))await loadOrchestration();
   renderHomeDashboard();
   document.getElementById('upd').textContent=fmtShort(new Date().toISOString());
 }
@@ -2100,7 +2806,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ORC API", version="0.1.0", lifespan=lifespan)
-app.mount("/assets", StaticFiles(directory=REPO_ROOT / "app" / "static"), name="assets")
+STATIC_DIR = REPO_ROOT / "app" / "static"
+if not STATIC_DIR.exists():
+    STATIC_DIR = REPO_ROOT / "backend" / "app" / "static"
+app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
 
 
 # ---------------------------------------------------------------------------
@@ -2118,13 +2827,16 @@ def dashboard() -> str:
 
 @app.get("/raven/stream")
 async def raven_stream() -> StreamingResponse:
+    import asyncio
     from redis.asyncio import Redis as ARedis
 
     async def _gen():
-        r = ARedis.from_url(REDIS_URL, decode_responses=True)
-        ps = r.pubsub()
-        await ps.subscribe(CHANNEL)
+        r = None
+        ps = None
         try:
+            r = ARedis.from_url(REDIS_URL, decode_responses=True)
+            ps = r.pubsub()
+            await ps.subscribe(CHANNEL)
             yield 'data: {"type":"connected"}\n\n'
             # Poll with 10s timeout; sends a keepalive comment on timeout so the
             # browser connection stays alive through proxies and load balancers.
@@ -2135,11 +2847,16 @@ async def raven_stream() -> StreamingResponse:
                 else:
                     yield ': ka\n\n'
         except Exception:
-            pass
+            yield 'data: {"type":"connected","degraded":true}\n\n'
+            while True:
+                await asyncio.sleep(10)
+                yield ': raven unavailable\n\n'
         finally:
             try:
-                await ps.unsubscribe(CHANNEL)
-                await r.aclose()
+                if ps is not None:
+                    await ps.unsubscribe(CHANNEL)
+                if r is not None:
+                    await r.aclose()
             except Exception:
                 pass
 
@@ -2161,6 +2878,339 @@ def health() -> dict:
         ok = s.query(func.count(Connection.id)).filter(Connection.last_status == "ok").scalar() or 0
         err = s.query(func.count(Connection.id)).filter(Connection.last_status == "error").scalar() or 0
     return {"status": "ok", "service": "orc-api", "connections": {"total": total, "ok": ok, "error": err}}
+
+
+# ---------------------------------------------------------------------------
+# Routes - Orchestration
+# ---------------------------------------------------------------------------
+
+@app.get("/orchestration/summary")
+def orchestration_summary() -> dict:
+    with SessionLocal() as s:
+        _ensure_orchestration_agents(s)
+        _ensure_seed_messages(s)
+        agents = [_agent_dict(row) for row in s.query(AgentRuntimeState).order_by(AgentRuntimeState.name).all()]
+        messages = [
+            _message_dict(row)
+            for row in s.query(AgentMessage).order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc()).limit(80).all()
+        ]
+        approvals = [
+            _approval_dict(row)
+            for row in s.query(ApprovalRequest).order_by(ApprovalRequest.requested_at.desc(), ApprovalRequest.id.desc()).limit(40).all()
+        ]
+        learnings = [
+            _learning_dict(row)
+            for row in s.query(LearningEntry).order_by(LearningEntry.created_at.desc(), LearningEntry.id.desc()).limit(30).all()
+        ]
+    skills = [asdict(item) for item in load_registry(REPO_ROOT, "skills")]
+    return {
+        "agents": agents,
+        "skills": skills,
+        "messages": messages,
+        "approvals": approvals,
+        "learnings": learnings,
+        "paths": {
+            "agents": str((REPO_ROOT / "agents").relative_to(REPO_ROOT)),
+            "skills": str((REPO_ROOT / "skills").relative_to(REPO_ROOT)),
+            "knowledge": str((REPO_ROOT / "knowledge").relative_to(REPO_ROOT)),
+        },
+    }
+
+
+@app.post("/orchestration/agents", status_code=201)
+def create_orchestration_agent(body: AgentCreateIn) -> dict:
+    agent_id = _slug(body.agent_id or body.agent_name, "agent")
+    agents_root = REPO_ROOT / "agents"
+    target_dir = _safe_markdown_path(agents_root, agent_id)
+    target_file = target_dir / "agent.md"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    markdown = "\n".join(
+        [
+            "# Agent Definition",
+            "",
+            f"name: {body.agent_name.strip()}",
+            f"id: {agent_id}",
+            "version: 0.1.0",
+            f"role: {body.role.strip() or 'specialist'}",
+            f"risk_level: {body.risk_level.strip() or 'low'}",
+            f"approval_required: {_bool_text(body.approval_required)}",
+            "",
+            "## Purpose",
+            "",
+            body.purpose.strip() or "Not specified",
+            "",
+            "## Inputs",
+            "",
+            "- Structured messages from Raven",
+            "- Assigned skills and operator requests",
+            "",
+            "## Outputs",
+            "",
+            "- Agent messages",
+            "- Recommendations or approved action requests",
+            "",
+            "## Allowed Skills",
+            "",
+            _bullet_block(body.allowed_skills),
+            "",
+            "## Rules",
+            "",
+            _bullet_block(body.rules or "Stay within assigned skills and route risky work to Gate Keeper."),
+            "",
+        ]
+    )
+    target_file.write_text(markdown, encoding="utf-8")
+
+    with SessionLocal() as s:
+        row = s.query(AgentRuntimeState).filter_by(agent_id=agent_id).first()
+        now = datetime.now(timezone.utc)
+        if not row:
+            row = AgentRuntimeState(
+                agent_id=agent_id,
+                name=body.agent_name.strip(),
+                role=body.role.strip() or "specialist",
+                icon=body.icon.strip() or _default_agent_icon(agent_id, body.role),
+                trust_mode="approval_required" if body.approval_required else "recommend_only",
+                enabled=True,
+                created_at=now,
+                updated_at=now,
+            )
+            s.add(row)
+        else:
+            row.name = body.agent_name.strip()
+            row.role = body.role.strip() or row.role
+            row.icon = body.icon.strip() or row.icon
+            row.updated_at = now
+        s.commit()
+        s.refresh(row)
+        _record_agent_message(
+            s,
+            "sage",
+            agent_id,
+            "skill_proposal",
+            f"Sage registered {row.name} as an orchestration agent.",
+            {"path": str(target_file.relative_to(REPO_ROOT))},
+        )
+        return {"agent": _agent_dict(row), "path": str(target_file.relative_to(REPO_ROOT))}
+
+
+@app.put("/orchestration/agents/{agent_id}/trust")
+def update_agent_trust(agent_id: str, body: AgentTrustIn) -> dict:
+    trust_mode = body.trust_mode if body.trust_mode in TRUST_MODES else "recommend_only"
+    with SessionLocal() as s:
+        _ensure_orchestration_agents(s)
+        row = s.query(AgentRuntimeState).filter_by(agent_id=agent_id).first()
+        if not row:
+            raise HTTPException(404, "Agent not found")
+        row.trust_mode = trust_mode
+        row.enabled = body.enabled
+        row.updated_at = datetime.now(timezone.utc)
+        s.commit()
+        s.refresh(row)
+        _record_agent_message(
+            s,
+            "gate-keeper",
+            row.agent_id,
+            "approval_decision",
+            f"Gate Keeper set {row.name} to {trust_mode.replace('_', ' ')}.",
+            {"enabled": row.enabled, "trust_mode": row.trust_mode},
+        )
+        return _agent_dict(row)
+
+
+@app.post("/orchestration/messages", status_code=201)
+def create_agent_message(body: AgentMessageIn) -> dict:
+    if not body.source_agent.strip() or not body.summary.strip():
+        raise HTTPException(400, "source_agent and summary are required")
+    with SessionLocal() as s:
+        row = _record_agent_message(
+            s,
+            body.source_agent.strip(),
+            body.target_agent.strip(),
+            body.message_type.strip() or "status",
+            body.summary.strip(),
+            body.payload or {"thread_id": body.thread_id.strip() or "operations"},
+        )
+        return _message_dict(row)
+
+
+@app.post("/orchestration/skills", status_code=201)
+def create_skill(body: SkillBuildIn) -> dict:
+    skill_id = _slug(body.skill_id or body.skill_name, "skill")
+    skills_root = REPO_ROOT / "skills"
+    target_dir = _safe_markdown_path(skills_root, skill_id)
+    target_file = target_dir / "skills.md"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    markdown = "\n".join(
+        [
+            "# Skill Definition",
+            "",
+            f"name: {body.skill_name.strip()}",
+            f"id: {skill_id}",
+            "version: 0.1.0",
+            f"category: {body.category.strip() or 'automation'}",
+            f"risk_level: {body.risk_level.strip() or 'medium'}",
+            f"approval_required: {_bool_text(body.approval_required)}",
+            f"agent: {body.agent_id.strip()}",
+            "",
+            "## Purpose",
+            "",
+            body.purpose.strip(),
+            "",
+            "## Inputs",
+            "",
+            _bullet_block(body.inputs),
+            "",
+            "## Outputs",
+            "",
+            _bullet_block(body.outputs),
+            "",
+            "## Procedure",
+            "",
+            _bullet_block(body.procedure),
+            "",
+            "## Rollback",
+            "",
+            _bullet_block(body.rollback),
+            "",
+            "## Success Criteria",
+            "",
+            _bullet_block(body.success_criteria),
+            "",
+            "## Audit Requirements",
+            "",
+            "- Record requesting user, deciding agent, approval decision, action target, result, and evidence links.",
+            "",
+        ]
+    )
+    target_file.write_text(markdown, encoding="utf-8")
+
+    with SessionLocal() as s:
+        _record_agent_message(
+            s,
+            "sage",
+            body.agent_id.strip(),
+            "skill_proposal",
+            f"Sage drafted skill {body.skill_name.strip()} for {body.agent_id.strip()}.",
+            {"path": str(target_file.relative_to(REPO_ROOT)), "risk_level": body.risk_level},
+        )
+    return {"ok": True, "skill_id": skill_id, "path": str(target_file.relative_to(REPO_ROOT))}
+
+
+@app.post("/orchestration/approvals", status_code=201)
+def create_approval(body: ApprovalCreateIn) -> dict:
+    with SessionLocal() as s:
+        row = ApprovalRequest(
+            title=body.title.strip(),
+            requester_agent=body.requester_agent.strip() or "oracle",
+            approver_agent="gate-keeper",
+            action_type=body.action_type.strip() or "container_refresh",
+            target=body.target.strip(),
+            rationale=body.rationale.strip(),
+            risk_level=body.risk_level.strip() or "medium",
+            requested_by=body.requested_by.strip() or "operator",
+        )
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        _record_agent_message(
+            s,
+            row.requester_agent,
+            row.approver_agent,
+            "approval_request",
+            f"{row.requester_agent} requested approval for {row.action_type}: {row.title}",
+            {"approval_id": row.id, "target": row.target, "risk_level": row.risk_level},
+        )
+        return _approval_dict(row)
+
+
+@app.post("/orchestration/approvals/{approval_id}/decision")
+def decide_approval(approval_id: int, body: ApprovalDecisionIn) -> dict:
+    decision = body.decision.lower().strip()
+    if decision not in {"approved", "rejected"}:
+        raise HTTPException(400, "decision must be approved or rejected")
+    with SessionLocal() as s:
+        row = s.get(ApprovalRequest, approval_id)
+        if not row:
+            raise HTTPException(404, "Approval request not found")
+        row.status = decision
+        row.decided_by = body.decided_by.strip() or "operator"
+        row.decision_reason = body.reason.strip() or None
+        row.decided_at = datetime.now(timezone.utc)
+        row.execution_allowed = decision == "approved"
+        s.commit()
+        s.refresh(row)
+        target = "executioner" if row.execution_allowed else row.requester_agent
+        summary = (
+            f"Gate Keeper approved {row.action_type} for {row.target or row.title}."
+            if row.execution_allowed
+            else f"Gate Keeper rejected {row.action_type} for {row.target or row.title}."
+        )
+        _record_agent_message(
+            s,
+            "gate-keeper",
+            target,
+            "approval_decision",
+            summary,
+            {"approval_id": row.id, "status": row.status, "reason": row.decision_reason},
+        )
+        return _approval_dict(row)
+
+
+@app.post("/orchestration/learnings", status_code=201)
+def create_learning(body: LearningCreateIn) -> dict:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    title_slug = _slug(body.title, "lesson")
+    knowledge_root = REPO_ROOT / "knowledge"
+    lessons_root = _safe_markdown_path(knowledge_root, "lessons")
+    lessons_root.mkdir(parents=True, exist_ok=True)
+    target_file = lessons_root / f"{stamp}-{title_slug}.md"
+    markdown = "\n".join(
+        [
+            "# Lesson Learned",
+            "",
+            f"title: {body.title.strip()}",
+            f"source_agent: {body.source_agent.strip() or 'sage'}",
+            f"incident_ref: {body.incident_ref.strip()}",
+            f"outcome: {body.outcome.strip() or 'proposed'}",
+            f"created_at: {datetime.now(timezone.utc).isoformat()}",
+            "",
+            "## Summary",
+            "",
+            body.summary.strip(),
+            "",
+            "## Reuse Notes",
+            "",
+            "- Review this entry during future similar incidents.",
+            "- Promote it into a skill when the procedure is repeatable and trusted.",
+            "",
+        ]
+    )
+    target_file.write_text(markdown, encoding="utf-8")
+
+    with SessionLocal() as s:
+        row = LearningEntry(
+            title=body.title.strip(),
+            source_agent=body.source_agent.strip() or "sage",
+            incident_ref=body.incident_ref.strip(),
+            outcome=body.outcome.strip() or "proposed",
+            summary=body.summary.strip(),
+            markdown_path=str(target_file.relative_to(REPO_ROOT)),
+        )
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        _record_agent_message(
+            s,
+            row.source_agent,
+            "orc-orchestrator",
+            "lesson_learned",
+            f"Sage recorded a learning note: {row.title}",
+            {"path": row.markdown_path, "outcome": row.outcome},
+        )
+        return _learning_dict(row)
 
 
 def _oracle_summary(window_hours: int = 1, friendly_names: dict[str, str] | None = None) -> dict:

@@ -67,6 +67,77 @@ class IngestionCheckpoint(Base):
     poll_count: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
+class AgentRuntimeState(Base):
+    __tablename__ = "agent_runtime_states"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    agent_id: Mapped[str] = mapped_column(String(128), unique=True)
+    name: Mapped[str] = mapped_column(String(128))
+    role: Mapped[str] = mapped_column(String(128), default="specialist")
+    icon: Mapped[str] = mapped_column(String(512), default="")
+    trust_mode: Mapped[str] = mapped_column(String(32), default="recommend_only")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class AgentMessage(Base):
+    __tablename__ = "agent_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    thread_id: Mapped[str] = mapped_column(String(128), default="operations")
+    source_agent: Mapped[str] = mapped_column(String(128))
+    target_agent: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    message_type: Mapped[str] = mapped_column(String(64), default="status")
+    summary: Mapped[str] = mapped_column(Text)
+    payload: Mapped[str | None] = mapped_column(Text, nullable=True)
+    visibility: Mapped[str] = mapped_column(String(32), default="operator")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class ApprovalRequest(Base):
+    __tablename__ = "approval_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(256))
+    requester_agent: Mapped[str] = mapped_column(String(128), default="oracle")
+    approver_agent: Mapped[str] = mapped_column(String(128), default="gate-keeper")
+    action_type: Mapped[str] = mapped_column(String(128), default="container_refresh")
+    target: Mapped[str] = mapped_column(String(256), default="")
+    rationale: Mapped[str] = mapped_column(Text, default="")
+    risk_level: Mapped[str] = mapped_column(String(32), default="medium")
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    requested_by: Mapped[str] = mapped_column(String(128), default="operator")
+    decided_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    execution_allowed: Mapped[bool] = mapped_column(Boolean, default=False)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class LearningEntry(Base):
+    __tablename__ = "learning_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(256))
+    source_agent: Mapped[str] = mapped_column(String(128), default="sage")
+    incident_ref: Mapped[str] = mapped_column(String(256), default="")
+    outcome: Mapped[str] = mapped_column(String(64), default="proposed")
+    summary: Mapped[str] = mapped_column(Text)
+    markdown_path: Mapped[str] = mapped_column(String(512), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
 def init_db(retries: int = 10, delay: float = 3.0) -> None:
     import logging
     import time
@@ -93,6 +164,8 @@ def _migrate() -> None:
         "ALTER TABLE connections ADD COLUMN IF NOT EXISTS poll_interval_seconds INTEGER",
         "ALTER TABLE connections ADD COLUMN IF NOT EXISTS server_name VARCHAR(128)",
         "ALTER TABLE connections ADD COLUMN IF NOT EXISTS logo_data TEXT",
+        "ALTER TABLE agent_runtime_states ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS execution_allowed BOOLEAN NOT NULL DEFAULT FALSE",
     ]
     with engine.begin() as conn:
         for sql in stmts:

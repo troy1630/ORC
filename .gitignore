@@ -12,3 +12,8 @@ node_modules/
 coverage/
 *.log
 data/
+.playwright-cli/
+output/
+.orc_verify.db
+skills/private-portainer-sentinel/
+skills/private-portainer-sentinel/**
