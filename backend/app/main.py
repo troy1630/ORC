@@ -215,6 +215,129 @@ def _safe_markdown_path(root: Path, *parts: str) -> Path:
     return target
 
 
+def _markdown_bool(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"true", "1", "yes", "y", "on"}
+
+
+def _skill_markdown(body: SkillBuildIn, skill_id: str) -> str:
+    return "\n".join(
+        [
+            "# Skill Definition",
+            "",
+            f"name: {body.skill_name.strip()}",
+            f"id: {skill_id}",
+            "version: 0.1.0",
+            f"category: {body.category.strip() or 'automation'}",
+            f"risk_level: {body.risk_level.strip() or 'medium'}",
+            f"approval_required: {_bool_text(body.approval_required)}",
+            f"agent: {body.agent_id.strip()}",
+            "",
+            "## Purpose",
+            "",
+            body.purpose.strip(),
+            "",
+            "## Inputs",
+            "",
+            _bullet_block(body.inputs),
+            "",
+            "## Outputs",
+            "",
+            _bullet_block(body.outputs),
+            "",
+            "## Procedure",
+            "",
+            _bullet_block(body.procedure),
+            "",
+            "## Rollback",
+            "",
+            _bullet_block(body.rollback),
+            "",
+            "## Success Criteria",
+            "",
+            _bullet_block(body.success_criteria),
+            "",
+            "## Audit Requirements",
+            "",
+            "- Record requesting user, deciding agent, approval decision, action target, result, and evidence links.",
+            "",
+        ]
+    )
+
+
+def _skill_file_for_id(skill_id: str) -> tuple[Path, str]:
+    requested = skill_id.strip()
+    slugged = _slug(requested, "skill")
+    for item in load_registry(REPO_ROOT, "skills"):
+        item_slug = _slug(item.item_id, "skill")
+        path = Path(item.path)
+        folder_slug = _slug(path.parent.name, "skill")
+        if requested in {item.item_id, path.parent.name} or slugged in {item_slug, folder_slug}:
+            target = _safe_markdown_path(REPO_ROOT, item.path)
+            if not target.exists():
+                break
+            return target, item.item_id
+    raise HTTPException(status_code=404, detail="Skill not found")
+
+
+def _skill_section_text(sections: dict[str, list[str]], name: str, bullets: bool = False) -> str:
+    lines = sections.get(name.lower(), [])
+    cleaned: list[str] = []
+    for line in lines:
+        value = line.rstrip()
+        if not value.strip():
+            if cleaned and cleaned[-1] != "":
+                cleaned.append("")
+            continue
+        if bullets:
+            value = re.sub(r"^\s*[-*]\s+", "", value).strip()
+            if value.lower() == "not specified":
+                continue
+        cleaned.append(value)
+    while cleaned and cleaned[-1] == "":
+        cleaned.pop()
+    while cleaned and cleaned[0] == "":
+        cleaned.pop(0)
+    return "\n".join(cleaned).strip()
+
+
+def _parse_skill_file(file_path: Path) -> dict:
+    raw = file_path.read_text(encoding="utf-8")
+    metadata: dict[str, str] = {}
+    sections: dict[str, list[str]] = {}
+    current_section = ""
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            current_section = stripped[3:].strip().lower()
+            sections[current_section] = []
+            continue
+        if current_section:
+            sections[current_section].append(line)
+            continue
+        if stripped and not stripped.startswith("#") and ":" in stripped:
+            key, value = stripped.split(":", 1)
+            metadata[key.strip().lower()] = value.strip()
+
+    return {
+        "agent_id": metadata.get("agent", ""),
+        "skill_name": metadata.get("name", file_path.parent.name),
+        "skill_id": metadata.get("id", file_path.parent.name),
+        "category": metadata.get("category", "automation"),
+        "risk_level": metadata.get("risk_level", "medium"),
+        "approval_required": _markdown_bool(metadata.get("approval_required"), True),
+        "purpose": _skill_section_text(sections, "purpose"),
+        "inputs": _skill_section_text(sections, "inputs", bullets=True),
+        "outputs": _skill_section_text(sections, "outputs", bullets=True),
+        "procedure": _skill_section_text(sections, "procedure", bullets=True),
+        "rollback": _skill_section_text(sections, "rollback", bullets=True),
+        "success_criteria": _skill_section_text(sections, "success criteria", bullets=True),
+        "raw_markdown": raw,
+        "path": str(file_path.relative_to(REPO_ROOT)),
+    }
+
+
 def _hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
     iterations = 120_000
@@ -797,6 +920,7 @@ canvas{display:block;width:100%;height:58px}
 .status-chip.approved{color:var(--grn);background:rgba(63,185,80,.12);border-color:rgba(63,185,80,.34)}
 .status-chip.rejected{color:var(--red);background:rgba(248,81,73,.12);border-color:rgba(248,81,73,.34)}
 .approval-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.skill-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .skill-list{max-height:220px;overflow:auto;padding-right:2px}
 .user-list{display:flex;flex-direction:column;gap:8px}
 .user-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:9px;align-items:center;border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:9px}
@@ -1082,7 +1206,10 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
               <div class="orch-field wide"><label>Procedure</label><textarea class="orch-textarea" id="skill-procedure"></textarea></div>
               <div class="orch-field wide"><label>Rollback</label><textarea class="orch-textarea" id="skill-rollback"></textarea></div>
               <div class="orch-field wide"><label>Success Criteria</label><textarea class="orch-textarea" id="skill-success"></textarea></div>
-              <button class="btnp wide" onclick="createSkill()">Create Skill</button>
+              <div class="approval-actions wide">
+                <button class="btnp" id="skill-save-btn" onclick="createSkill()">Create Skill</button>
+                <button class="btns" id="skill-cancel-btn" onclick="resetSkillForm()" style="display:none">Cancel</button>
+              </div>
             </div>
           </section>
         </div>
@@ -1257,7 +1384,7 @@ let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,m
 let _networkChecking={server:'',container:''};
 let _viewMode='default';
 let _orch={agents:[],skills:[],messages:[],approvals:[],learnings:[],paths:{}};
-let _orchTab='chat', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null;
+let _orchTab='chat', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null, _skillEditId='';
 let _hbData=new Array(40).fill(0), _hbBucket=0;
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
 let _oracleState={busy:false,summary:null,analysis:'',error:''};
@@ -2546,7 +2673,10 @@ function renderSkills(){
     <div class="skill-row">
       <div class="skill-head">
         <div class="skill-title" title="${esc(s.name)}">${esc(s.name)}</div>
-        <span class="status-chip ${s.approval_required?'pending':'approved'}">${s.approval_required?'gated':'open'}</span>
+        <div class="skill-actions">
+          <span class="status-chip ${s.approval_required?'pending':'approved'}">${s.approval_required?'gated':'available'}</span>
+          <button class="btns" type="button" data-skill-id="${esc(s.item_id)}" onclick="openSkillFromEl(this)">Open</button>
+        </div>
       </div>
       <div class="skill-meta"><span>${esc(s.role_or_category||'unknown')}</span><span>${esc(s.version||'0.0.0')}</span><span>${esc(s.path||'')}</span></div>
     </div>`).join('');
@@ -2669,14 +2799,81 @@ async function createAgent(){
     await loadOrchestration();
   }catch(e){alert('Create agent failed: '+e.message);}
 }
+function setSkillEditMode(skillId){
+  _skillEditId=skillId||'';
+  const save=document.getElementById('skill-save-btn');
+  const cancel=document.getElementById('skill-cancel-btn');
+  const idField=document.getElementById('skill-id');
+  if(save)save.textContent=_skillEditId?'Save Skill':'Create Skill';
+  if(cancel)cancel.style.display=_skillEditId?'':'none';
+  if(idField)idField.disabled=!!_skillEditId;
+}
+function resetSkillForm(){
+  ['skill-name','skill-id','skill-purpose','skill-inputs','skill-outputs','skill-procedure','skill-rollback','skill-success'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.value='';
+  });
+  const category=document.getElementById('skill-category');
+  const risk=document.getElementById('skill-risk');
+  const approval=document.getElementById('skill-approval');
+  if(category)category.value='automation';
+  if(risk)risk.value='medium';
+  if(approval)approval.checked=true;
+  setSkillEditMode('');
+}
+function fillSkillForm(skill){
+  const agent=document.getElementById('skill-agent');
+  if(agent&&skill.agent_id&&!Array.from(agent.options).some(o=>o.value===skill.agent_id)){
+    const opt=document.createElement('option');
+    opt.value=skill.agent_id;
+    opt.textContent=skill.agent_id;
+    agent.appendChild(opt);
+  }
+  if(agent)agent.value=skill.agent_id||agent.value;
+  document.getElementById('skill-name').value=skill.skill_name||'';
+  document.getElementById('skill-id').value=skill.skill_id||'';
+  document.getElementById('skill-category').value=skill.category||'automation';
+  document.getElementById('skill-risk').value=skill.risk_level||'medium';
+  document.getElementById('skill-approval').checked=!!skill.approval_required;
+  document.getElementById('skill-purpose').value=skill.purpose||'';
+  document.getElementById('skill-inputs').value=skill.inputs||'';
+  document.getElementById('skill-outputs').value=skill.outputs||'';
+  document.getElementById('skill-procedure').value=skill.procedure||'';
+  document.getElementById('skill-rollback').value=skill.rollback||'';
+  document.getElementById('skill-success').value=skill.success_criteria||'';
+  setSkillEditMode(skill.skill_id||'');
+}
+async function openSkillFromEl(btn){
+  const skillId=btn?.dataset?.skillId||'';
+  if(!skillId)return;
+  const original=btn.textContent;
+  btn.textContent='Opening';
+  btn.disabled=true;
+  try{
+    const r=await fetch(`/orchestration/skills/${encodeURIComponent(skillId)}`);
+    const d=await r.json().catch(()=>({}));
+    if(r.status===401){setAuthView(null);throw new Error('Login required');}
+    if(!r.ok)throw new Error(d.detail||d.message||'Skill could not be opened');
+    fillSkillForm(d);
+    showOrchTab('skills');
+    document.getElementById('skill-name')?.focus();
+  }catch(e){
+    alert('Open skill failed: '+e.message);
+  }finally{
+    btn.textContent=original;
+    btn.disabled=false;
+  }
+}
 async function createSkill(){
   const body={agent_id:orchVal('skill-agent'),skill_name:orchVal('skill-name'),skill_id:orchVal('skill-id'),category:orchVal('skill-category')||'automation',risk_level:orchVal('skill-risk')||'medium',approval_required:orchChecked('skill-approval'),purpose:orchVal('skill-purpose'),inputs:orchVal('skill-inputs'),outputs:orchVal('skill-outputs'),procedure:orchVal('skill-procedure'),rollback:orchVal('skill-rollback'),success_criteria:orchVal('skill-success')};
   if(!body.agent_id||!body.skill_name||!body.purpose||!body.procedure){alert('Agent, skill name, purpose, and procedure are required.');return;}
   try{
-    await postJson('/orchestration/skills',body);
-    ['skill-name','skill-id','skill-purpose','skill-inputs','skill-outputs','skill-procedure','skill-rollback','skill-success'].forEach(id=>document.getElementById(id).value='');
+    const updating=!!_skillEditId;
+    const url=updating?`/orchestration/skills/${encodeURIComponent(_skillEditId)}`:'/orchestration/skills';
+    await postJson(url,body,updating?'PUT':'POST');
+    if(!updating)resetSkillForm();
     await loadOrchestration();
-  }catch(e){alert('Create skill failed: '+e.message);}
+  }catch(e){alert((_skillEditId?'Save':'Create')+' skill failed: '+e.message);}
 }
 async function sendAgentMessage(){
   const body={source_agent:orchVal('msg-source'),target_agent:orchVal('msg-target'),message_type:orchVal('msg-type'),summary:orchVal('msg-summary')};
@@ -3439,50 +3636,7 @@ def create_skill(body: SkillBuildIn) -> dict:
     target_dir = _safe_markdown_path(skills_root, skill_id)
     target_file = target_dir / "skills.md"
     target_dir.mkdir(parents=True, exist_ok=True)
-
-    markdown = "\n".join(
-        [
-            "# Skill Definition",
-            "",
-            f"name: {body.skill_name.strip()}",
-            f"id: {skill_id}",
-            "version: 0.1.0",
-            f"category: {body.category.strip() or 'automation'}",
-            f"risk_level: {body.risk_level.strip() or 'medium'}",
-            f"approval_required: {_bool_text(body.approval_required)}",
-            f"agent: {body.agent_id.strip()}",
-            "",
-            "## Purpose",
-            "",
-            body.purpose.strip(),
-            "",
-            "## Inputs",
-            "",
-            _bullet_block(body.inputs),
-            "",
-            "## Outputs",
-            "",
-            _bullet_block(body.outputs),
-            "",
-            "## Procedure",
-            "",
-            _bullet_block(body.procedure),
-            "",
-            "## Rollback",
-            "",
-            _bullet_block(body.rollback),
-            "",
-            "## Success Criteria",
-            "",
-            _bullet_block(body.success_criteria),
-            "",
-            "## Audit Requirements",
-            "",
-            "- Record requesting user, deciding agent, approval decision, action target, result, and evidence links.",
-            "",
-        ]
-    )
-    target_file.write_text(markdown, encoding="utf-8")
+    target_file.write_text(_skill_markdown(body, skill_id), encoding="utf-8")
 
     with SessionLocal() as s:
         _record_agent_message(
@@ -3494,6 +3648,29 @@ def create_skill(body: SkillBuildIn) -> dict:
             {"path": str(target_file.relative_to(REPO_ROOT)), "risk_level": body.risk_level},
         )
     return {"ok": True, "skill_id": skill_id, "path": str(target_file.relative_to(REPO_ROOT))}
+
+
+@app.get("/orchestration/skills/{skill_id}")
+def get_skill(skill_id: str) -> dict:
+    target_file, _ = _skill_file_for_id(skill_id)
+    return _parse_skill_file(target_file)
+
+
+@app.put("/orchestration/skills/{skill_id}")
+def update_skill(skill_id: str, body: SkillBuildIn) -> dict:
+    target_file, canonical_id = _skill_file_for_id(skill_id)
+    target_file.write_text(_skill_markdown(body, canonical_id), encoding="utf-8")
+
+    with SessionLocal() as s:
+        _record_agent_message(
+            s,
+            "sage",
+            body.agent_id.strip(),
+            "skill_update",
+            f"Sage updated skill {body.skill_name.strip()} for {body.agent_id.strip()}.",
+            {"path": str(target_file.relative_to(REPO_ROOT)), "risk_level": body.risk_level},
+        )
+    return {"ok": True, "skill_id": canonical_id, "path": str(target_file.relative_to(REPO_ROOT))}
 
 
 @app.post("/orchestration/approvals", status_code=201)
