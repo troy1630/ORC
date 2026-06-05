@@ -657,7 +657,10 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
 .brand{background:none;border:0;color:var(--txt);cursor:pointer;padding:0;font:inherit;font-weight:800;font-size:1.14rem;margin-right:8px;display:flex;align-items:center;gap:10px;letter-spacing:.02em}
 .brand:hover .brand-mark{border-color:rgba(163,113,247,.5)}
 .brand-mark{width:46px;height:46px;border-radius:50%;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;background:#0d1117;border:1px solid rgba(230,237,243,.24);box-shadow:0 0 0 1px rgba(0,0,0,.55) inset,0 8px 18px rgba(0,0,0,.28);flex-shrink:0}
-.brand-mark img{width:148%;height:148%;object-fit:cover;object-position:center 36%;filter:saturate(.95) contrast(1.06);-webkit-mask-image:radial-gradient(circle at center,#000 46%,rgba(0,0,0,.75) 63%,transparent 84%);mask-image:radial-gradient(circle at center,#000 46%,rgba(0,0,0,.75) 63%,transparent 84%)}
+.brand-mark .brand-char{width:148%;height:148%;object-fit:cover;object-position:center 36%;filter:saturate(.95) contrast(1.06);-webkit-mask-image:radial-gradient(circle at center,#000 46%,rgba(0,0,0,.75) 63%,transparent 84%);mask-image:radial-gradient(circle at center,#000 46%,rgba(0,0,0,.75) 63%,transparent 84%)}
+.brand-corp-icon{display:none;width:52%;height:52%;flex-shrink:0;color:#c8d3de}
+[data-view-mode="corporate"] .brand-char{display:none}
+[data-view-mode="corporate"] .brand-corp-icon{display:block}
 .tabs{display:flex;height:100%;overflow-x:auto;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
 .tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--mut);cursor:pointer;padding:0 14px;font-size:.94rem;font-weight:600;height:100%}
@@ -852,8 +855,11 @@ tr:last-child td{border-bottom:none}
 .hb-st{display:none}
 .hb-canvas-wrap{height:76px;background:#0d1117;border:1px solid #21262d;border-radius:10px;padding:10px 8px 6px;overflow:hidden}
 canvas{display:block;width:100%;height:58px}
-.raven-sl{padding:5px 10px;border-bottom:1px solid var(--bdr);font-size:.7rem;color:var(--mut);flex-shrink:0;min-height:26px;display:flex;align-items:center;gap:5px;overflow:hidden}
+.raven-sl{padding:5px 10px;border-bottom:1px solid var(--bdr);font-size:.73rem;color:var(--mut);flex-shrink:0;min-height:26px;display:flex;align-items:center;gap:5px;overflow:hidden}
 .sl-icon{flex-shrink:0}.sl-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.raven-next{padding:3px 10px 4px;border-bottom:1px solid var(--bdr);font-size:.69rem;color:var(--mut);min-height:22px;display:flex;align-items:center;gap:5px;overflow:hidden;flex-shrink:0}
+.raven-next-lbl{color:#8b949e;font-weight:700;flex-shrink:0;font-size:.62rem;text-transform:uppercase;letter-spacing:.04em}
+#raven-next-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .feed-hdr{display:flex;gap:4px;padding:5px 8px;border-bottom:1px solid var(--bdr);flex-shrink:0}
 .ff{background:#21262d;border:1px solid var(--bdr);border-radius:12px;color:var(--mut);cursor:pointer;font-size:.64rem;padding:2px 0;flex:1;text-align:center}
 .ff:hover{color:var(--txt)}.ff.on{background:var(--bdr);color:var(--txt)}
@@ -867,10 +873,10 @@ canvas{display:block;width:100%;height:58px}
 .p-checking{background:#161b22;border-color:#21262d;color:var(--mut)}
 .ph{color:var(--mut);font-size:.72rem;text-align:center;padding:12px 0}
 .pill-hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
-.pill-cn{font-family:monospace;font-weight:650;font-size:.7rem}
-.pill-sv{font-size:.6rem;opacity:.75}
-.pill-msg{font-size:.64rem;line-height:1.25;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.88}
-.pill-ts{font-size:.6rem;opacity:.6;text-align:right;margin-top:1px}
+.pill-cn{font-family:monospace;font-weight:650;font-size:.76rem}
+.pill-sv{font-size:.64rem;opacity:.75}
+.pill-msg{font-size:.71rem;line-height:1.3;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.88}
+.pill-ts{font-size:.62rem;opacity:.6;text-align:right;margin-top:1px}
 .oracle-resizer{height:9px;border-top:1px solid var(--bdr);border-bottom:1px solid var(--bdr);background:#10151c;cursor:ns-resize;flex-shrink:0;display:flex;align-items:center;justify-content:center}
 .oracle-resizer::before{content:"";width:34px;height:3px;border-radius:5px;background:#30363d}
 .oracle{padding:10px 12px 12px;display:flex;flex:1;min-height:170px;flex-direction:column;gap:7px;background:rgba(13,17,23,.24);overflow:hidden}
@@ -1018,7 +1024,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 </div>
 <div class="app-shell hidden" id="app-shell">
 <nav class="nav">
-  <button class="brand" type="button" onclick="showTab('home')" title="Dashboard"><span class="brand-mark"><img src="/assets/characters/orc.png" alt=""></span><span>ORC</span></button>
+  <button class="brand" type="button" onclick="showTab('home')" title="Dashboard"><span class="brand-mark"><img class="brand-char" src="/assets/characters/orc.png" alt=""><svg class="brand-corp-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3z"/></svg></span><span>ORC</span></button>
   <div class="tabs">
     <button class="tab" id="tab-overview" onclick="showTab('overview')">Overview</button>
     <button class="tab" id="tab-network" onclick="showTab('network')">Network</button>
@@ -1303,6 +1309,10 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     <span class="sl-icon" id="sl-icon">—</span>
     <span class="sl-txt" id="sl-txt">Waiting for activity…</span>
   </div>
+  <div class="raven-next" id="raven-next" style="display:none">
+    <span class="raven-next-lbl">Up Next</span>
+    <span id="raven-next-txt"></span>
+  </div>
   <div class="feed-hdr">
     <button class="ff on" id="rf-all" onclick="setRF('')">All</button>
     <button class="ff" id="rf-critical" onclick="setRF('critical')">Critical</button>
@@ -1394,7 +1404,7 @@ let _viewMode='corporate';
 let _orch={agents:[],skills:[],messages:[],approvals:[],learnings:[],paths:{}};
 let _orchTab='chat', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null, _skillEditId='';
 let _agentDraftIcon='/assets/characters/agent-scout.png', _agentLogoDraft='';
-let _hbData=new Array(40).fill(0), _hbBucket=0;
+let _hbData=new Array(60).fill(0), _hbBucket=0, _hbAlerts=[], _hbAlertBuf=[];
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
 let _oracleState={busy:false,summary:null,analysis:'',error:''};
 let _windowHours=24;
@@ -1614,6 +1624,10 @@ function ravenServerKey(msg){
 function ravenServerDisplay(msg){
   const key=ravenServerKey(msg);
   return msg.server||connectionDisplayName(key)||'Unknown server';
+}
+function evServerDisplay(serverKey){
+  const conn=_conns.find(c=>c.name===serverKey);
+  return _viewMode==='corporate'?(conn?.server_name||serverKey):serverKey;
 }
 function serverLogo(k){
   return k.server_logo||BLACK_LOGO_SRC;
@@ -1918,6 +1932,7 @@ async function loadHomeRecent(){
 }
 function renderVisualViews(){
   renderHomeDashboard();
+  _populateServerDropdown();
   if(_stacks.length){
     renderOverview(_stacks);
     renderNetwork(_stacks);
@@ -2049,7 +2064,7 @@ function renderStackGrid(stacks,targetId){
       return acc;
     },{errors:0,warnings:0});
     const kingdomCls=totals.errors>0?'er':totals.warnings>0?'warn':'';
-    const stackList=k.stacks.map(s=>stackFriendlyName(s)).join(', ');
+    const totalCtr=k.stacks.reduce((a,s)=>a+s.containers.length,0);
     const kIcon=corporate
       ? `<img class="kingdom-logo" src="${esc(serverLogo(k)||'/assets/kingdoms/castle.png')}" alt="">`
       : `<img class="kingdom-castle" src="/assets/kingdoms/castle.png" alt="">`;
@@ -2102,7 +2117,7 @@ function renderStackGrid(stacks,targetId){
           ${kIcon}
           <div class="kingdom-copy">
             <div class="kingdom-name" title="${esc(k.server)}">${esc(serverDisplayName(k))}</div>
-            <div class="kingdom-sub" title="${esc(stackList)}">${k.stacks.length} stack${k.stacks.length!==1?'s':''} - ${esc(stackList)}</div>
+            <div class="kingdom-sub">${k.stacks.length} stack${k.stacks.length!==1?'s':''} · ${totalCtr} container${totalCtr!==1?'s':''}</div>
           </div>
         </div>
         <div class="kingdom-score">${statusCircles(totals.errors,totals.warnings,false)}</div>
@@ -2548,9 +2563,10 @@ function jumpToEvents(server,container,sev){
 }
 function _populateServerDropdown(){
   const sel=document.getElementById('ev-server');
+  if(!sel)return;
   const cur=sel.value;
   sel.innerHTML='<option value="">All servers</option>'+
-    _conns.map(c=>`<option value="${esc(c.name)}"${c.name===cur?' selected':''}>${esc(c.name)}</option>`).join('');
+    _conns.map(c=>`<option value="${esc(c.name)}"${c.name===cur?' selected':''}>${esc(evServerDisplay(c.name))}</option>`).join('');
 }
 function renderEvts(){
   const S={critical:'sc2',error:'se2',warning:'sw2',info:'si2',debug:'si2'};
@@ -2561,7 +2577,7 @@ function renderEvts(){
   }
   const rows=_evts.map(e=>`<tr>
     <td class="mono muted">${fmt(e.occurred_at)}</td>
-    <td style="color:var(--pur);font-size:.76rem;cursor:pointer" onclick="jumpToEvents('${esc(e.server)}','','error')">${esc(e.server)}</td>
+    <td style="color:var(--pur);font-size:.76rem;cursor:pointer" onclick="jumpToEvents('${esc(e.server)}','','error')">${esc(evServerDisplay(e.server))}</td>
     <td class="mono" style="color:var(--blu);cursor:pointer" onclick="jumpToEvents('${esc(e.server)}','${esc(e.container_name)}','error')">${esc(e.container_name)}</td>
     <td><span class="${S[e.severity]||'si2'}">${e.severity}</span></td>
     <td class="msg" title="${esc(e.message)}">${esc(e.message)}</td>
@@ -3050,7 +3066,8 @@ function issueKeywords(text){
 }
 function issueSummary(msg){
   const words=issueKeywords(msg.message);
-  return words?`Keywords: ${words}. Click to jump to Events.`:'Click to jump to Events.';
+  if(words)return words;
+  return (msg.message||'').slice(0,80);
 }
 async function loadRavenBacklog(){
   try{
@@ -3077,7 +3094,7 @@ function issuePillHtml(msg,opacity,isCurrent){
     const sev=msg.severity||'error';
     const cls=sev==='warning'?'p-warn':'p-error';
     const clickSev=sev==='critical'?'critical':(sev==='warning'?'warning':'error');
-    return `<div class="pill ${cls}" style="${style};cursor:pointer" data-server="${esc(serverKey)}" data-container="${esc(msg.container||'')}" data-severity="${esc(clickSev)}" onclick="jumpToEventsFromEl(this)" title="Click to filter Events">
+    return `<div class="pill ${cls}" style="${style};cursor:pointer" data-server="${esc(serverKey)}" data-container="${esc(msg.container||'')}" data-severity="${esc(clickSev)}" onclick="jumpToEventsFromEl(this)">
       <div class="pill-hdr"><span class="pill-cn">${esc(msg.container||'')}</span><span class="pill-sv">${esc(serverDisplay)} - ${esc(sev.toUpperCase())}</span></div>
       <div class="pill-msg">${esc(issueSummary(msg))}</div>
       <div class="pill-ts">${ts}</div>
@@ -3090,7 +3107,7 @@ function issuePillHtml(msg,opacity,isCurrent){
     let cls,detail,sev;
     if(ne>0){cls='p-error';sev='error';detail=`${ne} new error${ne!==1?'s':''}`;if(nw>0)detail+=`, ${nw} new warn`;}
     else{cls='p-warn';sev='warning';detail=`${nw} new warning${nw!==1?'s':''}`;}
-    return `<div class="pill ${cls}" style="${style};cursor:pointer" data-server="${esc(serverKey)}" data-container="${esc(msg.container)}" data-severity="${esc(sev)}" onclick="jumpToEventsFromEl(this)" title="Click to filter Events">
+    return `<div class="pill ${cls}" style="${style};cursor:pointer" data-server="${esc(serverKey)}" data-container="${esc(msg.container)}" data-severity="${esc(sev)}" onclick="jumpToEventsFromEl(this)">
       <div class="pill-hdr"><span class="pill-cn">${esc(msg.container)}</span><span class="pill-sv">${esc(serverDisplay)}</span></div>
       <div style="display:flex;justify-content:space-between;margin-top:2px"><span>${detail}</span><span class="pill-ts">${ts}</span></div>
     </div>`;
@@ -3111,14 +3128,18 @@ function handleRaven(msg){
   switch(msg.type){
     case 'no_connections': setStatus('—','No connections configured.',false); break;
     case 'queue_ready':{const iv=msg.interval?` · ${msg.interval}s/ctr`:'';setStatus('▶',`Scanning ${msg.containers} containers${iv}`,true);break;}
-    case 'container_checking':
+    case 'container_checking':{
+      _hbBucket=1;
       setStatus('🔍',`Checking ${msg.container} on ${serverDisplay}`,true);
       setNetworkCheckingContainer(serverKey,msg.container||'',true);
       launchRavenFromContainer(serverKey,msg.container||'');
+      const _nextEl=document.getElementById('raven-next'),_nextTxt=document.getElementById('raven-next-txt');
+      if(_nextEl&&_nextTxt){if(msg.next_container){_nextEl.style.display='';_nextTxt.textContent=msg.next_container;}else{_nextEl.style.display='none';}}
       break;
+    }
     case 'issue_event':{
       const sev=msg.severity||'error';
-      _hbBucket+=1;
+      _hbAlertBuf.push({severity:sev});
       setStatus('!',`${msg.container||'unknown'} - ${sev}`,true);
       addIssuePill(msg);
       break;
@@ -3126,7 +3147,7 @@ function handleRaven(msg){
     case 'container_result':{
       setNetworkCheckingContainer(serverKey,msg.container||'',false);
       const ne=msg.errors||0,nw=msg.warnings||0;
-      if(!msg.issue_events)_hbBucket+=ne+nw;
+      if(!msg.issue_events&&(ne>0||nw>0))_hbAlertBuf.push({severity:ne>0?'error':'warning'});
       if(ne>0){setStatus('⚠',`${msg.container} · ${ne} new error${ne!==1?'s':''}`,true);addIssuePill(msg);}
       else if(nw>0){setStatus('⚠',`${msg.container} · ${nw} new warning${nw!==1?'s':''}`,true);addIssuePill(msg);}
       else setStatus('✓',`${msg.container} · no new issues`,true);
@@ -3144,26 +3165,49 @@ function handleRaven(msg){
    HEARTBEAT CHART
    ============================================================ */
 function resizeCanvas(){const cv=document.getElementById('hb-cv');if(cv)cv.width=cv.offsetWidth||270;}
+function _catmullRom(ctx,pts,t){
+  t=t===undefined?0.4:t;
+  if(pts.length<2)return;
+  ctx.moveTo(pts[0].x,pts[0].y);
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[Math.max(0,i-1)],p1=pts[i],p2=pts[i+1],p3=pts[Math.min(pts.length-1,i+2)];
+    ctx.bezierCurveTo(p1.x+(p2.x-p0.x)*t,p1.y+(p2.y-p0.y)*t,p2.x-(p3.x-p1.x)*t,p2.y-(p3.y-p1.y)*t,p2.x,p2.y);
+  }
+}
 function drawHb(){
   const cv=document.getElementById('hb-cv');if(!cv)return;
   const ctx=cv.getContext('2d'),w=cv.width,h=cv.height;
   ctx.clearRect(0,0,w,h);
-  const d=_hbData,max=Math.max(...d,1),step=w/(d.length-1);
-  // gradient fill under line
+  const d=_hbData,N=d.length;if(N<2)return;
+  const step=w/(N-1),bot=h-3,top=5;
+  const pts=d.map((v,i)=>({x:i*step,y:v>0?top:bot}));
   const grad=ctx.createLinearGradient(0,0,0,h);
-  grad.addColorStop(0,'rgba(248,81,73,0.25)');
-  grad.addColorStop(1,'rgba(248,81,73,0.02)');
-  ctx.beginPath();
-  d.forEach((v,i)=>{const x=i*step,y=h-(v/max)*(h-6)-3;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
-  ctx.lineTo((d.length-1)*step,h);ctx.lineTo(0,h);ctx.closePath();
+  grad.addColorStop(0,'rgba(63,185,80,0.28)');
+  grad.addColorStop(1,'rgba(63,185,80,0.03)');
+  ctx.beginPath();_catmullRom(ctx,pts);
+  ctx.lineTo(pts[N-1].x,h);ctx.lineTo(0,h);ctx.closePath();
   ctx.fillStyle=grad;ctx.fill();
-  // line
-  ctx.beginPath();
-  d.forEach((v,i)=>{const x=i*step,y=h-(v/max)*(h-6)-3;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
-  ctx.strokeStyle='#f85149';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.beginPath();_catmullRom(ctx,pts);
+  ctx.strokeStyle='#3fb950';ctx.lineWidth=1.8;ctx.stroke();
+  _hbAlerts.forEach(a=>{
+    const idx=N-1-a.age;if(idx<0||idx>=N)return;
+    const px=pts[idx].x,py=pts[idx].y;
+    const col=a.severity==='warning'?'#d29922':'#f85149';
+    ctx.beginPath();ctx.arc(px,py,5,0,Math.PI*2);
+    ctx.fillStyle=col;ctx.fill();
+    ctx.strokeStyle='rgba(13,17,23,0.7)';ctx.lineWidth=1.2;ctx.stroke();
+  });
 }
-function tickHb(){_hbData.push(_hbBucket);_hbBucket=0;if(_hbData.length>40)_hbData.shift();drawHb();}
-setInterval(tickHb,5000);
+function tickHb(){
+  _hbData.push(_hbBucket?1:0);_hbBucket=0;
+  if(_hbData.length>60)_hbData.shift();
+  _hbAlertBuf.forEach(a=>_hbAlerts.push({age:0,severity:a.severity}));
+  _hbAlertBuf=[];
+  _hbAlerts.forEach(a=>a.age++);
+  _hbAlerts=_hbAlerts.filter(a=>a.age<60);
+  drawHb();
+}
+setInterval(tickHb,1000);
 
 /* ============================================================
    SSE

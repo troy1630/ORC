@@ -125,7 +125,8 @@ def _poll_next() -> None:
     if conn_interval:
         _sleep = float(conn_interval)
 
-    raven.publish({"type": "container_checking", "server": server_display, "server_key": conn_name, "container": cname})
+    next_cname = _queue[0][5] if _queue else ""
+    raven.publish({"type": "container_checking", "server": server_display, "server_key": conn_name, "container": cname, "next_container": next_cname})
 
     try:
         with SessionLocal() as session:
