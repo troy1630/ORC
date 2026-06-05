@@ -1,6 +1,9 @@
 import json
 import os
 import re
+import hashlib
+import hmac
+import secrets
 from collections import Counter
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -8,7 +11,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -24,6 +28,8 @@ from .db import (
     LearningEntry,
     ObservedEvent,
     SessionLocal,
+    UserAccount,
+    UserSession,
     init_db,
 )
 from .raven import CHANNEL
@@ -58,6 +64,17 @@ class ConnectionTestIn(BaseModel):
 
 class OracleReviewIn(BaseModel):
     friendly_names: dict[str, str] = Field(default_factory=dict)
+
+
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class UserCreateIn(BaseModel):
+    username: str
+    password: str
+    role: str = "user"
 
 
 class AgentTrustIn(BaseModel):
@@ -126,6 +143,8 @@ class LearningCreateIn(BaseModel):
 
 
 TRUST_MODES = {"recommend_only", "approval_required", "autonomous"}
+COOKIE_NAME = "orc_session"
+SESSION_DAYS = 7
 DEFAULT_ORCHESTRATION_AGENTS = [
     {
         "agent_id": "raven",
@@ -194,6 +213,99 @@ def _safe_markdown_path(root: Path, *parts: str) -> Path:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid Markdown path") from exc
     return target
+
+
+def _hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    iterations = 120_000
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    try:
+        scheme, iterations, salt_hex, digest_hex = stored.split("$", 3)
+        if scheme != "pbkdf2_sha256":
+            return False
+        candidate = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            bytes.fromhex(salt_hex),
+            int(iterations),
+        )
+        return hmac.compare_digest(candidate.hex(), digest_hex)
+    except Exception:
+        return False
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _normalize_role(role: str) -> str:
+    return "admin" if role.strip().lower() == "admin" else "user"
+
+
+def _user_dict(row: UserAccount) -> dict:
+    return {
+        "id": row.id,
+        "username": row.username,
+        "role": row.role,
+        "enabled": row.enabled,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+def _ensure_default_admin() -> None:
+    with SessionLocal() as s:
+        existing = s.query(UserAccount).filter_by(username="admin").first()
+        if existing:
+            return
+        s.add(
+            UserAccount(
+                username="admin",
+                password_hash=_hash_password("admin"),
+                role="admin",
+                enabled=True,
+            )
+        )
+        s.commit()
+
+
+def _current_user(request: Request) -> dict | None:
+    token = request.cookies.get(COOKIE_NAME, "")
+    if not token:
+        return None
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as s:
+        sess = s.query(UserSession).filter_by(token_hash=_hash_token(token)).first()
+        if not sess:
+            return None
+        expires_at = sess.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= now:
+            s.delete(sess)
+            s.commit()
+            return None
+        user = s.get(UserAccount, sess.user_id)
+        if not user or not user.enabled:
+            return None
+        return _user_dict(user)
+
+
+def _require_user(request: Request) -> dict:
+    user = _current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Login required")
+    return user
+
+
+def _require_admin(request: Request) -> dict:
+    user = _require_user(request)
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
 
 
 def _default_agent_icon(agent_id: str, role: str = "") -> str:
@@ -382,6 +494,17 @@ _HTML = """<!doctype html>
 :root{--bg:#0d1117;--sur:#161b22;--bdr:#30363d;--txt:#e6edf3;--mut:#8b949e;--grn:#3fb950;--red:#f85149;--yel:#d29922;--blu:#58a6ff;--pur:#a371f7}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.app-shell{height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.app-shell.hidden{display:none}
+.login-screen{height:100vh;display:flex;align-items:center;justify-content:center;padding:18px;background:#0f141b}
+.login-screen.hidden{display:none}
+.login-panel{width:min(390px,100%);border:1px solid var(--bdr);border-radius:8px;background:var(--sur);padding:22px;box-shadow:0 20px 40px rgba(0,0,0,.28)}
+.login-brand{display:flex;align-items:center;gap:11px;margin-bottom:18px}
+.login-brand img{width:52px;height:52px;border-radius:50%;object-fit:cover;border:1px solid rgba(230,237,243,.18)}
+.login-title{font-size:1.2rem;font-weight:900}
+.login-sub{font-size:.78rem;color:var(--mut);margin-top:2px}
+.login-form{display:flex;flex-direction:column;gap:10px}
+.login-error{min-height:18px;color:var(--red);font-size:.78rem}
 /* NAV */
 .nav{background:rgba(22,27,34,.96);border-bottom:1px solid var(--bdr);padding:0 18px;display:flex;align-items:center;gap:14px;height:64px;flex-shrink:0;backdrop-filter:blur(12px)}
 .brand{background:none;border:0;color:var(--txt);cursor:pointer;padding:0;font:inherit;font-weight:800;font-size:1.14rem;margin-right:8px;display:flex;align-items:center;gap:10px;letter-spacing:.02em}
@@ -394,6 +517,7 @@ body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSys
 .tab:hover{color:var(--txt)}.tab.on{color:var(--txt);border-bottom-color:var(--pur)}
 .nav-r{margin-left:auto;display:flex;align-items:center;gap:8px}
 .nav-sel{background:#21262d;border:1px solid var(--bdr);border-radius:8px;color:var(--txt);font-size:.78rem;padding:5px 9px;outline:none;cursor:pointer;min-width:72px}
+.user-chip{display:flex;align-items:center;gap:6px;color:var(--txt)}
 /* Status pills */
 .sp{font-size:.75rem;padding:2px 8px;border-radius:10px;background:#21262d;border:1px solid var(--bdr);display:flex;align-items:center;gap:4px}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--mut)}
@@ -623,6 +747,14 @@ canvas{display:block;width:100%;height:58px}
 .orch-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .orch-title{font-size:1rem;font-weight:850;letter-spacing:.03em}
 .orch-actions{display:flex;align-items:center;gap:7px}
+.orch-subtabs{display:flex;gap:6px;align-items:center;overflow-x:auto;padding-bottom:2px}
+.orch-tab{background:#21262d;border:1px solid var(--bdr);border-radius:6px;color:var(--mut);cursor:pointer;font-size:.78rem;font-weight:750;padding:6px 11px;white-space:nowrap}
+.orch-tab:hover{color:var(--txt)}
+.orch-tab.on{background:var(--bdr);color:var(--txt);border-color:rgba(163,113,247,.58)}
+.orch-view{display:none}
+.orch-view.on{display:block}
+.orch-page-grid{display:grid;grid-template-columns:minmax(340px,.9fr) minmax(360px,1.1fr);gap:12px;align-items:start}
+.orch-page-grid.single{grid-template-columns:minmax(0,1fr)}
 .orch-grid{display:grid;grid-template-columns:minmax(280px,.85fr) minmax(360px,1.15fr);gap:12px;align-items:start}
 .orch-stack{display:flex;flex-direction:column;gap:12px;min-width:0}
 .orch-panel{border:1px solid var(--bdr);border-radius:8px;background:var(--sur);padding:12px;min-width:0}
@@ -666,6 +798,11 @@ canvas{display:block;width:100%;height:58px}
 .status-chip.rejected{color:var(--red);background:rgba(248,81,73,.12);border-color:rgba(248,81,73,.34)}
 .approval-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .skill-list{max-height:220px;overflow:auto;padding-right:2px}
+.user-list{display:flex;flex-direction:column;gap:8px}
+.user-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:9px;align-items:center;border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:9px}
+.user-name{font-size:.82rem;font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.user-role{font-size:.68rem;color:var(--mut);text-transform:capitalize}
+.setup-note{font-size:.72rem;color:var(--mut);line-height:1.35}
 /* CONNECTIONS */
 .st-ok{color:var(--grn)}.st-er{color:var(--red)}.st-no{color:var(--mut)}
 /* MODAL */
@@ -706,6 +843,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .kingdom-stacks{grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
   .network-stage{grid-template-columns:1fr}
   .orch-grid{grid-template-columns:1fr}
+  .orch-page-grid{grid-template-columns:1fr}
   .orch-form{grid-template-columns:1fr}
   .orch-chat{height:520px}
   .chat-compose{grid-template-columns:1fr}
@@ -713,6 +851,24 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 </style>
 </head>
 <body>
+<div class="login-screen" id="login-screen">
+  <div class="login-panel">
+    <div class="login-brand">
+      <img src="/assets/characters/orc.png" alt="">
+      <div>
+        <div class="login-title">ORC</div>
+        <div class="login-sub">Operations command login</div>
+      </div>
+    </div>
+    <div class="login-form">
+      <input class="orch-input" id="login-username" autocomplete="username" placeholder="Username">
+      <input class="orch-input" id="login-password" autocomplete="current-password" placeholder="Password" type="password">
+      <div class="login-error" id="login-error"></div>
+      <button class="btnp" onclick="login()">Login</button>
+    </div>
+  </div>
+</div>
+<div class="app-shell hidden" id="app-shell">
 <nav class="nav">
   <button class="brand" type="button" onclick="showTab('home')" title="Dashboard"><span class="brand-mark"><img src="/assets/characters/orc.png" alt=""></span><span>ORC</span></button>
   <div class="tabs">
@@ -740,6 +896,8 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
       <option value="24" selected>24 hours</option>
     </select>
     <span class="small muted" id="upd"></span>
+    <span class="sp user-chip"><span id="user-name">â€”</span><span class="muted" id="user-role"></span></span>
+    <button class="btns" onclick="logout()">Logout</button>
     <button class="btn" onclick="loadAll()">&#8635;</button>
   </div>
 </nav>
@@ -840,43 +998,17 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
         </div>
       </div>
 
-      <div class="orch-grid">
-        <div class="orch-stack">
-          <section class="orch-panel">
-            <div class="orch-panel-head">
-              <div class="orch-panel-title">Agents</div>
-              <div class="orch-count" id="orch-agent-path"></div>
-            </div>
-            <div class="agent-list" id="orch-agents"><div class="empty">Loading agents...</div></div>
-          </section>
+      <div class="orch-subtabs">
+        <button class="orch-tab on" id="orch-tab-chat" onclick="showOrchTab('chat')">Agent Chat</button>
+        <button class="orch-tab" id="orch-tab-agents" onclick="showOrchTab('agents')">Agents</button>
+        <button class="orch-tab" id="orch-tab-skills" onclick="showOrchTab('skills')">Skills</button>
+        <button class="orch-tab" id="orch-tab-approvals" onclick="showOrchTab('approvals')">Approvals</button>
+        <button class="orch-tab" id="orch-tab-learning" onclick="showOrchTab('learning')">Learning</button>
+        <button class="orch-tab" id="orch-tab-setup" onclick="showOrchTab('setup')">Setup</button>
+      </div>
 
-          <section class="orch-panel">
-            <div class="orch-panel-head">
-              <div class="orch-panel-title">Agent Builder</div>
-            </div>
-            <div class="orch-form">
-              <div class="orch-field"><label>Name</label><input class="orch-input" id="agent-name" placeholder="Reliability Scout"></div>
-              <div class="orch-field"><label>ID</label><input class="orch-input" id="agent-id" placeholder="reliability-scout"></div>
-              <div class="orch-field"><label>Role</label><input class="orch-input" id="agent-role" placeholder="observer"></div>
-              <div class="orch-field"><label>Risk</label><select class="orch-select" id="agent-risk"><option>low</option><option>medium</option><option>high</option></select></div>
-              <label class="agent-enabled wide"><input id="agent-approval" type="checkbox"> Approval required</label>
-              <div class="orch-field wide"><label>Purpose</label><textarea class="orch-textarea" id="agent-purpose"></textarea></div>
-              <div class="orch-field wide"><label>Allowed Skills</label><textarea class="orch-textarea" id="agent-skills"></textarea></div>
-              <div class="orch-field wide"><label>Rules</label><textarea class="orch-textarea" id="agent-rules"></textarea></div>
-              <button class="btnp wide" onclick="createAgent()">Create Agent</button>
-            </div>
-          </section>
-
-          <section class="orch-panel">
-            <div class="orch-panel-head">
-              <div class="orch-panel-title">Skill Registry</div>
-              <div class="orch-count" id="orch-skill-path"></div>
-            </div>
-            <div class="skill-list" id="orch-skills"><div class="empty">Loading skills...</div></div>
-          </section>
-        </div>
-
-        <div class="orch-stack">
+      <section class="orch-view on" id="orch-view-chat">
+        <div class="orch-page-grid single">
           <section class="orch-panel orch-chat">
             <div class="orch-panel-head">
               <div class="orch-panel-title">Agent Chat</div>
@@ -897,11 +1029,46 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
               <button class="btnp" onclick="sendAgentMessage()">Send</button>
             </div>
           </section>
+        </div>
+      </section>
 
+      <section class="orch-view" id="orch-view-agents">
+        <div class="orch-page-grid">
           <section class="orch-panel">
             <div class="orch-panel-head">
-              <div class="orch-panel-title">Skill Builder</div>
+              <div class="orch-panel-title">Agents</div>
+              <div class="orch-count" id="orch-agent-path"></div>
             </div>
+            <div class="agent-list" id="orch-agents"><div class="empty">Loading agents...</div></div>
+          </section>
+          <section class="orch-panel">
+            <div class="orch-panel-head"><div class="orch-panel-title">Agent Builder</div></div>
+            <div class="orch-form">
+              <div class="orch-field"><label>Name</label><input class="orch-input" id="agent-name" placeholder="Reliability Scout"></div>
+              <div class="orch-field"><label>ID</label><input class="orch-input" id="agent-id" placeholder="reliability-scout"></div>
+              <div class="orch-field"><label>Role</label><input class="orch-input" id="agent-role" placeholder="observer"></div>
+              <div class="orch-field"><label>Risk</label><select class="orch-select" id="agent-risk"><option>low</option><option>medium</option><option>high</option></select></div>
+              <label class="agent-enabled wide"><input id="agent-approval" type="checkbox"> Approval required</label>
+              <div class="orch-field wide"><label>Purpose</label><textarea class="orch-textarea" id="agent-purpose"></textarea></div>
+              <div class="orch-field wide"><label>Allowed Skills</label><textarea class="orch-textarea" id="agent-skills"></textarea></div>
+              <div class="orch-field wide"><label>Rules</label><textarea class="orch-textarea" id="agent-rules"></textarea></div>
+              <button class="btnp wide" onclick="createAgent()">Create Agent</button>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="orch-view" id="orch-view-skills">
+        <div class="orch-page-grid">
+          <section class="orch-panel">
+            <div class="orch-panel-head">
+              <div class="orch-panel-title">Skill Registry</div>
+              <div class="orch-count" id="orch-skill-path"></div>
+            </div>
+            <div class="skill-list" id="orch-skills"><div class="empty">Loading skills...</div></div>
+          </section>
+          <section class="orch-panel">
+            <div class="orch-panel-head"><div class="orch-panel-title">Skill Builder</div></div>
             <div class="orch-form">
               <div class="orch-field"><label>Agent</label><select class="orch-select" id="skill-agent"></select></div>
               <div class="orch-field"><label>Skill Name</label><input class="orch-input" id="skill-name" placeholder="refresh container from git"></div>
@@ -918,11 +1085,13 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
               <button class="btnp wide" onclick="createSkill()">Create Skill</button>
             </div>
           </section>
+        </div>
+      </section>
 
+      <section class="orch-view" id="orch-view-approvals">
+        <div class="orch-page-grid">
           <section class="orch-panel">
-            <div class="orch-panel-head">
-              <div class="orch-panel-title">Approval Inbox</div>
-            </div>
+            <div class="orch-panel-head"><div class="orch-panel-title">Approval Request</div></div>
             <div class="orch-form">
               <div class="orch-field"><label>Requester</label><select class="orch-select" id="approval-agent"></select></div>
               <div class="orch-field"><label>Action</label><select class="orch-select" id="approval-action"><option value="git_pull_container_refresh">git pull + refresh</option><option value="container_restart">container restart</option><option value="container_refresh">container refresh</option></select></div>
@@ -931,9 +1100,16 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
               <div class="orch-field wide"><label>Rationale</label><textarea class="orch-textarea" id="approval-rationale"></textarea></div>
               <button class="btnp wide" onclick="createApproval()">Route to Gate Keeper</button>
             </div>
-            <div class="approval-list" id="orch-approvals" style="margin-top:10px"><div class="empty">Loading approvals...</div></div>
           </section>
+          <section class="orch-panel">
+            <div class="orch-panel-head"><div class="orch-panel-title">Approval Inbox</div></div>
+            <div class="approval-list" id="orch-approvals"><div class="empty">Loading approvals...</div></div>
+          </section>
+        </div>
+      </section>
 
+      <section class="orch-view" id="orch-view-learning">
+        <div class="orch-page-grid">
           <section class="orch-panel">
             <div class="orch-panel-head">
               <div class="orch-panel-title">Sage Learning</div>
@@ -947,10 +1123,32 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
               <div class="orch-field wide"><label>Summary</label><textarea class="orch-textarea" id="learning-summary"></textarea></div>
               <button class="btnp wide" onclick="createLearning()">Record Learning</button>
             </div>
-            <div class="learning-list" id="orch-learnings" style="margin-top:10px"><div class="empty">Loading learning entries...</div></div>
+          </section>
+          <section class="orch-panel">
+            <div class="orch-panel-head"><div class="orch-panel-title">Learning Entries</div></div>
+            <div class="learning-list" id="orch-learnings"><div class="empty">Loading learning entries...</div></div>
           </section>
         </div>
-      </div>
+      </section>
+
+      <section class="orch-view" id="orch-view-setup">
+        <div class="orch-page-grid">
+          <section class="orch-panel">
+            <div class="orch-panel-head"><div class="orch-panel-title">Add User</div></div>
+            <div class="orch-form">
+              <div class="orch-field"><label>Username</label><input class="orch-input" id="setup-username" autocomplete="off"></div>
+              <div class="orch-field"><label>Password</label><input class="orch-input" id="setup-password" type="password" autocomplete="new-password"></div>
+              <div class="orch-field"><label>Type</label><select class="orch-select" id="setup-role"><option value="admin">Admin</option><option value="user" selected>User</option></select></div>
+              <div class="orch-field"><label>Status</label><div class="setup-note" id="setup-status">Only admins can add users.</div></div>
+              <button class="btnp wide" onclick="createUser()">Create User</button>
+            </div>
+          </section>
+          <section class="orch-panel">
+            <div class="orch-panel-head"><div class="orch-panel-title">Users</div></div>
+            <div class="user-list" id="setup-users"><div class="empty">Loading users...</div></div>
+          </section>
+        </div>
+      </section>
     </div>
   </div>
 
@@ -1045,6 +1243,8 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   </div>
 </dialog>
 
+</div><!-- /app-shell -->
+
 <script>
 /* ============================================================
    STATE
@@ -1057,6 +1257,7 @@ let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,m
 let _networkChecking={server:'',container:''};
 let _viewMode='default';
 let _orch={agents:[],skills:[],messages:[],approvals:[],learnings:[],paths:{}};
+let _orchTab='chat', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null;
 let _hbData=new Array(40).fill(0), _hbBucket=0;
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
 let _oracleState={busy:false,summary:null,analysis:'',error:''};
@@ -1116,6 +1317,61 @@ const TIME_FMT=new Intl.DateTimeFormat('en-US',{timeZone:MT_ZONE,hour:'numeric',
 /* ============================================================
    UTILS
    ============================================================ */
+function setAuthView(user){
+  _currentUser=user||null;
+  const loggedIn=!!_currentUser;
+  document.getElementById('login-screen').classList.toggle('hidden',loggedIn);
+  document.getElementById('app-shell').classList.toggle('hidden',!loggedIn);
+  if(loggedIn){
+    document.getElementById('user-name').textContent=_currentUser.username;
+    document.getElementById('user-role').textContent=_currentUser.role;
+    document.getElementById('orch-tab-setup').style.display=_currentUser.role==='admin'?'':'none';
+  }
+}
+async function checkAuth(){
+  try{
+    const d=await fetch('/auth/me').then(r=>r.json());
+    if(d.authenticated){setAuthView(d.user);return true;}
+  }catch{}
+  setAuthView(null);
+  return false;
+}
+async function login(){
+  const username=document.getElementById('login-username').value.trim();
+  const password=document.getElementById('login-password').value;
+  const err=document.getElementById('login-error');
+  err.textContent='';
+  try{
+    const r=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||'Login failed');
+    setAuthView(d.user);
+    await startApp();
+  }catch(e){err.textContent=e.message||'Login failed';}
+}
+async function logout(){
+  await fetch('/auth/logout',{method:'POST'}).catch(()=>{});
+  location.reload();
+}
+async function startApp(){
+  renderOracle();
+  setViewMode(storageGet(VIEW_MODE_KEY)||'default',false);
+  setWindowHours(storageGet('orc.window.hours')||24,false);
+  await loadAll();
+  if(!_loadAllTimer)_loadAllTimer=setInterval(loadAll,30000);
+  if(!_ravenConnected){_ravenConnected=true;connectRaven();}
+}
+function showOrchTab(id){
+  if(id==='setup'&&_currentUser?.role!=='admin')id='chat';
+  _orchTab=id||'chat';
+  document.querySelectorAll('.orch-tab').forEach(t=>t.classList.remove('on'));
+  document.querySelectorAll('.orch-view').forEach(v=>v.classList.remove('on'));
+  const tab=document.getElementById('orch-tab-'+_orchTab);
+  const view=document.getElementById('orch-view-'+_orchTab);
+  if(tab)tab.classList.add('on');
+  if(view)view.classList.add('on');
+  if(_orchTab==='setup')loadUsers();
+}
 function showTab(id){
   if(!tabAllowed(id))id=firstTabForMode();
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
@@ -1130,7 +1386,7 @@ function showTab(id){
   if(id==='network')loadNetwork();
   if(id==='netview')loadNetView();
   if(id==='events')loadEvts();
-  if(id==='orchestration')loadOrchestration();
+  if(id==='orchestration'){showOrchTab(_orchTab||'chat');loadOrchestration();}
 }
 function tabsForViewMode(mode=_viewMode){
   return mode==='corporate'?['overview','netview','events','conn','orchestration']:['map','network','events','conn','orchestration'];
@@ -2238,6 +2494,7 @@ function optionHtml(items,selected=''){
 async function postJson(url,body,method='POST'){
   const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json().catch(()=>({}));
+  if(r.status===401){setAuthView(null);throw new Error('Login required');}
   if(!r.ok)throw new Error(d.detail||d.message||'Request failed');
   return d;
 }
@@ -2263,6 +2520,7 @@ function renderAgents(){
   const el=document.getElementById('orch-agents');
   if(!el)return;
   if(!_orch.agents.length){el.innerHTML='<div class="empty">No agents registered.</div>';return;}
+  const canAdmin=_currentUser?.role==='admin';
   el.innerHTML=_orch.agents.map(a=>`
     <div class="agent-card" data-agent-id="${esc(a.id)}">
       <img class="agent-avatar" src="${esc(a.icon||'/assets/characters/orc.png')}" alt="">
@@ -2270,12 +2528,12 @@ function renderAgents(){
         <div class="agent-name" title="${esc(a.name)}">${esc(a.name)}</div>
         <div class="agent-role" title="${esc(a.role)}">${esc(a.role)}</div>
         <div class="agent-controls">
-          <select class="trust-select" onchange="setAgentTrustFromEl(this)">
+          <select class="trust-select" onchange="setAgentTrustFromEl(this)" ${canAdmin?'':'disabled'}>
             <option value="recommend_only"${a.trust_mode==='recommend_only'?' selected':''}>recommend only</option>
             <option value="approval_required"${a.trust_mode==='approval_required'?' selected':''}>approval required</option>
             <option value="autonomous"${a.trust_mode==='autonomous'?' selected':''}>autonomous</option>
           </select>
-          <label class="agent-enabled"><input type="checkbox" ${a.enabled?'checked':''} onchange="setAgentTrustFromEl(this)"> enabled</label>
+          <label class="agent-enabled"><input type="checkbox" ${a.enabled?'checked':''} onchange="setAgentTrustFromEl(this)" ${canAdmin?'':'disabled'}> enabled</label>
         </div>
       </div>
     </div>`).join('');
@@ -2348,17 +2606,47 @@ function renderLearnings(){
       <div class="learning-copy">${esc(l.summary)}</div>
     </div>`).join('');
 }
+function renderUsers(){
+  const el=document.getElementById('setup-users');
+  if(!el)return;
+  if(_currentUser?.role!=='admin'){el.innerHTML='<div class="empty">Admin access required.</div>';return;}
+  if(!_users.length){el.innerHTML='<div class="empty">No users found.</div>';return;}
+  el.innerHTML=_users.map(u=>`
+    <div class="user-row">
+      <div style="min-width:0">
+        <div class="user-name">${esc(u.username)}</div>
+        <div class="user-role">${esc(u.role)}</div>
+      </div>
+      <span class="status-chip ${u.enabled?'approved':'rejected'}">${u.enabled?'active':'disabled'}</span>
+      <span class="muted small">${esc(fmtShort(u.created_at))}</span>
+    </div>`).join('');
+}
+async function loadUsers(){
+  if(_currentUser?.role!=='admin')return;
+  try{
+    const d=await fetch('/setup/users').then(r=>r.json());
+    _users=d.items||[];
+    renderUsers();
+  }catch(e){
+    const el=document.getElementById('setup-users');
+    if(el)el.innerHTML='<div class="empty">Could not load users.</div>';
+  }
+}
 function renderOrchestration(){
   document.getElementById('orch-agent-count').textContent=_orch.agents.length;
   document.getElementById('orch-agent-path').textContent=_orch.paths?.agents||'agents';
   document.getElementById('orch-skill-path').textContent=_orch.paths?.skills||'skills';
   document.getElementById('orch-knowledge-path').textContent=_orch.paths?.knowledge||'knowledge';
+  const setupTab=document.getElementById('orch-tab-setup');
+  if(setupTab)setupTab.style.display=_currentUser?.role==='admin'?'':'none';
+  if(_orchTab==='setup'&&_currentUser?.role!=='admin')showOrchTab('chat');
   fillOrchSelects();
   renderAgents();
   renderSkills();
   renderChat();
   renderApprovals();
   renderLearnings();
+  if(_orchTab==='setup')loadUsers();
 }
 async function setAgentTrustFromEl(el){
   const card=el.closest('.agent-card');
@@ -2423,6 +2711,18 @@ async function createLearning(){
     ['learning-title','learning-ref','learning-summary'].forEach(id=>document.getElementById(id).value='');
     await loadOrchestration();
   }catch(e){alert('Learning entry failed: '+e.message);}
+}
+async function createUser(){
+  const body={username:orchVal('setup-username'),password:orchVal('setup-password'),role:orchVal('setup-role')||'user'};
+  const status=document.getElementById('setup-status');
+  if(!body.username||!body.password){status.textContent='Username and password are required.';return;}
+  try{
+    await postJson('/setup/users',body);
+    document.getElementById('setup-username').value='';
+    document.getElementById('setup-password').value='';
+    status.textContent='User created.';
+    await loadUsers();
+  }catch(e){status.textContent=e.message||'Create user failed.';}
 }
 
 /* ============================================================
@@ -2741,6 +3041,10 @@ function setupAsideWidth(){
 }
 
 function setupInputs(){
+  ['login-username','login-password'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  });
   const fLogo=document.getElementById('f-logo');
   if(fLogo)fLogo.addEventListener('change',async e=>{
     _connLogoDraft=await readImageFile(e.target.files?.[0]);
@@ -2784,12 +3088,7 @@ async function loadAll(){
 window.addEventListener('resize',()=>{resizeCanvas();drawHb();});
 setupInputs();
 resizeCanvas();drawHb();
-renderOracle();
-setViewMode(storageGet(VIEW_MODE_KEY)||'default',false);
-setWindowHours(storageGet('orc.window.hours')||24,false);
-loadAll();
-setInterval(loadAll,30000);
-connectRaven();
+checkAuth().then(ok=>{if(ok)startApp();});
 </script>
 </body>
 </html>"""
@@ -2802,6 +3101,7 @@ connectRaven();
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    _ensure_default_admin()
     yield
 
 
@@ -2812,6 +3112,21 @@ if not STATIC_DIR.exists():
 app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
 
 
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+    public = (
+        path == "/"
+        or path == "/health"
+        or path.startswith("/assets/")
+        or path.startswith("/auth/")
+        or path == "/favicon.ico"
+    )
+    if not public and not _current_user(request):
+        return JSONResponse({"detail": "Login required"}, status_code=401)
+    return await call_next(request)
+
+
 # ---------------------------------------------------------------------------
 # Routes — UI
 # ---------------------------------------------------------------------------
@@ -2819,6 +3134,87 @@ app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def dashboard() -> str:
     return _HTML
+
+
+# ---------------------------------------------------------------------------
+# Routes - Auth + Setup
+# ---------------------------------------------------------------------------
+
+@app.get("/auth/me")
+def auth_me(request: Request) -> dict:
+    user = _current_user(request)
+    return {"authenticated": bool(user), "user": user}
+
+
+@app.post("/auth/login")
+def auth_login(body: LoginIn, response: Response) -> dict:
+    username = body.username.strip()
+    with SessionLocal() as s:
+        user = s.query(UserAccount).filter_by(username=username).first()
+        if not user or not user.enabled or not _verify_password(body.password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+        token = secrets.token_urlsafe(32)
+        s.add(
+            UserSession(
+                token_hash=_hash_token(token),
+                user_id=user.id,
+                expires_at=datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS),
+            )
+        )
+        s.commit()
+        response.set_cookie(
+            COOKIE_NAME,
+            token,
+            httponly=True,
+            samesite="lax",
+            max_age=SESSION_DAYS * 24 * 60 * 60,
+        )
+        return {"ok": True, "user": _user_dict(user)}
+
+
+@app.post("/auth/logout")
+def auth_logout(request: Request, response: Response) -> dict:
+    token = request.cookies.get(COOKIE_NAME, "")
+    if token:
+        with SessionLocal() as s:
+            sess = s.query(UserSession).filter_by(token_hash=_hash_token(token)).first()
+            if sess:
+                s.delete(sess)
+                s.commit()
+    response.delete_cookie(COOKIE_NAME)
+    return {"ok": True}
+
+
+@app.get("/setup/users")
+def setup_users(request: Request) -> dict:
+    _require_admin(request)
+    with SessionLocal() as s:
+        users = [_user_dict(row) for row in s.query(UserAccount).order_by(UserAccount.username).all()]
+    return {"items": users}
+
+
+@app.post("/setup/users", status_code=201)
+def setup_create_user(body: UserCreateIn, request: Request) -> dict:
+    _require_admin(request)
+    username = body.username.strip()
+    if not username or len(username) < 3:
+        raise HTTPException(status_code=400, detail="Username must be at least 3 characters")
+    if len(body.password) < 4:
+        raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
+    role = _normalize_role(body.role)
+    with SessionLocal() as s:
+        if s.query(UserAccount).filter_by(username=username).first():
+            raise HTTPException(status_code=409, detail="Username already exists")
+        row = UserAccount(
+            username=username,
+            password_hash=_hash_password(body.password),
+            role=role,
+            enabled=True,
+        )
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        return _user_dict(row)
 
 
 # ---------------------------------------------------------------------------
@@ -2996,7 +3392,8 @@ def create_orchestration_agent(body: AgentCreateIn) -> dict:
 
 
 @app.put("/orchestration/agents/{agent_id}/trust")
-def update_agent_trust(agent_id: str, body: AgentTrustIn) -> dict:
+def update_agent_trust(agent_id: str, body: AgentTrustIn, request: Request) -> dict:
+    _require_admin(request)
     trust_mode = body.trust_mode if body.trust_mode in TRUST_MODES else "recommend_only"
     with SessionLocal() as s:
         _ensure_orchestration_agents(s)

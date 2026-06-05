@@ -138,6 +138,31 @@ class LearningEntry(Base):
     )
 
 
+class UserAccount(Base):
+    __tablename__ = "user_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(128), unique=True)
+    password_hash: Mapped[str] = mapped_column(Text)
+    role: Mapped[str] = mapped_column(String(32), default="user")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    token_hash: Mapped[str] = mapped_column(String(128), unique=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user_accounts.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 def init_db(retries: int = 10, delay: float = 3.0) -> None:
     import logging
     import time
@@ -166,6 +191,7 @@ def _migrate() -> None:
         "ALTER TABLE connections ADD COLUMN IF NOT EXISTS logo_data TEXT",
         "ALTER TABLE agent_runtime_states ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS execution_allowed BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE",
     ]
     with engine.begin() as conn:
         for sql in stmts:
