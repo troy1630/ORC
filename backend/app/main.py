@@ -85,7 +85,7 @@ class AgentTrustIn(BaseModel):
 class AgentMessageIn(BaseModel):
     source_agent: str
     target_agent: str = ""
-    message_type: str = "status"
+    message_type: str = "instruction"
     summary: str
     thread_id: str = "operations"
     payload: dict | None = None
@@ -924,14 +924,16 @@ canvas{display:block;width:100%;height:58px}
 .chat-list{flex:1;overflow:auto;display:flex;flex-direction:column;gap:9px;padding:4px 2px 10px}
 .chat-row{display:flex;align-items:flex-end;gap:8px;max-width:86%}
 .chat-row.right{margin-left:auto;flex-direction:row-reverse}
+.chat-row.system{opacity:.55;max-width:100%}
 .chat-avatar{width:34px;height:34px;border-radius:50%;object-fit:cover;background:#05080d;border:1px solid rgba(230,237,243,.14);flex-shrink:0}
 .chat-bubble{border:1px solid #253041;border-radius:16px 16px 16px 5px;background:#111b27;padding:8px 10px;min-width:0}
-.chat-row.right .chat-bubble{border-radius:16px 16px 5px 16px;background:#1c2330;border-color:#384252}
+.chat-row.right .chat-bubble{border-radius:16px 16px 5px 16px;background:#182236;border-color:rgba(163,113,247,.45)}
+.chat-row.system .chat-bubble{background:#0d1117;border-color:#21262d}
 .chat-meta{font-size:.62rem;color:var(--mut);margin-bottom:3px;display:flex;gap:5px;flex-wrap:wrap}
 .chat-text{font-size:.78rem;line-height:1.35;overflow-wrap:anywhere}
-.chat-compose{border-top:1px solid #21262d;padding-top:9px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;align-items:end}
-.chat-compose .orch-input{grid-column:1 / span 2}
-.chat-compose .btnp{width:100%}
+.chat-compose{border-top:1px solid #21262d;padding-top:9px;display:flex;gap:7px;align-items:center}
+.chat-compose .orch-input{flex:1}
+.chat-compose .btnp{flex-shrink:0;white-space:nowrap}
 .approval-row,.learning-row,.skill-row{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:9px;min-width:0}
 .approval-head,.learning-head,.skill-head{display:flex;align-items:center;justify-content:space-between;gap:9px;margin-bottom:5px}
 .approval-title,.learning-title,.skill-title{font-size:.8rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -992,7 +994,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .orch-page-grid{grid-template-columns:1fr}
   .orch-form{grid-template-columns:1fr}
   .orch-chat{height:520px}
-  .chat-compose{grid-template-columns:1fr}
+  .chat-compose{flex-direction:column}
 }
 </style>
 </head>
@@ -1140,22 +1142,13 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
         <div class="orch-page-grid single">
           <section class="orch-panel orch-chat">
             <div class="orch-panel-head">
-              <div class="orch-panel-title">Agent Chat</div>
+              <div class="orch-panel-title">Command the Orchestrator ORC</div>
               <div class="orch-count" id="orch-message-count"></div>
             </div>
             <div class="chat-list" id="orch-chat-list"><div class="empty">Loading messages...</div></div>
             <div class="chat-compose">
-              <select class="orch-select" id="msg-source"></select>
-              <select class="orch-select" id="msg-target"></select>
-              <select class="orch-select" id="msg-type">
-                <option value="observation">observation</option>
-                <option value="finding">finding</option>
-                <option value="recommendation">recommendation</option>
-                <option value="approval_request">approval_request</option>
-                <option value="lesson_learned">lesson_learned</option>
-              </select>
-              <input class="orch-input" id="msg-summary" placeholder="Message">
-              <button class="btnp" onclick="sendAgentMessage()">Send</button>
+              <input class="orch-input" id="msg-summary" placeholder="Tell ORC what you need..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAgentMessage();}">
+              <button class="btnp" onclick="sendAgentMessage()">Send to ORC</button>
             </div>
           </section>
         </div>
@@ -2692,13 +2685,10 @@ async function loadOrchestration(){
   }
 }
 function fillOrchSelects(){
-  const opts=optionHtml(_orch.agents);
-  ['msg-source','skill-agent','approval-agent','learning-agent'].forEach(id=>{
+  ['skill-agent','approval-agent','learning-agent'].forEach(id=>{
     const el=document.getElementById(id);
     if(el)el.innerHTML=optionHtml(_orch.agents,el.value);
   });
-  const target=document.getElementById('msg-target');
-  if(target)target.innerHTML='<option value="">all agents</option>'+optionHtml(_orch.agents,target.value);
 }
 function renderAgents(){
   const el=document.getElementById('orch-agents');
@@ -2743,14 +2733,19 @@ function renderChat(){
   if(!el)return;
   const msgs=[...(_orch.messages||[])].reverse();
   document.getElementById('orch-message-count').textContent=`${msgs.length} messages`;
-  if(!msgs.length){el.innerHTML='<div class="empty">No agent messages yet.</div>';return;}
+  if(!msgs.length){el.innerHTML='<div class="empty">No messages yet. Tell ORC what you need.</div>';return;}
   el.innerHTML=msgs.map(m=>{
     const src=orchAgent(m.source_agent),tgt=orchAgent(m.target_agent);
-    const right=['gate-keeper','executioner','orc-orchestrator'].includes(m.source_agent);
-    return `<div class="chat-row ${right?'right':''}">
-      <img class="chat-avatar ${_viewMode==='corporate'?'corp':''}" src="${esc(agentArt(src))}" alt="">
+    const isOperator=m.source_agent==='operator';
+    const isSystem=!isOperator&&['sage','raven'].includes(m.source_agent)&&!m.target_agent;
+    const right=isOperator;
+    const cls=right?'right':isSystem?'system':'';
+    const senderLabel=isOperator?(_currentUser?.username||'You'):esc(src.name);
+    const avatarSrc=isOperator?'/assets/characters/orc.png':agentArt(src);
+    return `<div class="chat-row ${cls}">
+      <img class="chat-avatar ${_viewMode==='corporate'&&!isOperator?'corp':''}" src="${esc(avatarSrc)}" alt="">
       <div class="chat-bubble">
-        <div class="chat-meta"><span>${esc(src.name)}</span><span>${m.target_agent?'to '+esc(tgt.name):'broadcast'}</span><span>${esc(m.message_type)}</span><span>${esc(fmtShort(m.created_at))}</span></div>
+        <div class="chat-meta"><span>${senderLabel}</span>${m.target_agent&&!isOperator?`<span>→ ${esc(tgt.name)}</span>`:''}<span>${esc(m.message_type)}</span><span>${esc(fmtShort(m.created_at))}</span></div>
         <div class="chat-text">${esc(m.summary)}</div>
       </div>
     </div>`;
@@ -2936,8 +2931,9 @@ async function createSkill(){
   }catch(e){alert((_skillEditId?'Save':'Create')+' skill failed: '+e.message);}
 }
 async function sendAgentMessage(){
-  const body={source_agent:orchVal('msg-source'),target_agent:orchVal('msg-target'),message_type:orchVal('msg-type'),summary:orchVal('msg-summary')};
-  if(!body.source_agent||!body.summary){alert('Source and message are required.');return;}
+  const summary=orchVal('msg-summary');
+  if(!summary.trim()){document.getElementById('msg-summary').focus();return;}
+  const body={source_agent:'operator',target_agent:'orc-orchestrator',message_type:'instruction',summary};
   try{
     await postJson('/orchestration/messages',body);
     document.getElementById('msg-summary').value='';
