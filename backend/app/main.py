@@ -966,9 +966,10 @@ canvas{display:block;width:100%;height:58px}
 .chat-bubble{border:1px solid #253041;border-radius:16px 16px 16px 5px;background:#111b27;padding:8px 10px;min-width:0}
 .chat-row.right .chat-bubble{border-radius:16px 16px 5px 16px;background:#182236;border-color:rgba(163,113,247,.45)}
 .chat-row.system .chat-bubble{background:#0d1117;border-color:#21262d}
+.chat-bubble.waiting-approval{background:linear-gradient(180deg,rgba(74,53,14,.9),rgba(49,35,10,.92));border-color:rgba(210,153,34,.65);box-shadow:0 0 0 1px rgba(210,153,34,.16) inset}
 .chat-meta{font-size:.69rem;color:var(--mut);margin-bottom:4px;display:flex;gap:5px;flex-wrap:wrap}
 .chat-text{font-size:.85rem;line-height:1.4;overflow-wrap:anywhere}
-.chat-approval-pill{display:inline-flex;align-items:center;gap:8px;margin:0 0 7px;padding:7px 10px;border-radius:999px;border:1px solid rgba(210,153,34,.42);background:rgba(210,153,34,.14);color:#f3d37a;font-size:.79rem;font-weight:800}
+.chat-approval-pill{display:inline-flex;align-items:center;gap:8px;margin:0 0 7px;padding:7px 10px;border-radius:999px;border:1px solid rgba(245,194,66,.58);background:rgba(245,194,66,.24);color:#fff1b3;font-size:.79rem;font-weight:800}
 .chat-approval-pill a,.chat-approval-pill button{font-size:.76rem}
 .chat-approval-actions{display:inline-flex;gap:6px;align-items:center}
 .chat-compose{border-top:1px solid #21262d;padding-top:9px;display:flex;gap:7px;align-items:center}
@@ -3055,11 +3056,12 @@ function renderChat(){
     const senderLabel=isOperator?(_currentUser?.username||'You'):esc(src.name);
     const avatarSrc=isOperator?'/assets/characters/orc.png':agentArt(src);
     const chat=splitAgentChatText(m);
+    const approvalRow=pendingApprovalForMessage(m);
     const bodyHtml=chatBubbleSummaryDetail(m.id,chat.short,chat.detail);
     const approvalHtml=approvalBubbleHtml(m);
     return `<div class="chat-row ${cls}">
       <img class="chat-avatar ${_viewMode==='corporate'&&!isOperator?'corp':''}" src="${esc(avatarSrc)}" alt="">
-      <div class="chat-bubble">
+      <div class="chat-bubble ${approvalRow?'waiting-approval':''}">
         <div class="chat-meta"><span>${senderLabel}</span>${m.target_agent&&!isOperator?`<span>→ ${esc(tgt.name)}</span>`:''}<span>${esc(m.message_type)}</span><span>${esc(fmtShort(m.created_at))}</span></div>
         ${approvalHtml}
         ${bodyHtml}
@@ -4842,7 +4844,7 @@ def _agent_chat_internal(agent_id: str, instruction: str, session, extra_context
     return reply
 
 
-def _auto_create_approval(instruction: str, gate_keeper_reply: str, session) -> None:
+def _auto_create_approval(instruction: str, gate_keeper_reply: str, session) -> ApprovalRequest:
     """Create an ApprovalRequest when Gate Keeper is involved in a routing decision."""
     req = ApprovalRequest(
         title=instruction[:256],
@@ -4858,11 +4860,13 @@ def _auto_create_approval(instruction: str, gate_keeper_reply: str, session) -> 
     )
     session.add(req)
     session.commit()
+    session.refresh(req)
     try:
         from . import raven as _raven
         _raven.publish({"type": "approval_request", "title": req.title, "status": "pending"})
     except Exception:
         pass
+    return req
 
 
 def _run_orc_loop(user_message: str, session) -> str:
@@ -4908,11 +4912,20 @@ def _run_orc_loop(user_message: str, session) -> str:
 
             _record_agent_message(session, "orc-orchestrator", target_id, "routing", instruction)
             agent_reply = _agent_chat_internal(target_id, instruction, session)
-            _record_agent_message(session, target_id, "orc-orchestrator", "response", agent_reply)
+            approval_row = None
 
             # Gate Keeper: auto-create an ApprovalRequest so it shows in Approvals tab
             if target_id == "gate-keeper":
-                _auto_create_approval(instruction, agent_reply, session)
+                approval_row = _auto_create_approval(instruction, agent_reply, session)
+
+            _record_agent_message(
+                session,
+                target_id,
+                "orc-orchestrator",
+                "response",
+                agent_reply,
+                {"approval_id": approval_row.id} if approval_row else None,
+            )
 
             target_agent = session.query(AgentRuntimeState).filter_by(agent_id=target_id).first()
             agent_name = target_agent.name if target_agent else target_id
