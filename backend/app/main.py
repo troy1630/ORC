@@ -4024,8 +4024,18 @@ def agent_chat(agent_id: str, body: AgentChatIn, request: Request) -> dict:
         if not agent.enabled:
             raise HTTPException(409, f"Agent '{agent.name}' is disabled")
 
-        # Store operator's message
+        # Store operator's message for audit before any early clarification exit.
         _record_agent_message(s, "operator", agent_id, "instruction", user_message)
+
+        if agent_id == "orc-orchestrator":
+            clarification = _clarify_ambiguous_target(user_message, s)
+            if clarification:
+                _record_agent_message(s, "orc-orchestrator", "operator", "response", clarification)
+                return {
+                    "reply": clarification,
+                    "agent_id": agent_id,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
 
         if agent_id == "orc-orchestrator":
             # Full multi-agent routing loop
@@ -4415,14 +4425,16 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
     "gate-keeper": (
         "You are Gate Keeper, the approval and policy authority of the ORC platform. "
         "You review risky proposed actions, enforce policy, and decide whether execution should proceed. "
-        "You require human approval for git pulls, restarts, redeploys, and credential changes. "
+        "Speak in plain English. Start with a short summary of what is being requested, then state the decision and any conditions. "
+        "Keep the rest compressed. You require human approval for git pulls, restarts, redeploys, and credential changes. "
         "You record who requested what and why for every decision."
     ),
     "executioner": (
         "You are Executioner, the approved-action executor of the ORC platform. "
         "You only perform infrastructure actions (git pulls, container refreshes, restarts) "
         "when an approved request exists. You never act without a matching approval. "
-        "You record every action taken."
+        "When a target name is ambiguous, ask for clarification before acting. "
+        "When you finish, respond in plain English with a short summary of exactly what changed."
     ),
     "sage": (
         "You are Sage, the learning and skill authoring agent of the ORC platform. "
@@ -4433,7 +4445,8 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
     "orc-orchestrator": (
         "You are ORC Orchestrator, the master coordinator and AI router of the ORC platform. "
         "Your job is to receive operator requests, reason about which agents and skills are needed, "
-        "delegate sub-tasks to the appropriate agents, and synthesize their responses into a clear answer.\n\n"
+        "delegate sub-tasks to the appropriate agents, and synthesize their responses into a clear answer. "
+        "Be less literal and prefer practical interpretation over exact wording when the intent is obvious.\n\n"
         "The agents available to you are:\n"
         "- **raven** (observer): Monitors and reports on events and container activity. Use ONLY for read-only observation queries — Raven CANNOT change its own polling frequency or any connection settings.\n"
         "- **oracle** (investigator): Investigates anomalies, explains root causes, recommends fixes. Use for analysis and diagnosis.\n"
@@ -4445,6 +4458,10 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
         "- Restarting, redeploying, or reconfiguring containers\n"
         "- Git pulls, config changes, credential rotations\n"
         "- Any action that modifies a database record or system setting\n\n"
+        "AMBIGUITY RULES:\n"
+        "- If a request mentions a container, service, or connection name that matches multiple things, pause and ask which one the operator means.\n"
+        "- If the operator does not specify which UAR target to use and more than one matches, say you can watch all matching UAR targets unless they choose one.\n"
+        "- Do not guess silently when the target is ambiguous.\n\n"
         "ROUTING FORMAT: When you need to delegate, emit one or more route blocks exactly like this:\n"
         "```route\nagent_id: gate-keeper\ninstruction: Approve changing the UAR connection poll interval to 30 seconds for 10 minutes, then revert.\n```\n\n"
         "RULES:\n"
@@ -4462,7 +4479,8 @@ _AGENT_SYSTEM_BASE = (
     "\n\nYou are operating inside ORC, a policy-driven agent orchestration platform for "
     "infrastructure monitoring and safe automated remediation. "
     "The operator is a human administrator who communicates with you through the ORC chat interface. "
-    "Be concise, accurate, and stay in character. Use Markdown formatting where helpful."
+    "Be concise, accurate, and stay in character. Put the plain-English summary first, keep detail compressed, "
+    "and use Markdown only when it clearly improves readability."
 )
 
 
@@ -4546,6 +4564,102 @@ def _parse_route_blocks(text: str) -> list[dict]:
         if entry.get("agent_id") and entry.get("instruction"):
             results.append({"agent_id": entry["agent_id"], "instruction": entry["instruction"]})
     return results
+
+
+def _find_connection_candidates(session, term: str) -> list[dict]:
+    needle = term.strip().lower()
+    if not needle:
+        return []
+    matches: list[dict] = []
+    for conn in session.query(Connection).filter_by(enabled=True).all():
+        fields = [conn.name or "", conn.server_name or ""]
+        if any(needle in value.lower() for value in fields):
+            matches.append({
+                "id": conn.id,
+                "name": conn.name,
+                "server_name": conn.server_name or "",
+                "poll_interval_seconds": conn.poll_interval_seconds,
+                "last_status": conn.last_status or "",
+            })
+    return matches
+
+
+def _extract_container_target_phrase(user_message: str) -> str:
+    text = user_message.strip()
+    patterns = [
+        r"\b(?:monitor|watch|poll|observe|inspect|track|review|diagnose|restart|refresh|revert|change|update|restart)\s+(?:the\s+)?(.+?)(?:\s+(?:for|every|each|in|on|with|using|via|to|then|and|after)\b|[?.!,]|$)",
+        r"\b(?:container|service|app|connection)\s+(?:named|called)?\s+(.+?)(?:\s+(?:for|every|each|in|on|with|using|via|to|then|and|after)\b|[?.!,]|$)",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, text, flags=re.I)
+        if m:
+            candidate = m.group(1).strip(" \"'`.,;:()[]{}")
+            if candidate:
+                return candidate
+    return ""
+
+
+def _find_container_candidates(session, term: str) -> list[dict]:
+    needle = term.strip().lower()
+    if not needle:
+        return []
+    matches: list[dict] = []
+    connections = session.query(Connection).filter_by(enabled=True).all()
+    for conn in connections:
+        client = PortainerClient(conn.base_url, conn.api_token)
+        try:
+            endpoints = client.get_endpoints()
+        except Exception:
+            continue
+        for ep in endpoints:
+            endpoint_id = ep.get("Id")
+            if endpoint_id is None:
+                continue
+            try:
+                containers = client.get_containers(endpoint_id)
+            except Exception:
+                continue
+            for c in containers:
+                cid = c.get("Id", "")
+                cname = (c.get("Names") or [f"/{cid[:12]}"])[0].lstrip("/")
+                labels = c.get("Labels") or {}
+                stack_name = labels.get("com.docker.compose.project") or _infer_stack(cname)
+                if any(needle in value.lower() for value in [cname, stack_name, conn.name or "", conn.server_name or ""]):
+                    matches.append({
+                        "connection_id": conn.id,
+                        "server": conn.name,
+                        "server_name": conn.server_name or conn.name,
+                        "endpoint_id": endpoint_id,
+                        "container_id": cid,
+                        "container_name": cname,
+                        "stack_name": stack_name,
+                    })
+    return matches
+
+
+def _clarify_ambiguous_target(user_message: str, session) -> str | None:
+    phrase = _extract_container_target_phrase(user_message)
+    if not phrase:
+        return None
+
+    candidates = _find_container_candidates(session, phrase)
+    if len(candidates) <= 1:
+        return None
+
+    labels = []
+    for c in candidates[:5]:
+        labels.append(
+            f"{c['container_name']} on {c['server_name']} (connection {c['connection_id']})"
+        )
+
+    if len(candidates) > 5:
+        labels.append(f"and {len(candidates) - 5} more")
+
+    return (
+        f"I found more than one match for '{phrase}', so I need one more detail before I route this. "
+        f"The matches are: {', '.join(labels)}. "
+        "Tell me which one to use, or say 'all of them' and I’ll treat it as a broader watch."
+    )
 
 
 def _agent_chat_internal(agent_id: str, instruction: str, session, extra_context: str = "") -> str:
@@ -4796,7 +4910,7 @@ def _run_executioner(approval_id: int, instruction: str, rationale: str, session
             "content": (
                 "You are ORC Executioner. Your job is to carry out approved infrastructure actions "
                 "using the provided tools. Be precise: use list_connections first to find the correct "
-                "connection ID by name before taking any action. "
+                "connection, and if the name is ambiguous use the most specific match or ask for clarification before acting. "
                 "After completing all actions, respond with a concise plain-text summary of exactly what was done."
             ),
         },

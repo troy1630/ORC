@@ -103,7 +103,9 @@ def get_connection_status(connection_id: int) -> dict:
     description=(
         "Change the polling frequency for a connection. Optionally auto-reverts to the original "
         "interval after a set number of minutes. Use this to increase or decrease how often Raven "
-        "polls a connection (e.g. set to 30 seconds for intensive monitoring)."
+        "polls a connection (e.g. set to 30 seconds for intensive monitoring). "
+        "Prefer a specific connection_id when available, but you may also provide a connection_name "
+        "to resolve the best matching enabled connection by friendly name or server name."
     ),
     parameters={
         "type": "object",
@@ -111,6 +113,10 @@ def get_connection_status(connection_id: int) -> dict:
             "connection_id": {
                 "type": "integer",
                 "description": "The connection ID obtained from list_connections",
+            },
+            "connection_name": {
+                "type": "string",
+                "description": "Optional fuzzy search text that matches the connection name or server name",
             },
             "new_interval_seconds": {
                 "type": "integer",
@@ -124,18 +130,47 @@ def get_connection_status(connection_id: int) -> dict:
                 ),
             },
         },
-        "required": ["connection_id", "new_interval_seconds"],
+        "required": ["new_interval_seconds"],
     },
 )
 def modify_connection_poll_interval(
-    connection_id: int,
-    new_interval_seconds: int,
+    connection_id: int = 0,
+    connection_name: str = "",
+    new_interval_seconds: int = 0,
     revert_after_minutes: int = 0,
 ) -> dict:
     with SessionLocal() as s:
-        conn = s.get(Connection, connection_id)
+        conn = None
+        matches: list[dict] = []
+        if new_interval_seconds <= 0:
+            return {"error": "new_interval_seconds must be greater than 0"}
+        if connection_id:
+            conn = s.get(Connection, connection_id)
+        elif connection_name.strip():
+            term = connection_name.strip().lower()
+            candidates = [
+                c for c in s.query(Connection).filter_by(enabled=True).all()
+                if term in (c.name or "").lower() or term in (c.server_name or "").lower()
+            ]
+            matches = [
+                {"id": c.id, "name": c.name, "server_name": c.server_name or "", "poll_interval_seconds": c.poll_interval_seconds}
+                for c in candidates
+            ]
+            if len(candidates) == 1:
+                conn = candidates[0]
+            elif len(candidates) > 1:
+                return {
+                    "needs_clarification": True,
+                    "error": f"Ambiguous connection match for '{connection_name}'",
+                    "matches": matches,
+                }
+            else:
+                return {
+                    "error": f"No enabled connection matched '{connection_name}'",
+                    "matches": [],
+                }
         if not conn:
-            return {"error": f"Connection {connection_id} not found"}
+            return {"error": "Provide either connection_id or connection_name"}
         old_interval = conn.poll_interval_seconds
         if revert_after_minutes and revert_after_minutes > 0:
             conn.revert_poll_interval = old_interval
