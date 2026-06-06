@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .db import Connection, SessionLocal
+from .portainer import PortainerClient
 
 _REGISTRY: dict[str, dict] = {}  # name → {fn, schema}
 
@@ -47,6 +48,22 @@ def call_tool(name: str, arguments: dict) -> Any:
         return {"error": str(exc)}
 
 
+def _container_match_text(container: dict, connection: Connection) -> str:
+    cid = container.get("Id", "")
+    cname = (container.get("Names") or [f"/{cid[:12]}"])[0].lstrip("/")
+    labels = container.get("Labels") or {}
+    stack_name = labels.get("com.docker.compose.project") or cname
+    service_name = labels.get("com.docker.compose.service") or cname
+    fields = [
+        cname,
+        stack_name,
+        service_name,
+        connection.name or "",
+        connection.server_name or "",
+    ]
+    return " | ".join(fields).lower()
+
+
 # ---------------------------------------------------------------------------
 # Registered Tools
 # ---------------------------------------------------------------------------
@@ -68,6 +85,65 @@ def list_connections() -> list[dict]:
             }
             for r in rows
         ]
+
+
+@orc_tool(
+    description=(
+        "Search enabled ORC connections and Portainer containers for a name fragment. "
+        "Use this before changing a poll interval when the operator refers to a container or workload by name. "
+        "If the result shows multiple matches, ask the operator which one they mean."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "term": {
+                "type": "string",
+                "description": "Name fragment to search for across connection names, server names, and container names",
+            }
+        },
+        "required": ["term"],
+    },
+)
+def search_containers(term: str) -> dict:
+    needle = term.strip().lower()
+    if not needle:
+        return {"error": "term is required"}
+
+    matches: list[dict] = []
+    with SessionLocal() as s:
+        connections = s.query(Connection).filter_by(enabled=True).all()
+        for conn in connections:
+            client = PortainerClient(conn.base_url, conn.api_token)
+            try:
+                endpoints = client.get_endpoints()
+            except Exception:
+                continue
+            for ep in endpoints:
+                endpoint_id = ep.get("Id")
+                if endpoint_id is None:
+                    continue
+                try:
+                    containers = client.get_containers(endpoint_id)
+                except Exception:
+                    continue
+                for container in containers:
+                    match_text = _container_match_text(container, conn)
+                    if needle not in match_text:
+                        continue
+                    cid = container.get("Id", "")
+                    cname = (container.get("Names") or [f"/{cid[:12]}"])[0].lstrip("/")
+                    labels = container.get("Labels") or {}
+                    matches.append({
+                        "connection_id": conn.id,
+                        "connection_name": conn.name,
+                        "server_name": conn.server_name or conn.name,
+                        "endpoint_id": endpoint_id,
+                        "container_id": cid,
+                        "container_name": cname,
+                        "stack_name": labels.get("com.docker.compose.project") or "",
+                        "service_name": labels.get("com.docker.compose.service") or "",
+                    })
+    return {"term": term, "count": len(matches), "matches": matches}
 
 
 @orc_tool(
