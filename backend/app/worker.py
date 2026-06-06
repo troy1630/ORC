@@ -196,6 +196,27 @@ def _poll_next() -> None:
         })
 
 
+def _check_poll_interval_reverts() -> None:
+    """Restore original poll intervals for connections whose temporary override has expired."""
+    global _queue
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as s:
+        conns = (
+            s.query(Connection)
+            .filter(Connection.revert_at.isnot(None), Connection.revert_at <= now)
+            .all()
+        )
+        if not conns:
+            return
+        for conn in conns:
+            conn.poll_interval_seconds = conn.revert_poll_interval
+            conn.revert_poll_interval = None
+            conn.revert_at = None
+            log.info("Reverted poll interval for connection %s (%s)", conn.id, conn.name)
+        s.commit()
+    _rebuild_queue()
+
+
 def _update_conn(conn_id: int, status: str, error: str | None, ts: datetime) -> None:
     with SessionLocal() as s:
         c = s.get(Connection, conn_id)
@@ -211,6 +232,7 @@ def main() -> None:
     log.info("ORC worker started")
     while True:
         try:
+            _check_poll_interval_reverts()
             if not _queue:
                 _rebuild_queue()
             if _queue:

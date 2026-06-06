@@ -2948,6 +2948,23 @@ function renderSkills(){
       <div class="skill-meta"><span>${esc(s.role_or_category||'unknown')}</span><span>${esc(s.version||'0.0.0')}</span><span>${esc(s.path||'')}</span></div>
     </div>`).join('');
 }
+const CHAT_COLLAPSE_LEN=280;
+function chatBubbleText(id,text){
+  if(!text)return '<div class="chat-text"><em class="muted">—</em></div>';
+  if(text.length<=CHAT_COLLAPSE_LEN)return `<div class="chat-text">${esc(text)}</div>`;
+  return `<div class="chat-text" id="ct-${id}"><span class="chat-short">${esc(text.slice(0,CHAT_COLLAPSE_LEN))}<span class="muted">…</span></span><span class="chat-full" style="display:none">${esc(text)}</span><br><button class="chat-expand-btn btns" style="margin-top:4px;font-size:0.75rem" onclick="toggleChatExpand(${id})">▸ Show more</button></div>`;
+}
+function toggleChatExpand(id){
+  const el=document.getElementById('ct-'+id);
+  if(!el)return;
+  const short=el.querySelector('.chat-short');
+  const full=el.querySelector('.chat-full');
+  const btn=el.querySelector('.chat-expand-btn');
+  const expanded=full.style.display!=='none';
+  if(short)short.style.display=expanded?'':'none';
+  if(full)full.style.display=expanded?'none':'';
+  if(btn)btn.textContent=expanded?'▸ Show more':'▴ Show less';
+}
 function renderChat(){
   const el=document.getElementById('orch-chat-list');
   if(!el)return;
@@ -2966,7 +2983,7 @@ function renderChat(){
       <img class="chat-avatar ${_viewMode==='corporate'&&!isOperator?'corp':''}" src="${esc(avatarSrc)}" alt="">
       <div class="chat-bubble">
         <div class="chat-meta"><span>${senderLabel}</span>${m.target_agent&&!isOperator?`<span>→ ${esc(tgt.name)}</span>`:''}<span>${esc(m.message_type)}</span><span>${esc(fmtShort(m.created_at))}</span></div>
-        <div class="chat-text">${esc(m.summary)}</div>
+        ${chatBubbleText(m.id,m.summary)}
       </div>
     </div>`;
   }).join('');
@@ -4128,6 +4145,18 @@ def decide_approval(approval_id: int, body: ApprovalDecisionIn) -> dict:
             summary,
             {"approval_id": row.id, "status": row.status, "reason": row.decision_reason},
         )
+        if row.execution_allowed:
+            try:
+                _run_executioner(row.id, row.title, row.rationale or "", s)
+            except Exception as _exc:
+                _record_agent_message(
+                    s,
+                    "executioner",
+                    "operator",
+                    "execution_error",
+                    f"Execution failed: {_exc}",
+                    {"approval_id": row.id},
+                )
         return _approval_dict(row)
 
 
@@ -4410,8 +4439,9 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
         "1. Route to sage FIRST if the operator references a skill you need to look up.\n"
         "2. Route to gate-keeper for ANY action that changes infrastructure state.\n"
         "3. If the request is a simple question you can answer from context, answer directly — no routing needed.\n"
-        "4. After agents respond, synthesize their answers into a clear final response for the operator.\n"
-        "5. Never fabricate agent responses — only summarize what the agents actually said."
+        "4. After agents respond, execute any remaining routes (e.g. route to raven after sage confirms the skill).\n"
+        "5. Final answers to the operator must be 2-4 sentences maximum. No bullet lists. No markdown headers. Plain concise language.\n"
+        "6. Never fabricate agent responses — only summarize what the agents actually said."
     ),
 }
 
@@ -4530,63 +4560,97 @@ def _agent_chat_internal(agent_id: str, instruction: str, session, extra_context
     return reply
 
 
+def _auto_create_approval(instruction: str, gate_keeper_reply: str, session) -> None:
+    """Create an ApprovalRequest when Gate Keeper is involved in a routing decision."""
+    req = ApprovalRequest(
+        title=instruction[:256],
+        requester_agent="orc-orchestrator",
+        approver_agent="gate-keeper",
+        action_type="agent_instruction",
+        target="operator_request",
+        rationale=(gate_keeper_reply or instruction)[:500],
+        risk_level="medium",
+        status="pending",
+        requested_by="operator",
+        requested_at=datetime.now(timezone.utc),
+    )
+    session.add(req)
+    session.commit()
+    try:
+        from . import raven as _raven
+        _raven.publish({"type": "approval_request", "title": req.title, "status": "pending"})
+    except Exception:
+        pass
+
+
 def _run_orc_loop(user_message: str, session) -> str:
-    """ORC Orchestrator multi-agent routing loop. Max 2 routing hops."""
+    """ORC Orchestrator iterative multi-agent routing loop. Up to 3 ORC turns."""
+    MAX_ROUNDS = 3
+    MAX_ROUTES_PER_ROUND = 3
+
     orc = session.query(AgentRuntimeState).filter_by(agent_id="orc-orchestrator").first()
     if not orc:
         return "*(ORC Orchestrator agent not found)*"
 
     orc_context = _build_orc_context(session, "orc-orchestrator")
 
-    # Hop 1: ORC decides whether to route or answer directly
-    hop1_messages = [
+    # Build the conversation that persists across rounds
+    conversation: list[dict] = [
         {"role": "system", "content": _agent_system_prompt(orc)},
         {"role": "user", "content": orc_context},
         {"role": "assistant", "content": "Understood. I have reviewed the platform context, all registered agents, and available skills."},
         {"role": "user", "content": user_message},
     ]
-    orc_response = _llm_call(hop1_messages, "orc-orchestrator", "orchestration", session)
 
-    routes = _parse_route_blocks(orc_response)
-    if not routes:
-        # ORC answered directly — no routing needed
-        return orc_response
+    last_reply = ""
+    for _round in range(MAX_ROUNDS):
+        endpoint = "orchestration" if _round == 0 else "orchestration_synthesis"
+        orc_reply = _llm_call(conversation, "orc-orchestrator", endpoint, session)
+        last_reply = orc_reply
 
-    # Store ORC's routing decision as a message
-    routing_summary = orc_response
-    _record_agent_message(session, "orc-orchestrator", "", "routing_plan", routing_summary)
+        routes = _parse_route_blocks(orc_reply)
 
-    # Hop 2: Call each routed agent (cap at 3 routes)
-    agent_responses: list[str] = []
-    for route in routes[:3]:
-        target_id = route["agent_id"]
-        instruction = route["instruction"]
+        if not routes:
+            # ORC gave a direct answer — done
+            return orc_reply
 
-        # Record the routing instruction
-        _record_agent_message(session, "orc-orchestrator", target_id, "routing", instruction)
+        # Store ORC's routing plan for this round
+        _record_agent_message(session, "orc-orchestrator", "", "routing_plan", orc_reply)
+        conversation.append({"role": "assistant", "content": orc_reply})
 
-        # Get the agent's response
-        agent_reply = _agent_chat_internal(target_id, instruction, session)
+        # Execute each route in this round
+        agent_responses: list[str] = []
+        for route in routes[:MAX_ROUTES_PER_ROUND]:
+            target_id = route["agent_id"]
+            instruction = route["instruction"]
 
-        # Record the agent's response
-        target_agent = session.query(AgentRuntimeState).filter_by(agent_id=target_id).first()
-        agent_name = target_agent.name if target_agent else target_id
-        _record_agent_message(session, target_id, "orc-orchestrator", "response", agent_reply)
+            _record_agent_message(session, "orc-orchestrator", target_id, "routing", instruction)
+            agent_reply = _agent_chat_internal(target_id, instruction, session)
+            _record_agent_message(session, target_id, "orc-orchestrator", "response", agent_reply)
 
-        agent_responses.append(f"### {agent_name} responded:\n{agent_reply}")
+            # Gate Keeper: auto-create an ApprovalRequest so it shows in Approvals tab
+            if target_id == "gate-keeper":
+                _auto_create_approval(instruction, agent_reply, session)
 
-    # Hop 3: ORC synthesizes all agent responses
-    agent_context = "\n\n".join(agent_responses)
-    synthesis_messages = [
-        {"role": "system", "content": _agent_system_prompt(orc)},
-        {"role": "user", "content": orc_context},
-        {"role": "assistant", "content": "Understood. I have reviewed the platform context."},
-        {"role": "user", "content": user_message},
-        {"role": "assistant", "content": routing_summary},
-        {"role": "user", "content": f"The agents have responded. Synthesize their answers into a clear final response for the operator:\n\n{agent_context}"},
-    ]
-    final_reply = _llm_call(synthesis_messages, "orc-orchestrator", "orchestration_synthesis", session)
-    return final_reply or orc_response
+            target_agent = session.query(AgentRuntimeState).filter_by(agent_id=target_id).first()
+            agent_name = target_agent.name if target_agent else target_id
+            agent_responses.append(f"### {agent_name}:\n{agent_reply}")
+
+        # Feed all responses back into the conversation for the next ORC turn
+        agent_context = "\n\n".join(agent_responses)
+        conversation.append({
+            "role": "user",
+            "content": (
+                f"Agent responses received:\n\n{agent_context}\n\n"
+                "Now provide your next routing decision OR, if all work is done, "
+                "give the operator a concise final summary (2-4 sentences). "
+                "Do NOT include route blocks in a final summary."
+            ),
+        })
+
+    # Exhausted all rounds — strip any dangling route blocks and return last reply
+    clean = re.sub(r"```route.*?```", "[routed]", last_reply, flags=re.DOTALL).strip()
+    return clean or last_reply
 
 
 def _oracle_prompt(summary: dict) -> list[dict[str, str]]:
@@ -4658,6 +4722,107 @@ def _llm_call(messages: list[dict], agent_id: str, endpoint: str, session) -> st
         pass
 
     return content or ""
+
+
+def _llm_call_with_tools(
+    messages: list[dict], tools: list[dict], agent_id: str, endpoint: str, session
+) -> tuple[str, list[dict]]:
+    """Call OpenAI with function-calling enabled. Returns (text, []) when done or ("", tool_calls) when tools are needed."""
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(status_code=503, detail="AI is not configured. Set OPENAI_API_KEY in the environment.")
+
+    model = os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {"model": model, "messages": messages, "tools": tools, "tool_choice": "auto"}
+
+    t0 = _time.monotonic()
+    data: dict = {}
+    try:
+        resp = httpx.post(OPENAI_API_URL, headers=headers, json=payload, timeout=60.0)
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text[:400] if exc.response is not None else str(exc)
+        raise HTTPException(status_code=502, detail=f"LLM request failed: {detail}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
+    finally:
+        response_ms = int((_time.monotonic() - t0) * 1000)
+
+    usage = data.get("usage", {})
+    try:
+        log_entry = AIUsageLog(
+            agent_id=agent_id, endpoint=endpoint, model=model,
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            total_tokens=usage.get("total_tokens", 0),
+            response_ms=response_ms,
+        )
+        session.add(log_entry)
+        session.commit()
+    except Exception:
+        pass
+
+    msg = data["choices"][0]["message"]
+    tool_calls = msg.get("tool_calls") or []
+    if tool_calls:
+        return "", tool_calls
+    return (msg.get("content") or "").strip(), []
+
+
+def _run_executioner(approval_id: int, instruction: str, rationale: str, session) -> None:
+    """Run the Executioner tool-calling loop to carry out an approved action."""
+    import json as _json
+    from .tools import call_tool, get_tool_schemas
+
+    tools = get_tool_schemas()
+    messages: list[dict] = [
+        {
+            "role": "system",
+            "content": (
+                "You are ORC Executioner. Your job is to carry out approved infrastructure actions "
+                "using the provided tools. Be precise: use list_connections first to find the correct "
+                "connection ID by name before taking any action. "
+                "After completing all actions, respond with a concise plain-text summary of exactly what was done."
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"Approved instruction: {instruction}\n\nRationale: {rationale}",
+        },
+    ]
+
+    result_text = ""
+    for _ in range(5):
+        text, tool_calls = _llm_call_with_tools(messages, tools, "executioner", "execution", session)
+        if text:
+            result_text = text
+            break
+        if not tool_calls:
+            result_text = "*(Executioner produced no output)*"
+            break
+        # Append the assistant turn with its tool_calls
+        messages.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+        # Execute each tool and feed results back
+        for tc in tool_calls:
+            fn_name = tc["function"]["name"]
+            args = _json.loads(tc["function"].get("arguments", "{}"))
+            result = call_tool(fn_name, args)
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc["id"],
+                "content": _json.dumps(result),
+            })
+
+    _record_agent_message(
+        session,
+        "executioner",
+        "operator",
+        "execution_result",
+        result_text or "*(Execution complete)*",
+        {"approval_id": approval_id},
+    )
 
 
 def _oracle_review(summary: dict, session) -> str:
@@ -4928,6 +5093,18 @@ def review_with_oracle(body: OracleReviewIn | None = None) -> dict:
         "analysis": analysis,
         "model": os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/orchestration/tools")
+def list_tools(request: Request) -> dict:
+    _require_admin(request)
+    from .tools import _REGISTRY
+    return {
+        "tools": [
+            {"name": k, "description": v["schema"]["function"]["description"]}
+            for k, v in _REGISTRY.items()
+        ]
     }
 
 

@@ -34,6 +34,8 @@ class Connection(Base):
     last_polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    revert_poll_interval: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    revert_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ObservedEvent(Base):
@@ -210,6 +212,8 @@ def _migrate() -> None:
         "ALTER TABLE agent_runtime_states ADD COLUMN IF NOT EXISTS logo_data TEXT",
         "ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS execution_allowed BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE connections ADD COLUMN IF NOT EXISTS revert_poll_interval INTEGER",
+        "ALTER TABLE connections ADD COLUMN IF NOT EXISTS revert_at TIMESTAMP WITH TIME ZONE",
     ]
     with engine.begin() as conn:
         for sql in stmts:
