@@ -4477,6 +4477,11 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
         "- **gate-keeper** (approval authority): Reviews and approves infrastructure actions. ALWAYS route to gate-keeper before any change to infrastructure state.\n"
         "- **executioner** (executor): Carries out approved actions using registered tools. Only invoked automatically after gate-keeper approval.\n"
         "- **sage** (learning & skills): Looks up skill definitions, captures lessons, authors new skills.\n\n"
+        "CONTEXT RULES:\n"
+        "- Treat the operational configuration snapshot as the source of truth for currently configured connections and poll intervals.\n"
+        "- A request to 'watch a container every X seconds' is a container-observation request first; do not silently convert it into a different connection change.\n"
+        "- A request to restart a container or pull git is a target-specific infrastructure action; always identify the exact container/repo/connection before routing execution.\n"
+        "- If the target is ambiguous, ask a single short clarification question instead of guessing.\n\n"
         "INFRASTRUCTURE MUTATIONS — always route to gate-keeper (never to raven or directly execute):\n"
         "- Changing poll interval or polling frequency for any connection\n"
         "- Restarting, redeploying, or reconfiguring containers\n"
@@ -4527,6 +4532,21 @@ def _build_orc_context(session, agent_id: str = "") -> str:
     for a in agents:
         status = "enabled" if a.enabled else "disabled"
         lines.append(f"- **{a.name}** (id: `{a.agent_id}`, role: {a.role}, trust: {a.trust_mode}, {status})")
+    lines.append("")
+
+    lines.append("### Operational Configuration Snapshot")
+    connections = session.query(Connection).order_by(Connection.name).all()
+    if not connections:
+        lines.append("- No enabled connections are registered.")
+    else:
+        for c in connections:
+            poll = f"{c.poll_interval_seconds}s" if c.poll_interval_seconds else "auto/default"
+            server = c.server_name or c.name
+            status = c.last_status or "unknown"
+            lines.append(
+                f"- **{server}** (connection: `{c.name}`, id: `{c.id}`, enabled: {str(bool(c.enabled)).lower()}, "
+                f"poll: {poll}, status: {status})"
+            )
     lines.append("")
 
     # Load all skills and split into mine vs others
