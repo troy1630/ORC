@@ -5043,6 +5043,7 @@ def _run_orc_loop(user_message: str, session, thread_id: str = "operations") -> 
     """ORC Orchestrator iterative multi-agent routing loop. Up to 3 ORC turns."""
     MAX_ROUNDS = 3
     MAX_ROUTES_PER_ROUND = 3
+    pending_approval_id: int | None = None
 
     orc = session.query(AgentRuntimeState).filter_by(agent_id="orc-orchestrator").first()
     if not orc:
@@ -5087,12 +5088,19 @@ def _run_orc_loop(user_message: str, session, thread_id: str = "operations") -> 
             instruction = route["instruction"]
 
             _record_agent_message(session, "orc-orchestrator", target_id, "routing", instruction, thread_id=thread_id)
-            agent_reply = _agent_chat_internal(target_id, instruction, session, thread_id=thread_id)
             approval_row = None
+            if target_id == "executioner" and pending_approval_id:
+                agent_reply = (
+                    f"Waiting for approval {pending_approval_id}. "
+                    "Executioner will run this request after the approval is granted."
+                )
+            else:
+                agent_reply = _agent_chat_internal(target_id, instruction, session, thread_id=thread_id)
 
             # Gate Keeper: auto-create an ApprovalRequest so it shows in Approvals tab
             if target_id == "gate-keeper":
                 approval_row = _auto_create_approval(instruction, agent_reply, session)
+                pending_approval_id = approval_row.id
 
             _record_agent_message(
                 session,
