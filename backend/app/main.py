@@ -4591,6 +4591,8 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
         "'increase polling frequency', you must respond: "
         "'I cannot modify my own polling interval — that is an infrastructure configuration change. "
         "ORC Orchestrator should route this to Gate Keeper for approval, then Executioner will apply the change.' "
+        "If an operator asks you to create or start a focused watch, temporary watch, or increased container-specific monitoring, "
+        "you must respond that Executioner creates focused watches after Gate Keeper approval and that Raven only reports observations. "
         "Never generate YAML or plans claiming you have registered or will perform a polling frequency change. "
         "When answering questions, focus on observation, event patterns, routing context, and any active focused watches visible in context."
     ),
@@ -4636,6 +4638,7 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
         "CONTEXT RULES:\n"
         "- Treat the operational configuration snapshot as the source of truth for currently configured connections and poll intervals.\n"
         "- Treat the active focused watches list as the source of truth for temporary container-specific accelerated monitoring.\n"
+        "- Treat the target inventory hint as the source of truth for matching containers when it is present.\n"
         "- A request to 'watch a container every X seconds' is a container-observation request first; do not silently convert it into a different connection change.\n"
         "- A request to restart a container or pull git is a target-specific infrastructure action; always identify the exact container/repo/connection before routing execution.\n"
         "- If the target is ambiguous, ask a single short clarification question instead of guessing.\n\n"
@@ -4658,7 +4661,8 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
         "5. After agents respond, execute any remaining routes.\n"
         "6. Final answers to the operator must be 2-4 sentences maximum. No bullet lists. No markdown headers. Plain concise language.\n"
         "7. Never fabricate agent responses — only summarize what the agents actually said.\n"
-        "8. Do NOT route 'poll every X seconds' requests to raven — raven cannot change poll intervals. Route to gate-keeper instead."
+        "8. Do NOT route 'poll every X seconds' requests to raven — raven cannot change poll intervals. Route to gate-keeper instead.\n"
+        "9. Do NOT route focused watch creation, increased monitoring frequency, or temporary container-specific watch setup to raven. Those must go to gate-keeper, then executioner. Raven only reports what it sees."
     ),
 }
 
@@ -4848,6 +4852,29 @@ def _find_connection_candidates(session, term: str) -> list[dict]:
     return matches
 
 
+def _find_connection_by_label(session, label: str) -> Connection | None:
+    needle = label.strip().lower()
+    if not needle:
+        return None
+    candidates = session.query(Connection).filter_by(enabled=True).all()
+    for conn in candidates:
+        if needle == (conn.server_name or "").lower() or needle == (conn.name or "").lower():
+            return conn
+    for conn in candidates:
+        if needle in (conn.server_name or "").lower() or needle in (conn.name or "").lower():
+            return conn
+    return None
+
+
+def _mentioned_connection(session, text: str) -> Connection | None:
+    raw = text.lower()
+    for conn in session.query(Connection).filter_by(enabled=True).all():
+        names = [conn.name or "", conn.server_name or ""]
+        if any(name and name.lower() in raw for name in names):
+            return conn
+    return None
+
+
 def _extract_container_target_phrase(user_message: str) -> str:
     text = user_message.strip()
     patterns = [
@@ -4901,6 +4928,36 @@ def _find_container_candidates(session, term: str) -> list[dict]:
     return matches
 
 
+def _find_container_candidates_for_connection(session, term: str, connection: Connection | None) -> list[dict]:
+    matches = _find_container_candidates(session, term)
+    if not connection:
+        return matches
+    return [m for m in matches if int(m["connection_id"]) == int(connection.id)]
+
+
+def _target_inventory_context(session, user_message: str) -> str:
+    phrase = _extract_container_target_phrase(user_message)
+    if not phrase:
+        return ""
+    connection = _mentioned_connection(session, user_message)
+    matches = _find_container_candidates_for_connection(session, phrase, connection)
+    if not matches:
+        scope = f" on {connection.server_name or connection.name}" if connection else ""
+        return f"### Target Inventory Hint\n- No live container inventory matches were found for `{phrase}`{scope}.\n"
+    lines = ["### Target Inventory Hint"]
+    if connection:
+        lines.append(f"- Requested connection: {connection.server_name or connection.name} (id: `{connection.id}`)")
+    lines.append(f"- Matching term: `{phrase}`")
+    for match in matches[:12]:
+        lines.append(
+            f"- Match: {match['container_name']} on {match['server_name']} "
+            f"(connection `{match['connection_id']}`, endpoint `{match['endpoint_id']}`)"
+        )
+    if len(matches) > 12:
+        lines.append(f"- And {len(matches) - 12} more matches.")
+    return "\n".join(lines) + "\n"
+
+
 def _clarify_ambiguous_target(user_message: str, session) -> str | None:
     phrase = _extract_container_target_phrase(user_message)
     if not phrase:
@@ -4938,6 +4995,9 @@ def _agent_chat_internal(agent_id: str, instruction: str, session, extra_context
     recent = _recent_thread_context(session, thread_id)
     if recent:
         context += f"\n\n{recent}"
+    inventory_hint = _target_inventory_context(session, instruction)
+    if inventory_hint:
+        context += f"\n\n{inventory_hint}"
     if extra_context:
         context += f"\n\n{extra_context}"
 
@@ -4992,6 +5052,9 @@ def _run_orc_loop(user_message: str, session, thread_id: str = "operations") -> 
     recent = _recent_thread_context(session, thread_id)
     if recent:
         orc_context += f"\n\n{recent}"
+    inventory_hint = _target_inventory_context(session, user_message)
+    if inventory_hint:
+        orc_context += f"\n\n{inventory_hint}"
 
     # Build the conversation that persists across rounds
     conversation: list[dict] = [
