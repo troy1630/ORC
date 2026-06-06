@@ -891,6 +891,7 @@ tr:last-child td{border-bottom:none}
 .hb-st{display:none}
 .hb-canvas-wrap{height:76px;background:#0d1117;border:1px solid #21262d;border-radius:10px;padding:10px 8px 6px;overflow:hidden}
 canvas{display:block;width:100%;height:58px}
+.hb-tip{position:absolute;z-index:4;display:none;max-width:220px;padding:6px 8px;border-radius:8px;border:1px solid rgba(230,237,243,.16);background:rgba(13,17,23,.96);color:var(--txt);font-size:.7rem;line-height:1.3;pointer-events:none;box-shadow:0 10px 20px rgba(0,0,0,.36)}
 .raven-sl{padding:5px 10px;border-bottom:1px solid var(--bdr);font-size:.73rem;color:var(--mut);flex-shrink:0;min-height:26px;display:flex;align-items:center;gap:5px;overflow:hidden}
 .sl-icon{flex-shrink:0}.sl-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .raven-next{padding:3px 10px 4px;border-bottom:1px solid var(--bdr);font-size:.69rem;color:var(--mut);min-height:22px;display:flex;align-items:center;gap:5px;overflow:hidden;flex-shrink:0}
@@ -1392,6 +1393,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
       <span class="hb-st" id="hb-status"></span>
     </div>
     <div class="hb-canvas-wrap"><canvas id="hb-cv" height="48"></canvas></div>
+    <div class="hb-tip" id="hb-tip"></div>
   </div>
   <div class="raven-sl" id="raven-sl">
     <span class="sl-icon" id="sl-icon">—</span>
@@ -1493,7 +1495,7 @@ let _viewMode='corporate';
 let _orch={agents:[],skills:[],messages:[],approvals:[],learnings:[],paths:{}};
 let _orchTab='chat', _adminTab='connections', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null, _skillEditId='', _agentEditId='';
 let _agentDraftIcon='/assets/characters/agent-scout.png', _agentLogoDraft='';
-let _hbData=new Array(60).fill(0), _hbBucket=0, _hbAlerts=[], _hbAlertBuf=[];
+let _hbData=new Array(60).fill(0), _hbBucket=0, _hbAlerts=[], _hbAlertBuf=[], _hbAlertPoints=[];
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
 let _oracleState={busy:false,summary:null,analysis:'',error:''};
 let _windowHours=24;
@@ -3517,7 +3519,7 @@ function handleRaven(msg){
     }
     case 'issue_event':{
       const sev=msg.severity||'error';
-      _hbAlertBuf.push({severity:sev});
+      _hbAlertBuf.push({severity:sev,container:msg.container||'',server:serverDisplay,ts:msg.occurred_at||msg.ts||''});
       setStatus('!',`${msg.container||'unknown'} - ${sev}`,true);
       addIssuePill(msg);
       break;
@@ -3525,7 +3527,7 @@ function handleRaven(msg){
     case 'container_result':{
       setNetworkCheckingContainer(serverKey,msg.container||'',false);
       const ne=msg.errors||0,nw=msg.warnings||0;
-      if(!msg.issue_events&&(ne>0||nw>0))_hbAlertBuf.push({severity:ne>0?'error':'warning'});
+      if(!msg.issue_events&&(ne>0||nw>0))_hbAlertBuf.push({severity:ne>0?'error':'warning',container:msg.container||'',server:serverDisplay,ts:msg.ts||''});
       if(ne>0){setStatus('⚠',`${msg.container} · ${ne} new error${ne!==1?'s':''}`,true);addIssuePill(msg);}
       else if(nw>0){setStatus('⚠',`${msg.container} · ${nw} new warning${nw!==1?'s':''}`,true);addIssuePill(msg);}
       else setStatus('✓',`${msg.container} · no new issues`,true);
@@ -3534,6 +3536,7 @@ function handleRaven(msg){
     case 'focused_watch_result':{
       setFocusedNetworkChecking(serverKey,msg.container||'',false);
       const ne=msg.errors||0,nw=msg.warnings||0;
+      if(ne>0||nw>0)_hbAlertBuf.push({severity:ne>0?'error':'warning',container:msg.container||'',server:serverDisplay,ts:msg.ts||''});
       if(ne>0){setStatus('⚠',`${msg.container} focused watch found ${ne} error${ne!==1?'s':''}`,true);}
       else if(nw>0){setStatus('⚠',`${msg.container} focused watch found ${nw} warning${nw!==1?'s':''}`,true);}
       else setStatus('✓',`${msg.container} focused watch complete`,true);
@@ -3568,6 +3571,7 @@ function drawHb(){
   const cv=document.getElementById('hb-cv');if(!cv)return;
   const ctx=cv.getContext('2d'),w=cv.width,h=cv.height;
   ctx.clearRect(0,0,w,h);
+  _hbAlertPoints=[];
   const d=_hbData,N=d.length;if(N<2)return;
   const step=w/(N-1),bot=h-3,top=5;
   const pts=d.map((v,i)=>({x:i*step,y:v>0?top:bot}));
@@ -3583,6 +3587,15 @@ function drawHb(){
     const idx=N-1-a.age;if(idx<0||idx>=N)return;
     const px=pts[idx].x,py=top;
     const col=a.severity==='warning'?'#d29922':'#f85149';
+    _hbAlertPoints.push({
+      x:px,
+      y:py,
+      r:7,
+      container:a.container||'Unknown container',
+      server:a.server||'',
+      severity:a.severity||'error',
+      ts:a.ts||'',
+    });
     ctx.beginPath();ctx.arc(px,py,5,0,Math.PI*2);
     ctx.fillStyle=col;ctx.fill();
     ctx.strokeStyle='rgba(13,17,23,0.7)';ctx.lineWidth=1.2;ctx.stroke();
@@ -3591,11 +3604,52 @@ function drawHb(){
 function tickHb(){
   _hbData.push(_hbBucket?1:0);_hbBucket=0;
   if(_hbData.length>60)_hbData.shift();
-  _hbAlertBuf.forEach(a=>_hbAlerts.push({age:0,severity:a.severity}));
+  _hbAlertBuf.forEach(a=>_hbAlerts.push({age:0,severity:a.severity,container:a.container||'',server:a.server||'',ts:a.ts||''}));
   _hbAlertBuf=[];
   _hbAlerts.forEach(a=>a.age++);
   _hbAlerts=_hbAlerts.filter(a=>a.age<60);
   drawHb();
+}
+function hideHbTip(){
+  const tip=document.getElementById('hb-tip');
+  if(tip)tip.style.display='none';
+}
+function showHbTip(point,ev){
+  const tip=document.getElementById('hb-tip');
+  const wrap=document.querySelector('.hb-wrap');
+  const cv=document.getElementById('hb-cv');
+  if(!tip||!wrap||!cv)return;
+  const rect=cv.getBoundingClientRect();
+  const wrapRect=wrap.getBoundingClientRect();
+  const left=Math.max(8, Math.min(rect.left - wrapRect.left + point.x + 10, wrap.clientWidth - 180));
+  const top=Math.max(8, rect.top - wrapRect.top + point.y + 10);
+  const ts=point.ts?fmtShort(point.ts):'';
+  tip.innerHTML=`<strong>${esc(point.container)}</strong>${point.server?`<div>${esc(point.server)}</div>`:''}${ts?`<div class="muted">${esc(ts)}</div>`:''}`;
+  tip.style.left=`${left}px`;
+  tip.style.top=`${top}px`;
+  tip.style.display='block';
+}
+function setupHeartbeatHover(){
+  const cv=document.getElementById('hb-cv');
+  if(!cv||cv.dataset.hoverReady)return;
+  cv.dataset.hoverReady='1';
+  cv.addEventListener('mousemove',ev=>{
+    const rect=cv.getBoundingClientRect();
+    const x=(ev.clientX-rect.left)*(cv.width/Math.max(rect.width,1));
+    const y=(ev.clientY-rect.top)*(cv.height/Math.max(rect.height,1));
+    const hit=_hbAlertPoints.find(p=>Math.hypot(p.x-x,p.y-y)<=p.r);
+    if(hit){
+      cv.style.cursor='pointer';
+      showHbTip(hit,ev);
+    }else{
+      cv.style.cursor='default';
+      hideHbTip();
+    }
+  });
+  cv.addEventListener('mouseleave',()=>{
+    cv.style.cursor='default';
+    hideHbTip();
+  });
 }
 setInterval(tickHb,1000);
 
@@ -3781,6 +3835,7 @@ async function loadAll(){
 window.addEventListener('resize',()=>{resizeCanvas();drawHb();});
 setupInputs();
 resizeCanvas();drawHb();
+setupHeartbeatHover();
 checkAuth().then(ok=>{if(ok)startApp();});
 </script>
 </body>
