@@ -69,6 +69,24 @@ class IngestionCheckpoint(Base):
     poll_count: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
+class FocusedWatch(Base):
+    __tablename__ = "focused_watches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    connection_id: Mapped[int] = mapped_column(Integer, ForeignKey("connections.id", ondelete="CASCADE"))
+    endpoint_id: Mapped[int] = mapped_column(Integer)
+    container_id: Mapped[str] = mapped_column(String(64))
+    container_name: Mapped[str] = mapped_column(String(256))
+    interval_seconds: Mapped[int] = mapped_column(Integer, default=30)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
 class AgentRuntimeState(Base):
     __tablename__ = "agent_runtime_states"
 

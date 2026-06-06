@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import REPO_ROOT
-from .db import Connection, SessionLocal
+from .db import Connection, FocusedWatch, SessionLocal
 from .portainer import PortainerClient
 
 _REGISTRY: dict[str, dict] = {}  # name → {fn, schema}
@@ -244,6 +244,128 @@ def get_connection_status(connection_id: int) -> dict:
             "last_polled_at": conn.last_polled_at.isoformat() if conn.last_polled_at else None,
             "revert_poll_interval": conn.revert_poll_interval,
             "revert_at": conn.revert_at.isoformat() if conn.revert_at else None,
+        }
+
+
+@orc_tool(
+    description="List all active focused container watches that temporarily poll specific containers faster than the normal connection cadence.",
+    parameters={"type": "object", "properties": {}, "required": []},
+)
+def list_focused_watches() -> list[dict]:
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as s:
+        rows = (
+            s.query(FocusedWatch, Connection)
+            .join(Connection, FocusedWatch.connection_id == Connection.id)
+            .filter(FocusedWatch.expires_at > now)
+            .order_by(FocusedWatch.expires_at.asc(), FocusedWatch.id.asc())
+            .all()
+        )
+        return [
+            {
+                "watch_id": watch.id,
+                "connection_id": watch.connection_id,
+                "connection_name": conn.name,
+                "server_name": conn.server_name or conn.name,
+                "endpoint_id": watch.endpoint_id,
+                "container_id": watch.container_id,
+                "container_name": watch.container_name,
+                "interval_seconds": watch.interval_seconds,
+                "expires_at": watch.expires_at.isoformat(),
+                "last_polled_at": watch.last_polled_at.isoformat() if watch.last_polled_at else None,
+                "created_by": watch.created_by or "",
+                "rationale": watch.rationale or "",
+            }
+            for watch, conn in rows
+        ]
+
+
+@orc_tool(
+    description=(
+        "Create a temporary focused watch for a specific container. This polls only that container "
+        "at the requested interval without changing the normal connection poll interval."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "connection_id": {"type": "integer", "description": "The ORC connection ID"},
+            "endpoint_id": {"type": "integer", "description": "The Portainer endpoint ID"},
+            "container_id": {"type": "string", "description": "The Docker container ID"},
+            "container_name": {"type": "string", "description": "Friendly container name"},
+            "interval_seconds": {"type": "integer", "description": "Focused poll interval in seconds"},
+            "duration_minutes": {"type": "integer", "description": "How long the focused watch should stay active"},
+            "created_by": {"type": "string", "description": "Agent or user creating the watch"},
+            "rationale": {"type": "string", "description": "Why this focused watch is being created"},
+        },
+        "required": ["connection_id", "endpoint_id", "container_id", "container_name", "interval_seconds", "duration_minutes"],
+    },
+)
+def create_focused_container_watch(
+    connection_id: int,
+    endpoint_id: int,
+    container_id: str,
+    container_name: str,
+    interval_seconds: int,
+    duration_minutes: int,
+    created_by: str = "executioner",
+    rationale: str = "",
+) -> dict:
+    if interval_seconds <= 0:
+        return {"error": "interval_seconds must be greater than 0"}
+    if duration_minutes <= 0:
+        return {"error": "duration_minutes must be greater than 0"}
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=duration_minutes)
+    with SessionLocal() as s:
+        conn = s.get(Connection, connection_id)
+        if not conn:
+            return {"error": f"Connection {connection_id} not found"}
+        existing = (
+            s.query(FocusedWatch)
+            .filter_by(connection_id=connection_id, endpoint_id=endpoint_id, container_id=container_id)
+            .filter(FocusedWatch.expires_at > now)
+            .first()
+        )
+        if existing:
+            existing.interval_seconds = interval_seconds
+            existing.expires_at = expires_at
+            existing.created_by = created_by
+            existing.rationale = rationale
+            s.commit()
+            s.refresh(existing)
+            return {
+                "ok": True,
+                "watch_id": existing.id,
+                "updated": True,
+                "connection_id": connection_id,
+                "connection_name": conn.name,
+                "container_name": existing.container_name,
+                "interval_seconds": existing.interval_seconds,
+                "expires_at": existing.expires_at.isoformat(),
+            }
+        row = FocusedWatch(
+            connection_id=connection_id,
+            endpoint_id=endpoint_id,
+            container_id=container_id,
+            container_name=container_name,
+            interval_seconds=interval_seconds,
+            expires_at=expires_at,
+            created_by=created_by,
+            rationale=rationale,
+            created_at=now,
+        )
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        return {
+            "ok": True,
+            "watch_id": row.id,
+            "updated": False,
+            "connection_id": connection_id,
+            "connection_name": conn.name,
+            "container_name": row.container_name,
+            "interval_seconds": row.interval_seconds,
+            "expires_at": row.expires_at.isoformat(),
         }
 
 

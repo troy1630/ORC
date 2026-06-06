@@ -26,6 +26,7 @@ from .db import (
     AgentRuntimeState,
     ApprovalRequest,
     Connection,
+    FocusedWatch,
     IngestionCheckpoint,
     LearningEntry,
     ObservedEvent,
@@ -598,6 +599,29 @@ def _learning_dict(row: LearningEntry) -> dict:
     }
 
 
+def _focused_watch_dict(row: FocusedWatch, conn: Connection | None = None) -> dict:
+    server_name = ""
+    connection_name = ""
+    if conn is not None:
+        connection_name = conn.name
+        server_name = conn.server_name or conn.name
+    return {
+        "id": row.id,
+        "connection_id": row.connection_id,
+        "connection_name": connection_name,
+        "server_name": server_name,
+        "endpoint_id": row.endpoint_id,
+        "container_id": row.container_id,
+        "container_name": row.container_name,
+        "interval_seconds": row.interval_seconds,
+        "expires_at": row.expires_at.isoformat(),
+        "last_polled_at": row.last_polled_at.isoformat() if row.last_polled_at else None,
+        "created_by": row.created_by or "",
+        "rationale": row.rationale or "",
+        "created_at": row.created_at.isoformat(),
+    }
+
+
 def _record_agent_message(
     session,
     source: str,
@@ -942,8 +966,11 @@ canvas{display:block;width:100%;height:58px}
 .chat-bubble{border:1px solid #253041;border-radius:16px 16px 16px 5px;background:#111b27;padding:8px 10px;min-width:0}
 .chat-row.right .chat-bubble{border-radius:16px 16px 5px 16px;background:#182236;border-color:rgba(163,113,247,.45)}
 .chat-row.system .chat-bubble{background:#0d1117;border-color:#21262d}
-.chat-meta{font-size:.62rem;color:var(--mut);margin-bottom:3px;display:flex;gap:5px;flex-wrap:wrap}
-.chat-text{font-size:.78rem;line-height:1.35;overflow-wrap:anywhere}
+.chat-meta{font-size:.69rem;color:var(--mut);margin-bottom:4px;display:flex;gap:5px;flex-wrap:wrap}
+.chat-text{font-size:.85rem;line-height:1.4;overflow-wrap:anywhere}
+.chat-approval-pill{display:inline-flex;align-items:center;gap:8px;margin:0 0 7px;padding:7px 10px;border-radius:999px;border:1px solid rgba(210,153,34,.42);background:rgba(210,153,34,.14);color:#f3d37a;font-size:.79rem;font-weight:800}
+.chat-approval-pill a,.chat-approval-pill button{font-size:.76rem}
+.chat-approval-actions{display:inline-flex;gap:6px;align-items:center}
 .chat-compose{border-top:1px solid #21262d;padding-top:9px;display:flex;gap:7px;align-items:center}
 .chat-compose .orch-input{flex:1}
 .chat-compose .btnp{flex-shrink:0;white-space:nowrap}
@@ -2974,6 +3001,34 @@ function chatBubbleSummaryDetail(id,short,detail){
   if(!safeDetail||safeDetail===safeShort)return `<div class="chat-text">${esc(safeShort)}</div>`;
   return `<div class="chat-text" id="ct-${id}"><span class="chat-short">${esc(safeShort)}<span class="muted">…</span></span><span class="chat-full" style="display:none">${esc(safeDetail)}</span><br><button class="chat-expand-btn btns" style="margin-top:4px;font-size:0.75rem" onclick="toggleChatExpand(${id})">▸ Show more</button></div>`;
 }
+function pendingApprovalForMessage(m){
+  const approvalId=Number(m?.payload?.approval_id||0);
+  if(!approvalId)return null;
+  const row=(_orch.approvals||[]).find(a=>Number(a.id)===approvalId);
+  if(!row||row.status!=='pending')return null;
+  return row;
+}
+function openApprovalFromChat(approvalId){
+  showTab('orchestration');
+  showOrchTab('approvals');
+  const el=document.querySelector(`#orch-approvals [onclick*="decideApproval(${approvalId},"]`);
+  if(el){
+    const row=el.closest('.approval-row');
+    if(row)row.scrollIntoView({behavior:'smooth',block:'center'});
+  }
+}
+function approvalBubbleHtml(m){
+  const row=pendingApprovalForMessage(m);
+  if(!row)return '';
+  const canApprove=_currentUser?.role==='admin';
+  return `<div class="chat-approval-pill">
+    <span>Waiting for Approval</span>
+    <span class="chat-approval-actions">
+      <button class="btns" type="button" onclick="openApprovalFromChat(${row.id})">Open</button>
+      ${canApprove?`<button class="btnp" type="button" onclick="decideApproval(${row.id},'approved')">Approve</button>`:''}
+    </span>
+  </div>`;
+}
 function toggleChatExpand(id){
   const el=document.getElementById('ct-'+id);
   if(!el)return;
@@ -3001,10 +3056,12 @@ function renderChat(){
     const avatarSrc=isOperator?'/assets/characters/orc.png':agentArt(src);
     const chat=splitAgentChatText(m);
     const bodyHtml=chatBubbleSummaryDetail(m.id,chat.short,chat.detail);
+    const approvalHtml=approvalBubbleHtml(m);
     return `<div class="chat-row ${cls}">
       <img class="chat-avatar ${_viewMode==='corporate'&&!isOperator?'corp':''}" src="${esc(avatarSrc)}" alt="">
       <div class="chat-bubble">
         <div class="chat-meta"><span>${senderLabel}</span>${m.target_agent&&!isOperator?`<span>→ ${esc(tgt.name)}</span>`:''}<span>${esc(m.message_type)}</span><span>${esc(fmtShort(m.created_at))}</span></div>
+        ${approvalHtml}
         ${bodyHtml}
       </div>
     </div>`;
@@ -3848,6 +3905,16 @@ def orchestration_summary() -> dict:
             _learning_dict(row)
             for row in s.query(LearningEntry).order_by(LearningEntry.created_at.desc(), LearningEntry.id.desc()).limit(30).all()
         ]
+        focused_watches = [
+            _focused_watch_dict(row, conn)
+            for row, conn in (
+                s.query(FocusedWatch, Connection)
+                .join(Connection, FocusedWatch.connection_id == Connection.id)
+                .order_by(FocusedWatch.expires_at.asc(), FocusedWatch.id.desc())
+                .limit(30)
+                .all()
+            )
+        ]
     skills = [asdict(item) for item in load_registry(REPO_ROOT, "skills")]
     return {
         "agents": agents,
@@ -3855,6 +3922,7 @@ def orchestration_summary() -> dict:
         "messages": messages,
         "approvals": approvals,
         "learnings": learnings,
+        "focused_watches": focused_watches,
         "paths": {
             "agents": str((REPO_ROOT / "agents").relative_to(REPO_ROOT)),
             "skills": str((REPO_ROOT / "skills").relative_to(REPO_ROOT)),
@@ -4436,7 +4504,7 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
         "'I cannot modify my own polling interval — that is an infrastructure configuration change. "
         "ORC Orchestrator should route this to Gate Keeper for approval, then Executioner will apply the change.' "
         "Never generate YAML or plans claiming you have registered or will perform a polling frequency change. "
-        "When answering questions, focus on observation, event patterns, and routing context."
+        "When answering questions, focus on observation, event patterns, routing context, and any active focused watches visible in context."
     ),
     "oracle": (
         "You are The Oracle, the investigator of the ORC platform. "
@@ -4479,6 +4547,7 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
         "- **sage** (learning & skills): Looks up skill definitions, captures lessons, authors new skills.\n\n"
         "CONTEXT RULES:\n"
         "- Treat the operational configuration snapshot as the source of truth for currently configured connections and poll intervals.\n"
+        "- Treat the active focused watches list as the source of truth for temporary container-specific accelerated monitoring.\n"
         "- A request to 'watch a container every X seconds' is a container-observation request first; do not silently convert it into a different connection change.\n"
         "- A request to restart a container or pull git is a target-specific infrastructure action; always identify the exact container/repo/connection before routing execution.\n"
         "- If the target is ambiguous, ask a single short clarification question instead of guessing.\n\n"
@@ -4546,6 +4615,26 @@ def _build_orc_context(session, agent_id: str = "") -> str:
             lines.append(
                 f"- **{server}** (connection: `{c.name}`, id: `{c.id}`, enabled: {str(bool(c.enabled)).lower()}, "
                 f"poll: {poll}, status: {status})"
+            )
+    lines.append("")
+
+    lines.append("### Active Focused Watches")
+    now = datetime.now(timezone.utc)
+    watches = (
+        session.query(FocusedWatch, Connection)
+        .join(Connection, FocusedWatch.connection_id == Connection.id)
+        .filter(FocusedWatch.expires_at > now)
+        .order_by(FocusedWatch.expires_at.asc(), FocusedWatch.id.asc())
+        .all()
+    )
+    if not watches:
+        lines.append("- No active focused container watches.")
+    else:
+        for watch, conn in watches:
+            server = conn.server_name or conn.name
+            lines.append(
+                f"- Watch `{watch.id}`: {watch.container_name} on {server} every {watch.interval_seconds}s "
+                f"until {watch.expires_at.isoformat()}"
             )
     lines.append("")
 
@@ -4977,6 +5066,8 @@ def _run_executioner(approval_id: int, instruction: str, rationale: str, session
                 "You are ORC Executioner. Your job is to carry out approved infrastructure actions "
                 "using the provided tools. Be precise: use list_connections first to find the correct "
                 "connection, and if the name is ambiguous use the most specific match or ask for clarification before acting. "
+                "For container-specific focused watches, use search_containers followed by create_focused_container_watch. "
+                "Do not use modify_connection_poll_interval unless the request explicitly asks to change the whole connection cadence. "
                 "After completing all actions, respond with a concise plain-text summary of exactly what was done."
             ),
         },
