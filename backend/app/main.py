@@ -629,8 +629,10 @@ def _record_agent_message(
     message_type: str,
     summary: str,
     payload: dict | None = None,
+    thread_id: str = "operations",
 ) -> AgentMessage:
     row = AgentMessage(
+        thread_id=thread_id or "operations",
         source_agent=source,
         target_agent=target or None,
         message_type=message_type,
@@ -966,6 +968,12 @@ canvas{display:block;width:100%;height:58px}
 .chat-bubble{border:1px solid #253041;border-radius:16px 16px 16px 5px;background:#111b27;padding:8px 10px;min-width:0}
 .chat-row.right .chat-bubble{border-radius:16px 16px 5px 16px;background:#182236;border-color:rgba(163,113,247,.45)}
 .chat-row.system .chat-bubble{background:#0d1117;border-color:#21262d}
+.chat-row.agent-raven .chat-bubble{background:#182227;border-color:rgba(63,185,80,.34)}
+.chat-row.agent-oracle .chat-bubble{background:#231d12;border-color:rgba(210,153,34,.34)}
+.chat-row.agent-gate-keeper .chat-bubble{background:#2a1b12;border-color:rgba(248,81,73,.32)}
+.chat-row.agent-executioner .chat-bubble{background:#25161d;border-color:rgba(255,123,114,.32)}
+.chat-row.agent-sage .chat-bubble{background:#15202b;border-color:rgba(88,166,255,.34)}
+.chat-row.agent-orc-orchestrator .chat-bubble{background:#1f1b29;border-color:rgba(163,113,247,.38)}
 .chat-bubble.waiting-approval{background:linear-gradient(180deg,rgba(74,53,14,.9),rgba(49,35,10,.92));border-color:rgba(210,153,34,.65);box-shadow:0 0 0 1px rgba(210,153,34,.16) inset}
 .chat-meta{font-size:.69rem;color:var(--mut);margin-bottom:4px;display:flex;gap:5px;flex-wrap:wrap}
 .chat-text{font-size:.85rem;line-height:1.4;overflow-wrap:anywhere}
@@ -3030,6 +3038,10 @@ function approvalBubbleHtml(m){
     </span>
   </div>`;
 }
+function chatAgentClass(agentId){
+  const raw=String(agentId||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+  return raw?`agent-${raw}`:'';
+}
 function toggleChatExpand(id){
   const el=document.getElementById('ct-'+id);
   if(!el)return;
@@ -3052,7 +3064,8 @@ function renderChat(){
     const isOperator=m.source_agent==='operator';
     const isSystem=!isOperator&&['sage','raven'].includes(m.source_agent)&&!m.target_agent;
     const right=isOperator;
-    const cls=right?'right':isSystem?'system':'';
+    const agentCls=isOperator?'operator':chatAgentClass(m.source_agent);
+    const cls=[right?'right':'',isSystem?'system':'',agentCls].filter(Boolean).join(' ');
     const senderLabel=isOperator?(_currentUser?.username||'You'):esc(src.name);
     const avatarSrc=isOperator?'/assets/characters/orc.png':agentArt(src);
     const chat=splitAgentChatText(m);
@@ -4097,6 +4110,7 @@ def create_agent_message(body: AgentMessageIn) -> dict:
             body.message_type.strip() or "status",
             body.summary.strip(),
             body.payload or {"thread_id": body.thread_id.strip() or "operations"},
+            thread_id=body.thread_id.strip() or "operations",
         )
         return _message_dict(row)
 
@@ -4105,6 +4119,7 @@ def create_agent_message(body: AgentMessageIn) -> dict:
 def agent_chat(agent_id: str, body: AgentChatIn, request: Request) -> dict:
     _require_user(request)
     user_message = body.message.strip()
+    thread_id = body.thread_id.strip() or "operations"
     if not user_message:
         raise HTTPException(400, "message is required")
 
@@ -4117,12 +4132,12 @@ def agent_chat(agent_id: str, body: AgentChatIn, request: Request) -> dict:
             raise HTTPException(409, f"Agent '{agent.name}' is disabled")
 
         # Store operator's message for audit before any early clarification exit.
-        _record_agent_message(s, "operator", agent_id, "instruction", user_message)
+        _record_agent_message(s, "operator", agent_id, "instruction", user_message, thread_id=thread_id)
 
         if agent_id == "orc-orchestrator":
             clarification = _clarify_ambiguous_target(user_message, s)
             if clarification:
-                _record_agent_message(s, "orc-orchestrator", "operator", "response", clarification)
+                _record_agent_message(s, "orc-orchestrator", "operator", "response", clarification, thread_id=thread_id)
                 return {
                     "reply": clarification,
                     "agent_id": agent_id,
@@ -4131,15 +4146,15 @@ def agent_chat(agent_id: str, body: AgentChatIn, request: Request) -> dict:
 
         if agent_id == "orc-orchestrator":
             # Full multi-agent routing loop
-            reply = _run_orc_loop(user_message, s)
+            reply = _run_orc_loop(user_message, s, thread_id=thread_id)
         else:
             # Direct single-agent call with agent-filtered skill context
-            reply = _agent_chat_internal(agent_id, user_message, s)
+            reply = _agent_chat_internal(agent_id, user_message, s, thread_id=thread_id)
 
         if not reply:
             reply = f"*(No response from {agent.name})*"
 
-        reply_row = _record_agent_message(s, agent_id, "operator", "response", reply)
+        reply_row = _record_agent_message(s, agent_id, "operator", "response", reply, thread_id=thread_id)
         return {"reply": reply, "agent_id": agent_id, "created_at": reply_row.created_at.isoformat()}
 
 
@@ -4707,6 +4722,27 @@ def _build_orc_context(session, agent_id: str = "") -> str:
     return "\n".join(lines)
 
 
+def _recent_thread_context(session, thread_id: str = "operations", limit: int = 14) -> str:
+    rows = (
+        session.query(AgentMessage)
+        .filter(AgentMessage.thread_id == (thread_id or "operations"))
+        .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
+        .limit(limit)
+        .all()
+    )
+    if not rows:
+        return ""
+    lines = ["### Recent Conversation"]
+    for row in reversed(rows):
+        source = row.source_agent or "system"
+        target = f" -> {row.target_agent}" if row.target_agent else ""
+        summary = re.sub(r"\s+", " ", row.summary or "").strip()
+        if len(summary) > 220:
+            summary = summary[:217] + "..."
+        lines.append(f"- {source}{target} [{row.message_type}]: {summary}")
+    return "\n".join(lines)
+
+
 def _parse_route_blocks(text: str) -> list[dict]:
     """Extract ```route ... ``` blocks from an LLM response."""
     pattern = re.compile(r"```route\s*\n(.*?)```", re.DOTALL)
@@ -4819,7 +4855,7 @@ def _clarify_ambiguous_target(user_message: str, session) -> str | None:
     )
 
 
-def _agent_chat_internal(agent_id: str, instruction: str, session, extra_context: str = "") -> str:
+def _agent_chat_internal(agent_id: str, instruction: str, session, extra_context: str = "", thread_id: str = "operations") -> str:
     """Call an agent's LLM, store the exchange as AgentMessages, return the reply."""
     agent = session.query(AgentRuntimeState).filter_by(agent_id=agent_id).first()
     if not agent:
@@ -4828,6 +4864,9 @@ def _agent_chat_internal(agent_id: str, instruction: str, session, extra_context
         return f"*(Agent '{agent.name}' is disabled)*"
 
     context = _build_orc_context(session, agent_id)
+    recent = _recent_thread_context(session, thread_id)
+    if recent:
+        context += f"\n\n{recent}"
     if extra_context:
         context += f"\n\n{extra_context}"
 
@@ -4869,7 +4908,7 @@ def _auto_create_approval(instruction: str, gate_keeper_reply: str, session) -> 
     return req
 
 
-def _run_orc_loop(user_message: str, session) -> str:
+def _run_orc_loop(user_message: str, session, thread_id: str = "operations") -> str:
     """ORC Orchestrator iterative multi-agent routing loop. Up to 3 ORC turns."""
     MAX_ROUNDS = 3
     MAX_ROUTES_PER_ROUND = 3
@@ -4879,6 +4918,9 @@ def _run_orc_loop(user_message: str, session) -> str:
         return "*(ORC Orchestrator agent not found)*"
 
     orc_context = _build_orc_context(session, "orc-orchestrator")
+    recent = _recent_thread_context(session, thread_id)
+    if recent:
+        orc_context += f"\n\n{recent}"
 
     # Build the conversation that persists across rounds
     conversation: list[dict] = [
@@ -4901,7 +4943,7 @@ def _run_orc_loop(user_message: str, session) -> str:
             return orc_reply
 
         # Store ORC's routing plan for this round
-        _record_agent_message(session, "orc-orchestrator", "", "routing_plan", orc_reply)
+        _record_agent_message(session, "orc-orchestrator", "", "routing_plan", orc_reply, thread_id=thread_id)
         conversation.append({"role": "assistant", "content": orc_reply})
 
         # Execute each route in this round
@@ -4910,8 +4952,8 @@ def _run_orc_loop(user_message: str, session) -> str:
             target_id = route["agent_id"]
             instruction = route["instruction"]
 
-            _record_agent_message(session, "orc-orchestrator", target_id, "routing", instruction)
-            agent_reply = _agent_chat_internal(target_id, instruction, session)
+            _record_agent_message(session, "orc-orchestrator", target_id, "routing", instruction, thread_id=thread_id)
+            agent_reply = _agent_chat_internal(target_id, instruction, session, thread_id=thread_id)
             approval_row = None
 
             # Gate Keeper: auto-create an ApprovalRequest so it shows in Approvals tab
@@ -4925,6 +4967,7 @@ def _run_orc_loop(user_message: str, session) -> str:
                 "response",
                 agent_reply,
                 {"approval_id": approval_row.id} if approval_row else None,
+                thread_id=thread_id,
             )
 
             target_agent = session.query(AgentRuntimeState).filter_by(agent_id=target_id).first()
