@@ -813,8 +813,10 @@ html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="cha
 .network-stage{position:relative;z-index:1;height:calc(100vh - 118px);min-height:680px;overflow:hidden;cursor:grab;touch-action:none;border-radius:10px}
 .network-stage.dragging{cursor:grabbing}
 .raven-flight{position:absolute;z-index:9;left:0;top:0;width:60px;height:42px;object-fit:contain;pointer-events:none;filter:drop-shadow(0 0 1px rgba(255,255,255,.82)) drop-shadow(0 7px 12px rgba(0,0,0,.5));animation:raven-flight-to-center 1.15s ease-in-out forwards}
+.raven-flight.focused{z-index:10;filter:drop-shadow(0 0 2px rgba(255,214,102,.95)) drop-shadow(0 7px 12px rgba(0,0,0,.52)) hue-rotate(-14deg) saturate(1.2);animation:raven-flight-to-worker 1.25s ease-in-out forwards}
 .raven-scroll-drop{position:absolute;z-index:8;left:0;top:0;width:58px;height:auto;object-fit:contain;pointer-events:none;filter:drop-shadow(0 5px 7px rgba(0,0,0,.42));animation:raven-scroll-drop 1.65s ease-out forwards}
 @keyframes raven-flight-to-center{0%{opacity:0;transform:translate(calc(var(--sx) - 30px),calc(var(--sy) - 21px)) scale(.38) rotate(var(--start-rot));filter:drop-shadow(0 0 1px rgba(255,255,255,.82)) drop-shadow(0 7px 12px rgba(0,0,0,.5)) blur(0)}16%{opacity:1}82%{opacity:1}100%{opacity:0;transform:translate(calc(var(--ex) - 30px),calc(var(--ey) - 21px)) scale(.76) rotate(var(--end-rot));filter:drop-shadow(0 0 5px rgba(230,237,243,.28)) blur(1.4px)}}
+@keyframes raven-flight-to-worker{0%{opacity:0;transform:translate(calc(var(--sx) - 30px),calc(var(--sy) - 21px)) scale(.42) rotate(var(--start-rot));filter:drop-shadow(0 0 2px rgba(255,214,102,.95)) drop-shadow(0 7px 12px rgba(0,0,0,.52)) blur(0)}16%{opacity:1}82%{opacity:1}100%{opacity:0;transform:translate(calc(var(--ex) - 30px),calc(var(--ey) - 21px)) scale(.8) rotate(var(--end-rot));filter:drop-shadow(0 0 6px rgba(255,214,102,.55)) blur(1.3px)}}
 @keyframes raven-scroll-drop{0%{opacity:0;transform:translate(calc(var(--x) - 29px),calc(var(--y) - 8px)) scale(.28) rotate(-9deg)}18%{opacity:1}72%{opacity:.95}100%{opacity:0;transform:translate(calc(var(--x) - 29px),calc(var(--y) + 44px)) scale(1) rotate(3deg)}}
 .net-pan-surface{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .net-backbone{position:absolute;z-index:0;left:0;top:0;overflow:visible;pointer-events:none}
@@ -843,6 +845,7 @@ html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="cha
 .worker-avatar{position:relative;width:48px;height:48px;overflow:visible;background:transparent;border:0;flex:0 0 48px}
 .worker-avatar::after{content:"";display:none;position:absolute;right:0;bottom:4px;width:13px;height:13px;border-radius:50%;background:#020407;border:2px solid rgba(255,255,255,.72);box-shadow:0 2px 8px rgba(0,0,0,.55)}
 .net-worker.checking .worker-avatar::after{display:block}
+.net-worker.focused-checking .worker-avatar::after{display:block;background:#d29922;border-color:rgba(255,241,179,.9)}
 .worker-avatar img{width:100%;height:100%;object-fit:contain;position:static;display:block}
 .net-dot{position:absolute;left:34px;top:-3px;width:21px;height:21px;border-radius:50%;box-shadow:0 0 0 2px #0d1117,0 2px 8px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-size:.58rem;line-height:1;font-weight:900;color:#fff;flex-shrink:0}
 .net-worker.left .net-dot{left:auto;right:34px}
@@ -968,12 +971,12 @@ canvas{display:block;width:100%;height:58px}
 .chat-bubble{border:1px solid #253041;border-radius:16px 16px 16px 5px;background:#111b27;padding:8px 10px;min-width:0}
 .chat-row.right .chat-bubble{border-radius:16px 16px 5px 16px;background:#182236;border-color:rgba(163,113,247,.45)}
 .chat-row.system .chat-bubble{background:#0d1117;border-color:#21262d}
-.chat-row.agent-raven .chat-bubble{background:#182227;border-color:rgba(63,185,80,.34)}
-.chat-row.agent-oracle .chat-bubble{background:#231d12;border-color:rgba(210,153,34,.34)}
-.chat-row.agent-gate-keeper .chat-bubble{background:#2a1b12;border-color:rgba(248,81,73,.32)}
-.chat-row.agent-executioner .chat-bubble{background:#25161d;border-color:rgba(255,123,114,.32)}
-.chat-row.agent-sage .chat-bubble{background:#15202b;border-color:rgba(88,166,255,.34)}
-.chat-row.agent-orc-orchestrator .chat-bubble{background:#1f1b29;border-color:rgba(163,113,247,.38)}
+.chat-row.agent-raven .chat-bubble{background:#1f312c;border-color:rgba(63,185,80,.46)}
+.chat-row.agent-oracle .chat-bubble{background:#342914;border-color:rgba(210,153,34,.46)}
+.chat-row.agent-gate-keeper .chat-bubble{background:#3a2416;border-color:rgba(248,81,73,.42)}
+.chat-row.agent-executioner .chat-bubble{background:#331c24;border-color:rgba(255,123,114,.42)}
+.chat-row.agent-sage .chat-bubble{background:#1b2a39;border-color:rgba(88,166,255,.44)}
+.chat-row.agent-orc-orchestrator .chat-bubble{background:#2d243a;border-color:rgba(163,113,247,.46)}
 .chat-bubble.waiting-approval{background:linear-gradient(180deg,rgba(74,53,14,.9),rgba(49,35,10,.92));border-color:rgba(210,153,34,.65);box-shadow:0 0 0 1px rgba(210,153,34,.16) inset}
 .chat-meta{font-size:.69rem;color:var(--mut);margin-bottom:4px;display:flex;gap:5px;flex-wrap:wrap}
 .chat-text{font-size:.85rem;line-height:1.4;overflow-wrap:anywhere}
@@ -1485,6 +1488,7 @@ let _stacks=[], _connLogoDraft='', _networkZoom=1;
 let _networkPan={x:0,y:0,worldKey:'',centeredStageId:'',centeredVisible:false,dragging:false,startX:0,startY:0,originX:0,originY:0,suppressClick:false};
 let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,moved:false};
 let _networkChecking={server:'',container:''};
+let _focusedNetworkChecking={};
 let _viewMode='corporate';
 let _orch={agents:[],skills:[],messages:[],approvals:[],learnings:[],paths:{}};
 let _orchTab='chat', _adminTab='connections', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null, _skillEditId='', _agentEditId='';
@@ -2516,7 +2520,8 @@ function renderTopology(stacks,stageId,artMode='character'){
     const serverName=node.stack.server_name||node.stack.server||'Unknown server';
     const issueText=`${counts.errors} error${counts.errors!==1?'s':''}, ${counts.warnings} warning${counts.warnings!==1?'s':''}`;
     const checking=_networkChecking.server===node.stack.server&&_networkChecking.container===containerName;
-    return `<div class="net-worker ${side} ${checking?'checking':''}" data-node-id="${esc(node.id)}" data-stack-node-id="${esc(node.stackNode.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" onclick="jumpToEventsFromEl(this)" data-server="${esc(node.stack.server)}" data-container="${esc(containerName)}" data-severity="${esc(dot==='err'?'error':dot==='warn'?'warning':'')}" aria-label="${esc(containerName)}">
+    const focusedChecking=!!_focusedNetworkChecking[`${node.stack.server}::${containerName}`];
+    return `<div class="net-worker ${side} ${checking?'checking':''} ${focusedChecking?'focused-checking':''}" data-node-id="${esc(node.id)}" data-stack-node-id="${esc(node.stackNode.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" onclick="jumpToEventsFromEl(this)" data-server="${esc(node.stack.server)}" data-container="${esc(containerName)}" data-severity="${esc(dot==='err'?'error':dot==='warn'?'warning':'')}" aria-label="${esc(containerName)}">
       <span class="worker-avatar"><img src="${esc(workerAsset)}" alt=""></span>
       <span class="net-dot ${dot}">${esc(dotText)}</span>
       <span class="net-worker-name">${esc(displayName)}</span>
@@ -2562,6 +2567,30 @@ function setNetworkCheckingContainer(server,container,active=true){
     document.querySelectorAll('.network-stage').forEach(stage=>{
       const node=findNetworkWorker(server,container,stage);
       if(node)node.classList.add('checking');
+    });
+  }
+}
+function focusedNetworkKey(server,container){
+  return `${server||''}::${container||''}`;
+}
+function setFocusedNetworkChecking(server,container,active=true){
+  const key=focusedNetworkKey(server,container);
+  if(!container)return;
+  if(active)_focusedNetworkChecking[key]=true;
+  else{
+    if(server)delete _focusedNetworkChecking[key];
+    else Object.keys(_focusedNetworkChecking).forEach(k=>{if(k.endsWith(`::${container}`))delete _focusedNetworkChecking[k];});
+  }
+  document.querySelectorAll('.net-worker.focused-checking').forEach(el=>{
+    const match=server
+      ? focusedNetworkKey(el.dataset.server||'',el.dataset.container||'')===key
+      : (el.dataset.container||'')===container;
+    if(!active||!match)el.classList.remove('focused-checking');
+  });
+  if(active){
+    document.querySelectorAll('.network-stage').forEach(stage=>{
+      const node=findNetworkWorker(server,container,stage);
+      if(node)node.classList.add('focused-checking');
     });
   }
 }
@@ -2613,6 +2642,29 @@ function launchRavenFromContainer(server,container){
   setTimeout(()=>{if(stage.isConnected)dropRavenScroll(stage,end.x,end.y+30);},820);
   bird.addEventListener('animationend',()=>bird.remove(),{once:true});
   setTimeout(()=>bird.remove(),1400);
+}
+function launchFocusedRavenToContainer(server,container){
+  const stage=activeTopologyStage();
+  if(!stage||!container)return;
+  const node=findNetworkWorker(server,container,stage);
+  if(!node)return;
+  const hub=networkHubForWorker(node);
+  const start=hub?networkElementCenter(hub,stage):{x:stage.clientWidth/2,y:stage.clientHeight/2};
+  const end=networkElementCenter(node,stage);
+  const bird=document.createElement('img');
+  bird.className='raven-flight focused';
+  bird.src='/assets/kingdoms/raven-flying.png';
+  bird.alt='';
+  const dir=end.x>=start.x?1:-1;
+  bird.style.setProperty('--sx',`${start.x.toFixed(1)}px`);
+  bird.style.setProperty('--sy',`${start.y.toFixed(1)}px`);
+  bird.style.setProperty('--ex',`${end.x.toFixed(1)}px`);
+  bird.style.setProperty('--ey',`${end.y.toFixed(1)}px`);
+  bird.style.setProperty('--start-rot',`${(dir*4).toFixed(1)}deg`);
+  bird.style.setProperty('--end-rot',`${(dir*16).toFixed(1)}deg`);
+  stage.appendChild(bird);
+  bird.addEventListener('animationend',()=>bird.remove(),{once:true});
+  setTimeout(()=>bird.remove(),1500);
 }
 
 /* ============================================================
@@ -3456,6 +3508,13 @@ function handleRaven(msg){
       if(_nextEl&&_nextTxt){if(msg.next_container){_nextEl.style.display='';_nextTxt.textContent=msg.next_container;}else{_nextEl.style.display='none';}}
       break;
     }
+    case 'focused_watch_checking':{
+      _hbBucket=1;
+      setStatus('🜂',`Focused watch on ${msg.container} in ${serverDisplay}`,true);
+      setFocusedNetworkChecking(serverKey,msg.container||'',true);
+      launchFocusedRavenToContainer(serverKey,msg.container||'');
+      break;
+    }
     case 'issue_event':{
       const sev=msg.severity||'error';
       _hbAlertBuf.push({severity:sev});
@@ -3472,6 +3531,18 @@ function handleRaven(msg){
       else setStatus('✓',`${msg.container} · no new issues`,true);
       break;
     }
+    case 'focused_watch_result':{
+      setFocusedNetworkChecking(serverKey,msg.container||'',false);
+      const ne=msg.errors||0,nw=msg.warnings||0;
+      if(ne>0){setStatus('⚠',`${msg.container} focused watch found ${ne} error${ne!==1?'s':''}`,true);}
+      else if(nw>0){setStatus('⚠',`${msg.container} focused watch found ${nw} warning${nw!==1?'s':''}`,true);}
+      else setStatus('✓',`${msg.container} focused watch complete`,true);
+      break;
+    }
+    case 'focused_watch_expired':
+      if(msg.container)setFocusedNetworkChecking('',msg.container,false);
+      setStatus('⌛',`${msg.container||'Focused watch'} expired`,true);
+      break;
     case 'poll_error': setStatus('✗',`${serverDisplay}: ${msg.error||'connection failed'}`,true);addIssuePill(msg); break;
     case 'agent_message':
       setStatus('✉',`${msg.source_agent||'agent'} -> ${msg.target_agent||'all'}: ${msg.message_type||'message'}`,true);

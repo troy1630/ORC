@@ -204,6 +204,15 @@ def _poll_focused_watch(watch: FocusedWatch, conn: Connection) -> None:
     issue_payloads: list[dict] = []
     now = datetime.now(timezone.utc)
     try:
+        raven.publish({
+            "type": "focused_watch_checking",
+            "server": conn.server_name or conn.name,
+            "server_key": conn.name,
+            "container": watch.container_name,
+            "watch_id": watch.id,
+            "interval_seconds": watch.interval_seconds,
+            "expires_at": watch.expires_at.isoformat(),
+        })
         with SessionLocal() as session:
             checkpoint = (
                 session.query(IngestionCheckpoint)
