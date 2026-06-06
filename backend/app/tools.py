@@ -7,8 +7,10 @@ function here — no other code changes needed.
 """
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
+from .config import REPO_ROOT
 from .db import Connection, SessionLocal
 from .portainer import PortainerClient
 
@@ -144,6 +146,76 @@ def search_containers(term: str) -> dict:
                         "service_name": labels.get("com.docker.compose.service") or "",
                     })
     return {"term": term, "count": len(matches), "matches": matches}
+
+
+def _safe_skill_file(skill_id: str) -> Path:
+    skill_root = (REPO_ROOT / "skills").resolve()
+    target = (skill_root / skill_id / "skills.md").resolve()
+    try:
+        target.relative_to(skill_root)
+    except ValueError as exc:
+        raise ValueError("Invalid skill id") from exc
+    return target
+
+
+@orc_tool(
+    description=(
+        "Read a skill Markdown definition by skill ID so agents can inspect the live registry entry "
+        "before proposing or applying documentation changes."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "skill_id": {
+                "type": "string",
+                "description": "Canonical skill ID / folder name under skills/",
+            }
+        },
+        "required": ["skill_id"],
+    },
+)
+def read_skill_definition(skill_id: str) -> dict:
+    try:
+        target = _safe_skill_file(skill_id)
+        if not target.exists():
+            return {"error": f"Skill '{skill_id}' not found"}
+        return {
+            "skill_id": skill_id,
+            "path": str(target.relative_to(REPO_ROOT)),
+            "content": target.read_text(encoding="utf-8"),
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+@orc_tool(
+    description=(
+        "Write a full skill Markdown definition back to the registry. Use this only after Gate Keeper "
+        "has approved a skill documentation update."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "skill_id": {
+                "type": "string",
+                "description": "Canonical skill ID / folder name under skills/",
+            },
+            "content": {
+                "type": "string",
+                "description": "Complete Markdown content for skills.md",
+            },
+        },
+        "required": ["skill_id", "content"],
+    },
+)
+def write_skill_definition(skill_id: str, content: str) -> dict:
+    try:
+        target = _safe_skill_file(skill_id)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        return {"ok": True, "skill_id": skill_id, "path": str(target.relative_to(REPO_ROOT))}
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 @orc_tool(

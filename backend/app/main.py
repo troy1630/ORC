@@ -1220,7 +1220,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
             <div class="orch-form">
               <div class="orch-field"><label>Name</label><input class="orch-input" id="agent-name" placeholder="Reliability Scout"></div>
               <div class="orch-field"><label>ID</label><input class="orch-input" id="agent-id" placeholder="reliability-scout"></div>
-              <div class="orch-field"><label>Role</label><input class="orch-input" id="agent-role" placeholder="observer"></div>
+              <div class="orch-field"><label>Role</label><input class="orch-input" id="agent-role" placeholder="observer"><div class="field-help" id="agent-role-meta">Role says who the agent is and what decisions it can make.</div></div>
               <div class="orch-field"><label>Risk</label><select class="orch-select" id="agent-risk"><option>low</option><option>medium</option><option>high</option></select></div>
               <label class="agent-enabled wide"><input id="agent-approval" type="checkbox"> Approval required</label>
               <div class="orch-field wide"><label>Purpose</label><textarea class="orch-textarea" id="agent-purpose"></textarea></div>
@@ -2862,6 +2862,7 @@ function renderAgents(){
       <div style="min-width:0;flex:1">
         <div class="agent-name" title="${esc(a.name)}">${esc(a.name)}</div>
         <div class="agent-role" title="${esc(a.role)}">${esc(a.role)}</div>
+        <div class="agent-capabilities">Trust: ${esc(a.trust_mode||'recommend_only')} · ${a.enabled?'Enabled':'Disabled'} · Uses skills, approvals, and learning</div>
         <div class="agent-controls">
           <select class="trust-select" onchange="setAgentTrustFromEl(this)" ${canAdmin?'':'disabled'}>
             <option value="recommend_only"${a.trust_mode==='recommend_only'?' selected':''}>recommend only</option>
@@ -2915,6 +2916,10 @@ function fillAgentForm(a){
   if(a.logo_data){_agentLogoDraft=a.logo_data;}
   renderAgentBuilderChoices();
   setAgentEditMode(a.id);
+  const meta=document.getElementById('agent-role-meta');
+  if(meta){
+    meta.textContent='Role says who the agent is and what kind of decisions it can make. Skills, approvals, and learning are visible because ORC owns the workflow, not the agent alone.';
+  }
   showOrchTab('agents');
   document.getElementById('agent-name')?.focus();
 }
@@ -2954,6 +2959,21 @@ function chatBubbleText(id,text){
   if(text.length<=CHAT_COLLAPSE_LEN)return `<div class="chat-text">${esc(text)}</div>`;
   return `<div class="chat-text" id="ct-${id}"><span class="chat-short">${esc(text.slice(0,CHAT_COLLAPSE_LEN))}<span class="muted">…</span></span><span class="chat-full" style="display:none">${esc(text)}</span><br><button class="chat-expand-btn btns" style="margin-top:4px;font-size:0.75rem" onclick="toggleChatExpand(${id})">▸ Show more</button></div>`;
 }
+function splitAgentChatText(m){
+  const raw=(m?.summary||'').trim();
+  const detailFromPayload=(m?.payload&&typeof m.payload==='object')?String(m.payload.detail||m.payload.response||m.payload.rationale||m.payload.note||'').trim():'';
+  const clean=raw.replace(/^Plain-English summary:\\s*/i,'').replace(/^Summary:\\s*/i,'').replace(/\\s+/g,' ').trim();
+  const firstSentence=clean.split(/(?<=[.!?])\\s+/)[0]||clean;
+  const short=firstSentence.length>220?firstSentence.slice(0,217)+'…':firstSentence;
+  const detail=detailFromPayload||clean;
+  return {short:short||clean||'—', detail:detail!==short?detail:''};
+}
+function chatBubbleSummaryDetail(id,short,detail){
+  const safeShort=short||'—';
+  const safeDetail=(detail||'').trim();
+  if(!safeDetail||safeDetail===safeShort)return `<div class="chat-text">${esc(safeShort)}</div>`;
+  return `<div class="chat-text" id="ct-${id}"><span class="chat-short">${esc(safeShort)}<span class="muted">…</span></span><span class="chat-full" style="display:none">${esc(safeDetail)}</span><br><button class="chat-expand-btn btns" style="margin-top:4px;font-size:0.75rem" onclick="toggleChatExpand(${id})">▸ Show more</button></div>`;
+}
 function toggleChatExpand(id){
   const el=document.getElementById('ct-'+id);
   if(!el)return;
@@ -2979,11 +2999,13 @@ function renderChat(){
     const cls=right?'right':isSystem?'system':'';
     const senderLabel=isOperator?(_currentUser?.username||'You'):esc(src.name);
     const avatarSrc=isOperator?'/assets/characters/orc.png':agentArt(src);
+    const chat=splitAgentChatText(m);
+    const bodyHtml=chatBubbleSummaryDetail(m.id,chat.short,chat.detail);
     return `<div class="chat-row ${cls}">
       <img class="chat-avatar ${_viewMode==='corporate'&&!isOperator?'corp':''}" src="${esc(avatarSrc)}" alt="">
       <div class="chat-bubble">
         <div class="chat-meta"><span>${senderLabel}</span>${m.target_agent&&!isOperator?`<span>→ ${esc(tgt.name)}</span>`:''}<span>${esc(m.message_type)}</span><span>${esc(fmtShort(m.created_at))}</span></div>
-        ${chatBubbleText(m.id,m.summary)}
+        ${bodyHtml}
       </div>
     </div>`;
   }).join('');
@@ -4548,6 +4570,27 @@ def _build_orc_context(session, agent_id: str = "") -> str:
         for e in others:
             assigned_note = f" (assigned to: {e[3]})" if e[3] else ""
             lines.append(_render_skill(e[0], e[1], e[2], e[3]) + (f"\n*Assigned to: {e[3]}*" if e[3] else ""))
+    lines.append("")
+
+    lines.append("### Skill Metadata Index")
+    for item in skill_items:
+        skill_path = REPO_ROOT / item.path
+        try:
+            content = skill_path.read_text(encoding="utf-8")
+        except Exception:
+            content = ""
+        metadata: dict[str, str] = {}
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            key = key.strip().lower()
+            if key in {"name", "id", "version", "category", "risk_level", "approval_required", "agent"}:
+                metadata[key] = value.strip()
+        if metadata:
+            display = ", ".join(f"{k}={v}" for k, v in metadata.items())
+            lines.append(f"- {display}")
     lines.append("")
 
     return "\n".join(lines)
