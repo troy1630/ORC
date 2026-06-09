@@ -200,6 +200,16 @@ class UserSession(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
 def init_db(retries: int = 10, delay: float = 3.0) -> None:
     import logging
     import time
@@ -215,6 +225,11 @@ def init_db(retries: int = 10, delay: float = 3.0) -> None:
                 raise
             log.warning("DB not ready (attempt %d/%d): %s — retrying in %.0fs", attempt, retries, exc, delay)
             time.sleep(delay)
+
+
+_DEFAULT_SETTINGS: dict[str, str] = {
+    "event_retention_days": "30",
+}
 
 
 def _migrate() -> None:
@@ -246,3 +261,10 @@ def _migrate() -> None:
                     conn.execute(text("ALTER TABLE agent_runtime_states ADD COLUMN logo_data TEXT"))
             except Exception:
                 pass
+
+    # Seed default system settings (insert only if missing)
+    with SessionLocal() as s:
+        for key, value in _DEFAULT_SETTINGS.items():
+            if not s.get(SystemSetting, key):
+                s.add(SystemSetting(key=key, value=value))
+        s.commit()

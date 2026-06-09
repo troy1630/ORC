@@ -17,7 +17,7 @@ from sqlalchemy import func
 
 from . import raven
 from .config import POLL_INTERVAL_SECONDS
-from .db import Connection, FocusedWatch, IngestionCheckpoint, ObservedEvent, SessionLocal, init_db
+from .db import Connection, FocusedWatch, IngestionCheckpoint, ObservedEvent, SessionLocal, SystemSetting, init_db
 from .ingest import parse_logs
 from .portainer import PortainerClient
 
@@ -28,6 +28,40 @@ log = logging.getLogger("orc.worker")
 _queue: deque = deque()
 _sleep: float = float(POLL_INTERVAL_SECONDS)
 _warned_no_connections: bool = False
+_last_prune: datetime | None = None
+_PRUNE_INTERVAL_SECONDS: int = 300
+
+
+def _get_setting(key: str, default: str = "") -> str:
+    try:
+        with SessionLocal() as s:
+            row = s.get(SystemSetting, key)
+            return row.value if row else default
+    except Exception:
+        return default
+
+
+def _prune_old_events() -> None:
+    global _last_prune
+    now = datetime.now(timezone.utc)
+    if _last_prune and (now - _last_prune).total_seconds() < _PRUNE_INTERVAL_SECONDS:
+        return
+    _last_prune = now
+    try:
+        days = max(1, int(_get_setting("event_retention_days", "30")))
+        cutoff = now - timedelta(days=days)
+        with SessionLocal() as s:
+            deleted = (
+                s.query(ObservedEvent)
+                .filter(ObservedEvent.occurred_at < cutoff)
+                .delete(synchronize_session=False)
+            )
+            s.commit()
+        if deleted:
+            log.info("Pruned %d events older than %d days", deleted, days)
+            raven.publish({"type": "retention_prune", "deleted": deleted, "retention_days": days})
+    except Exception as exc:
+        log.error("Event prune failed: %s", exc)
 
 
 def _rebuild_queue() -> None:
@@ -360,6 +394,7 @@ def main() -> None:
     log.info("ORC worker started")
     while True:
         try:
+            _prune_old_events()
             _cleanup_expired_focused_watches()
             _check_poll_interval_reverts()
             if not _queue:

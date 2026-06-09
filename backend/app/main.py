@@ -31,6 +31,7 @@ from .db import (
     LearningEntry,
     ObservedEvent,
     SessionLocal,
+    SystemSetting,
     UserAccount,
     UserSession,
     init_db,
@@ -1065,7 +1066,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
       <input class="orch-input" id="login-username" autocomplete="username" placeholder="Username">
       <input class="orch-input" id="login-password" autocomplete="current-password" placeholder="Password" type="password">
       <div class="login-error" id="login-error"></div>
-      <button class="btnp" onclick="login()">Login</button>
+      <button class="btnp" type="button" onclick="login()">Login</button>
     </div>
   </div>
 </div>
@@ -1168,6 +1169,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
       <div class="orch-subtabs">
         <button class="orch-tab on" id="admin-tab-connections" onclick="showAdminTab('connections')">Connections</button>
         <button class="orch-tab" id="admin-tab-ai-usage" onclick="showAdminTab('ai-usage')">AI Usage</button>
+        <button class="orch-tab" id="admin-tab-retention" onclick="showAdminTab('retention')">Retention</button>
       </div>
 
       <!-- ADMIN: Connections -->
@@ -1201,6 +1203,34 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
           <div class="card" style="padding:16px">
             <div style="font-weight:600;margin-bottom:10px">Daily Token Usage</div>
             <canvas id="ai-usage-chart" width="700" height="160" style="max-width:100%;display:block"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- ADMIN: Retention -->
+      <section class="orch-view" id="admin-view-retention">
+        <div style="margin-top:12px">
+          <div class="card" style="padding:16px;margin-bottom:16px">
+            <div style="font-weight:600;font-size:1rem;margin-bottom:4px">Event Retention</div>
+            <div style="font-size:.78rem;color:var(--mut);margin-bottom:14px">The worker automatically deletes events older than the retention window every 5 minutes. Pruning does not affect current polling.</div>
+            <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;margin-bottom:14px">
+              <div class="fg">
+                <label>Retention window (days)</label>
+                <input id="retention-days" type="number" min="1" max="365" class="orch-input" style="width:120px" placeholder="30">
+              </div>
+              <button class="btnp" type="button" onclick="saveRetentionSettings()">Save</button>
+              <span id="retention-save-msg" style="font-size:.78rem;color:var(--green,#3fb950)"></span>
+            </div>
+          </div>
+          <div class="card" style="padding:16px;margin-bottom:16px">
+            <div style="font-weight:600;margin-bottom:10px">Event Database Stats</div>
+            <div id="retention-stats"><div class="empty">Loading…</div></div>
+          </div>
+          <div class="card" style="padding:16px">
+            <div style="font-weight:600;margin-bottom:10px">Manual Prune</div>
+            <div style="font-size:.78rem;color:var(--mut);margin-bottom:10px">Delete all events older than the current retention window immediately.</div>
+            <button class="btns" type="button" onclick="pruneEventsNow()" id="prune-btn">Prune Now</button>
+            <span id="prune-msg" style="font-size:.78rem;margin-left:10px"></span>
           </div>
         </div>
       </section>
@@ -1606,6 +1636,7 @@ async function logout(){
   location.reload();
 }
 async function startApp(){
+  showTab('home');
   renderOracle();
   setViewMode(storageGet(VIEW_MODE_KEY)||'corporate',false);
   setWindowHours(storageGet('orc.window.hours')||24,false);
@@ -1635,6 +1666,7 @@ function showAdminTab(id){
   if(view)view.classList.add('on');
   if(_adminTab==='connections')loadConns();
   if(_adminTab==='ai-usage')loadAiUsage();
+  if(_adminTab==='retention')loadRetentionSettings();
 }
 function showTab(id){
   if(id==='admin'&&_currentUser?.role!=='admin')id=firstTabForMode();
@@ -1657,7 +1689,7 @@ function tabsForViewMode(mode=_viewMode){
 function tabAllowed(id){return id==='home'||tabsForViewMode().includes(id);}
 function firstTabForMode(){return tabsForViewMode()[0];}
 function normalizeViewMode(mode){
-  if(mode==='default')return 'character';
+  if(mode==='default')return 'corporate';
   return mode==='character'?'character':'corporate';
 }
 function setViewMode(mode,persist=true){
@@ -2028,8 +2060,14 @@ function renderHomeDashboard(){
 }
 async function loadHomeRecent(){
   try{
-    const d=await fetch(`/events?limit=80&hours=${_windowHours}`).then(r=>r.json());
-    _homeRecent=(d.items||[]).filter(e=>['critical','error','warning'].includes(e.severity)).slice(0,7);
+    const qs=`hours=${_windowHours}`;
+    const [err,warn]=await Promise.all([
+      fetch(`/events?limit=40&${qs}&severity=error`).then(r=>r.json()),
+      fetch(`/events?limit=20&${qs}&severity=warning`).then(r=>r.json())
+    ]);
+    _homeRecent=[...(err.items||[]),...(warn.items||[])]
+      .sort((a,b)=>new Date(b.occurred_at)-new Date(a.occurred_at))
+      .slice(0,7);
     renderHomeDashboard();
   }catch{
     const el=document.getElementById('home-recent');
@@ -2739,6 +2777,66 @@ function renderEvts(){
   document.getElementById('ev-body').innerHTML=`<div class="scroll"><table>
     <thead><tr><th>Time (MT)</th><th>Server</th><th>Container</th><th>Severity</th><th>Message</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
+}
+
+/* ============================================================
+   ADMIN — RETENTION
+   ============================================================ */
+async function loadRetentionSettings(){
+  try{
+    const [settings,stats]=await Promise.all([
+      fetch('/admin/settings').then(r=>r.json()),
+      fetch('/admin/event-stats').then(r=>r.json())
+    ]);
+    const days=settings.settings?.event_retention_days||'30';
+    const el=document.getElementById('retention-days');
+    if(el)el.value=days;
+    renderRetentionStats(stats);
+  }catch(e){
+    const el=document.getElementById('retention-stats');
+    if(el)el.innerHTML=`<div class="empty">Could not load stats: ${esc(e.message)}</div>`;
+  }
+}
+function renderRetentionStats(d){
+  const el=document.getElementById('retention-stats');
+  if(!el)return;
+  if(!d||d.total_events===undefined){el.innerHTML='<div class="empty">No data.</div>';return;}
+  const oldest=d.oldest_event?fmt(d.oldest_event):'—';
+  const newest=d.newest_event?fmt(d.newest_event):'—';
+  const sev=d.by_severity||{};
+  const sevRows=Object.entries(sev).sort((a,b)=>b[1]-a[1]).map(([k,v])=>
+    `<tr><td style="padding:4px 10px;text-transform:capitalize">${esc(k)}</td><td style="padding:4px 10px">${v.toLocaleString()}</td></tr>`
+  ).join('');
+  el.innerHTML=`<div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px">
+    <div><div style="font-size:1.4rem;font-weight:700">${d.total_events.toLocaleString()}</div><div class="muted" style="font-size:.75rem">Total events</div></div>
+    <div><div style="font-size:.85rem;font-weight:600">${oldest}</div><div class="muted" style="font-size:.75rem">Oldest event</div></div>
+    <div><div style="font-size:.85rem;font-weight:600">${newest}</div><div class="muted" style="font-size:.75rem">Newest event</div></div>
+  </div>
+  ${sevRows?`<table style="font-size:.8rem"><thead><tr><th style="padding:4px 10px;text-align:left">Severity</th><th style="padding:4px 10px;text-align:left">Count</th></tr></thead><tbody>${sevRows}</tbody></table>`:''}`;
+}
+async function saveRetentionSettings(){
+  const days=(document.getElementById('retention-days')?.value||'').trim();
+  const msg=document.getElementById('retention-save-msg');
+  if(!days||isNaN(days)||Number(days)<1){if(msg)msg.textContent='Enter a valid number of days (min 1).';return;}
+  try{
+    await postJson('/admin/settings/event_retention_days',{value:days},'PUT');
+    if(msg){msg.textContent='Saved.';setTimeout(()=>{msg.textContent='';},3000);}
+  }catch(e){if(msg)msg.textContent=e.message||'Save failed.';}
+}
+async function pruneEventsNow(){
+  const btn=document.getElementById('prune-btn');
+  const msg=document.getElementById('prune-msg');
+  if(btn)btn.disabled=true;
+  if(msg)msg.textContent='Pruning…';
+  try{
+    const d=await postJson('/admin/prune-events',{});
+    if(msg)msg.textContent=`Deleted ${d.deleted} event(s).`;
+    loadRetentionSettings();
+  }catch(e){
+    if(msg)msg.textContent=e.message||'Prune failed.';
+  }finally{
+    if(btn)btn.disabled=false;
+  }
 }
 
 /* ============================================================
@@ -5535,6 +5633,75 @@ def poll_now(cid: int) -> dict:
             s.commit()
 
     return {"ok": True, "total_events": total_events}
+
+
+# ---------------------------------------------------------------------------
+# Routes — Admin Settings + Retention
+# ---------------------------------------------------------------------------
+
+@app.get("/admin/settings")
+def admin_get_settings(request: Request) -> dict:
+    _require_admin(request)
+    with SessionLocal() as s:
+        rows = s.query(SystemSetting).all()
+        settings = {row.key: row.value for row in rows}
+    return {"settings": settings}
+
+
+class SettingUpdateIn(BaseModel):
+    value: str
+
+
+@app.put("/admin/settings/{key}")
+def admin_update_setting(key: str, body: SettingUpdateIn, request: Request) -> dict:
+    _require_admin(request)
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as s:
+        row = s.get(SystemSetting, key)
+        if row:
+            row.value = body.value.strip()
+            row.updated_at = now
+        else:
+            s.add(SystemSetting(key=key, value=body.value.strip(), updated_at=now))
+        s.commit()
+    return {"ok": True, "key": key, "value": body.value.strip()}
+
+
+@app.get("/admin/event-stats")
+def admin_event_stats(request: Request) -> dict:
+    _require_admin(request)
+    with SessionLocal() as s:
+        total = s.query(func.count(ObservedEvent.id)).scalar() or 0
+        oldest = s.query(func.min(ObservedEvent.occurred_at)).scalar()
+        newest = s.query(func.max(ObservedEvent.occurred_at)).scalar()
+        by_severity = (
+            s.query(ObservedEvent.severity, func.count(ObservedEvent.id))
+            .group_by(ObservedEvent.severity)
+            .all()
+        )
+    return {
+        "total_events": total,
+        "oldest_event": oldest.isoformat() if oldest else None,
+        "newest_event": newest.isoformat() if newest else None,
+        "by_severity": {sev: cnt for sev, cnt in by_severity},
+    }
+
+
+@app.post("/admin/prune-events")
+def admin_prune_events(request: Request) -> dict:
+    _require_admin(request)
+    with SessionLocal() as s:
+        row = s.get(SystemSetting, "event_retention_days")
+        days = max(1, int(row.value)) if row else 30
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    with SessionLocal() as s:
+        deleted = (
+            s.query(ObservedEvent)
+            .filter(ObservedEvent.occurred_at < cutoff)
+            .delete(synchronize_session=False)
+        )
+        s.commit()
+    return {"ok": True, "deleted": deleted, "retention_days": days, "cutoff": cutoff.isoformat()}
 
 
 # ---------------------------------------------------------------------------
