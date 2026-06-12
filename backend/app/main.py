@@ -1195,7 +1195,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
           </div>
           <div class="card" style="padding:16px;margin-bottom:16px">
             <div style="font-weight:600;margin-bottom:10px">Daily Token Usage</div>
-            <canvas id="ai-usage-chart" width="1000" height="260" style="width:100%;max-width:100%;display:block"></canvas>
+            <canvas id="ai-usage-chart" width="1000" height="340" style="width:100%;height:340px;max-width:100%;display:block"></canvas>
           </div>
           <div id="ai-usage-cards" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px"></div>
           <div class="card" style="padding:16px;margin-bottom:16px">
@@ -2888,11 +2888,22 @@ function renderAiUsageTable(rows){
 function renderAiUsageChart(daily){
   const canvas=document.getElementById('ai-usage-chart');
   if(!canvas)return;
+  const cssW=Math.max(520,Math.floor(canvas.getBoundingClientRect().width||canvas.parentElement?.clientWidth||1000));
+  const cssH=340;
+  const dpr=Math.max(1,window.devicePixelRatio||1);
+  const backingW=Math.round(cssW*dpr),backingH=Math.round(cssH*dpr);
+  if(canvas.width!==backingW||canvas.height!==backingH){
+    canvas.width=backingW;
+    canvas.height=backingH;
+  }
+  canvas.style.height=cssH+'px';
   const ctx=canvas.getContext('2d');
-  const W=canvas.width,H=canvas.height;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const W=cssW,H=cssH;
   ctx.clearRect(0,0,W,H);
   if(!daily.length)return;
-  const maxTokens=Math.max(...daily.map(d=>d.total_tokens),1);
+  const rawMax=Math.max(...daily.map(d=>d.total_tokens),0);
+  const maxTokens=rawMax>0?rawMax:1;
 
   function fmtCompact(n){
     if(n>=1e6)return (n/1e6).toFixed(1)+'M';
@@ -2900,27 +2911,35 @@ function renderAiUsageChart(daily){
     return String(n);
   }
 
-  const pad={l:58,r:16,t:16,b:42};
+  const pad={l:92,r:24,t:24,b:78};
   const chartW=W-pad.l-pad.r;
   const chartH=H-pad.t-pad.b;
   const step=chartW/daily.length;
-  const barW=Math.max(4,Math.floor(step*.68));
+  const barW=Math.max(5,Math.floor(step*.62));
 
   const yTicks=[0,0.25,0.5,0.75,1];
+  ctx.strokeStyle='#30363d';
+  ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(pad.l,pad.t);
+  ctx.lineTo(pad.l,pad.t+chartH);
+  ctx.lineTo(W-pad.r,pad.t+chartH);
+  ctx.stroke();
+
   ctx.textAlign='right';
   ctx.textBaseline='middle';
+  ctx.font='700 13px sans-serif';
   yTicks.forEach(pct=>{
     const val=Math.round(maxTokens*pct);
     const yPos=pad.t+chartH-(pct*chartH);
-    ctx.strokeStyle='#2d3748';
+    ctx.strokeStyle=pct===0?'#30363d':'#263241';
     ctx.lineWidth=1;
     ctx.beginPath();
     ctx.moveTo(pad.l,yPos);
     ctx.lineTo(W-pad.r,yPos);
     ctx.stroke();
     ctx.fillStyle='#c9d1d9';
-    ctx.font='bold 12px sans-serif';
-    ctx.fillText(fmtCompact(val),pad.l-8,yPos);
+    ctx.fillText(fmtCompact(val),pad.l-12,yPos);
   });
 
   ctx.textAlign='center';
@@ -2934,10 +2953,10 @@ function renderAiUsageChart(daily){
     if(i%5===0||i===daily.length-1){
       const label=(d.date||'').slice(5);
       ctx.fillStyle='#e2e8f0';
-      ctx.font='bold 13px sans-serif';
+      ctx.font='700 13px sans-serif';
       ctx.save();
-      ctx.translate(x,H-pad.b+6);
-      ctx.rotate(-Math.PI/4);
+      ctx.translate(x+barW/2,pad.t+chartH+18);
+      ctx.rotate(-Math.PI/6);
       ctx.textAlign='right';
       ctx.textBaseline='middle';
       ctx.fillText(label,0,0);
@@ -2950,7 +2969,7 @@ function renderAiUsageChart(daily){
   ctx.rotate(-Math.PI/2);
   ctx.textAlign='center';
   ctx.fillStyle='#e2e8f0';
-  ctx.font='bold 13px sans-serif';
+  ctx.font='700 13px sans-serif';
   ctx.fillText('Tokens',0,0);
   ctx.restore();
 }
