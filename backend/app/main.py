@@ -1190,21 +1190,17 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
         <div style="margin-top:12px">
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
             <div style="font-weight:600;font-size:1rem">AI Usage</div>
-            <select id="ai-usage-days" onchange="loadAiUsage()" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border,#333);background:var(--card,#1e1e1e);color:inherit;font-size:0.82rem;">
-              <option value="7" selected>Last 7 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="90">Last 90 days</option>
-            </select>
+            <span class="muted" style="font-size:0.82rem">Last 30 days</span>
             <button class="btns" onclick="loadAiUsage()">Refresh</button>
+          </div>
+          <div class="card" style="padding:16px;margin-bottom:16px">
+            <div style="font-weight:600;margin-bottom:10px">Daily Token Usage</div>
+            <canvas id="ai-usage-chart" width="1000" height="260" style="width:100%;max-width:100%;display:block"></canvas>
           </div>
           <div id="ai-usage-cards" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px"></div>
           <div class="card" style="padding:16px;margin-bottom:16px">
             <div style="font-weight:600;margin-bottom:10px">Usage by Agent</div>
             <div id="ai-usage-table"><div class="empty">Loading...</div></div>
-          </div>
-          <div class="card" style="padding:16px">
-            <div style="font-weight:600;margin-bottom:10px">Daily Token Usage</div>
-            <canvas id="ai-usage-chart" width="700" height="160" style="max-width:100%;display:block"></canvas>
           </div>
         </div>
       </section>
@@ -2847,9 +2843,8 @@ async function pruneEventsNow(){
    ADMIN — AI USAGE
    ============================================================ */
 async function loadAiUsage(){
-  const days=document.getElementById('ai-usage-days')?.value||7;
   try{
-    const d=await fetch(`/admin/ai-usage?days=${days}`).then(r=>r.json());
+    const d=await fetch('/admin/ai-usage?days=30').then(r=>r.json());
     renderAiUsageCards(d.totals||{});
     renderAiUsageTable(d.rows||[]);
     renderAiUsageChart(d.daily||[]);
@@ -2892,25 +2887,28 @@ function renderAiUsageTable(rows){
 }
 function renderAiUsageChart(daily){
   const canvas=document.getElementById('ai-usage-chart');
-  if(!canvas||!daily.length)return;
+  if(!canvas)return;
   const ctx=canvas.getContext('2d');
   const W=canvas.width,H=canvas.height;
   ctx.clearRect(0,0,W,H);
+  if(!daily.length)return;
   const maxTokens=Math.max(...daily.map(d=>d.total_tokens),1);
-  const barW=Math.floor((W-40)/daily.length)-4;
-  const pad={l:40,r:10,t:10,b:30};
+  const pad={l:58,r:16,t:16,b:42};
+  const chartW=W-pad.l-pad.r;
   const chartH=H-pad.t-pad.b;
+  const step=chartW/daily.length;
+  const barW=Math.max(4,Math.floor(step*.68));
   ctx.fillStyle='#1e293b';
   daily.forEach((d,i)=>{
     const h=Math.floor((d.total_tokens/maxTokens)*chartH);
-    const x=pad.l+i*(barW+4);
+    const x=Math.round(pad.l+i*step+(step-barW)/2);
     const y=pad.t+chartH-h;
     ctx.fillStyle='#3b82f6';
     ctx.fillRect(x,y,barW,h);
-    if(i%Math.ceil(daily.length/7)===0){
+    if(i%5===0||i===daily.length-1){
       ctx.fillStyle='#888';
       ctx.font='10px sans-serif';
-      ctx.fillText((d.date||'').slice(5),x,H-6);
+      ctx.fillText((d.date||'').slice(5),x,H-12);
     }
   });
   ctx.fillStyle='#888';
@@ -5817,9 +5815,12 @@ def list_tools(request: Request) -> dict:
 
 
 @app.get("/admin/ai-usage")
-def get_ai_usage(request: Request, days: int = 7) -> dict:
+def get_ai_usage(request: Request, days: int = 30) -> dict:
     _require_admin(request)
-    cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 365)))
+    days = max(1, min(days, 365))
+    today = datetime.now(timezone.utc).date()
+    start_date = today - timedelta(days=days - 1)
+    cutoff = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
     with SessionLocal() as s:
         rows = (
             s.query(AIUsageLog)
@@ -5830,13 +5831,14 @@ def get_ai_usage(request: Request, days: int = 7) -> dict:
 
     # Group by agent + model + date
     by_day: dict = defaultdict(lambda: {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
-    by_agent: list = []
     seen: dict = {}
 
     totals = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-    row_dicts = []
     for row in rows:
-        date_str = row.request_at.strftime("%Y-%m-%d")
+        request_at = row.request_at
+        if request_at.tzinfo is None:
+            request_at = request_at.replace(tzinfo=timezone.utc)
+        date_str = request_at.astimezone(timezone.utc).date().isoformat()
         key = f"{row.agent_id}|{row.model}|{date_str}"
         if key not in seen:
             seen[key] = {"agent_id": row.agent_id, "model": row.model, "date": date_str,
@@ -5856,7 +5858,10 @@ def get_ai_usage(request: Request, days: int = 7) -> dict:
         totals["completion_tokens"] += row.completion_tokens
         totals["total_tokens"] += row.total_tokens
 
-    daily = [{"date": k, **v} for k, v in sorted(by_day.items())]
+    daily = []
+    for offset in range(days):
+        date_str = (start_date + timedelta(days=offset)).isoformat()
+        daily.append({"date": date_str, **by_day[date_str]})
     return {"rows": list(seen.values()), "daily": daily, "totals": totals}
 
 
