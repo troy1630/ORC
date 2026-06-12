@@ -15,5 +15,6 @@ data/
 .playwright-cli/
 output/
 .orc_verify.db
+.codex-handoffs/
 skills/private-portainer-sentinel/
 skills/private-portainer-sentinel/**
