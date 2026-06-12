@@ -2893,12 +2893,38 @@ function renderAiUsageChart(daily){
   ctx.clearRect(0,0,W,H);
   if(!daily.length)return;
   const maxTokens=Math.max(...daily.map(d=>d.total_tokens),1);
+
+  function fmtCompact(n){
+    if(n>=1e6)return (n/1e6).toFixed(1)+'M';
+    if(n>=1e3)return (n/1e3).toFixed(1)+'K';
+    return String(n);
+  }
+
   const pad={l:58,r:16,t:16,b:42};
   const chartW=W-pad.l-pad.r;
   const chartH=H-pad.t-pad.b;
   const step=chartW/daily.length;
   const barW=Math.max(4,Math.floor(step*.68));
-  ctx.fillStyle='#1e293b';
+
+  const yTicks=[0,0.25,0.5,0.75,1];
+  ctx.textAlign='right';
+  ctx.textBaseline='middle';
+  yTicks.forEach(pct=>{
+    const val=Math.round(maxTokens*pct);
+    const yPos=pad.t+chartH-(pct*chartH);
+    ctx.strokeStyle='#2d3748';
+    ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.moveTo(pad.l,yPos);
+    ctx.lineTo(W-pad.r,yPos);
+    ctx.stroke();
+    ctx.fillStyle='#c9d1d9';
+    ctx.font='bold 12px sans-serif';
+    ctx.fillText(fmtCompact(val),pad.l-8,yPos);
+  });
+
+  ctx.textAlign='center';
+  ctx.textBaseline='top';
   daily.forEach((d,i)=>{
     const h=Math.floor((d.total_tokens/maxTokens)*chartH);
     const x=Math.round(pad.l+i*step+(step-barW)/2);
@@ -2906,15 +2932,27 @@ function renderAiUsageChart(daily){
     ctx.fillStyle='#3b82f6';
     ctx.fillRect(x,y,barW,h);
     if(i%5===0||i===daily.length-1){
-      ctx.fillStyle='#888';
-      ctx.font='10px sans-serif';
-      ctx.fillText((d.date||'').slice(5),x,H-12);
+      const label=(d.date||'').slice(5);
+      ctx.fillStyle='#e2e8f0';
+      ctx.font='bold 13px sans-serif';
+      ctx.save();
+      ctx.translate(x,H-pad.b+6);
+      ctx.rotate(-Math.PI/4);
+      ctx.textAlign='right';
+      ctx.textBaseline='middle';
+      ctx.fillText(label,0,0);
+      ctx.restore();
     }
   });
-  ctx.fillStyle='#888';
-  ctx.font='10px sans-serif';
-  ctx.fillText(maxTokens.toLocaleString(),2,pad.t+8);
-  ctx.fillText('0',2,H-pad.b);
+
+  ctx.save();
+  ctx.translate(14,pad.t+chartH/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.textAlign='center';
+  ctx.fillStyle='#e2e8f0';
+  ctx.font='bold 13px sans-serif';
+  ctx.fillText('Tokens',0,0);
+  ctx.restore();
 }
 
 /* ============================================================
