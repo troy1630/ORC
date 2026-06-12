@@ -981,6 +981,8 @@ canvas{display:block;width:100%;height:58px}
 .chat-row.agent-orc-orchestrator .chat-bubble{background:#2d243a;border-color:rgba(163,113,247,.46)}
 .chat-bubble.waiting-approval{background:linear-gradient(180deg,rgba(74,53,14,.9),rgba(49,35,10,.92));border-color:rgba(210,153,34,.65);box-shadow:0 0 0 1px rgba(210,153,34,.16) inset}
 .chat-meta{font-size:.69rem;color:var(--mut);margin-bottom:4px;display:flex;gap:5px;flex-wrap:wrap}
+.chat-channel{color:#f2f7ff;font-weight:850}
+.chat-arrow{color:#9fb3c8;font-weight:850}
 .chat-text{font-size:.85rem;line-height:1.4;overflow-wrap:anywhere}
 .chat-approval-pill{display:inline-flex;align-items:center;gap:8px;margin:0 0 7px;padding:7px 10px;border-radius:999px;border:1px solid rgba(245,194,66,.58);background:rgba(245,194,66,.24);color:#fff1b3;font-size:.79rem;font-weight:800}
 .chat-approval-pill a,.chat-approval-pill button{font-size:.76rem}
@@ -1593,6 +1595,7 @@ const VIEW_MODE_KEY='orc.view.mode';
 const MT_ZONE='America/Denver';
 const DATE_FMT=new Intl.DateTimeFormat('en-US',{timeZone:MT_ZONE,year:'numeric',month:'short',day:'2-digit',hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
 const TIME_FMT=new Intl.DateTimeFormat('en-US',{timeZone:MT_ZONE,hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
+const CHAT_STAMP_FMT=new Intl.DateTimeFormat('en-US',{timeZone:MT_ZONE,month:'numeric',day:'numeric',year:'2-digit',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
 
 /* ============================================================
    UTILS
@@ -1708,6 +1711,7 @@ function toggleViewMode(){
 }
 function fmt(iso){return iso?DATE_FMT.format(new Date(iso)):'';}
 function fmtShort(iso){return iso?TIME_FMT.format(new Date(iso)):'';}
+function fmtChatStamp(iso){return iso?CHAT_STAMP_FMT.format(new Date(iso)):'';}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function hashStr(s){let h=0;for(let i=0;i<s.length;i++)h=((h<<5)-h+s.charCodeAt(i))|0;return Math.abs(h);}
 function storageGet(k){try{return localStorage.getItem(k);}catch{return null;}}
@@ -3218,7 +3222,9 @@ function renderChat(){
     const right=isOperator;
     const agentCls=isOperator?'operator':chatAgentClass(m.source_agent);
     const cls=[right?'right':'',isSystem?'system':'',agentCls].filter(Boolean).join(' ');
-    const senderLabel=isOperator?(_currentUser?.username||'You'):esc(src.name);
+    const sourceLabel=isOperator?(_currentUser?.username||'You'):src.name;
+    const targetLabel=m.target_agent?(m.target_agent==='operator'?'operator':tgt.name):'';
+    const channelHtml=`${esc(sourceLabel)}${targetLabel?` <span class="chat-arrow">-&gt;</span> ${esc(targetLabel)}`:''}`;
     const avatarSrc=isOperator?'/assets/characters/orc.png':agentArt(src);
     const chat=splitAgentChatText(m);
     const approvalRow=pendingApprovalForMessage(m);
@@ -3227,7 +3233,7 @@ function renderChat(){
     return `<div class="chat-row ${cls}">
       <img class="chat-avatar ${_viewMode==='corporate'&&!isOperator?'corp':''}" src="${esc(avatarSrc)}" alt="">
       <div class="chat-bubble ${approvalRow?'waiting-approval':''}">
-        <div class="chat-meta"><span>${senderLabel}</span>${m.target_agent&&!isOperator?`<span>→ ${esc(tgt.name)}</span>`:''}<span>${esc(m.message_type)}</span><span>${esc(fmtShort(m.created_at))}</span></div>
+        <div class="chat-meta"><span class="chat-channel">${channelHtml}</span><span>${esc(m.message_type)}</span><span>${esc(fmtChatStamp(m.created_at))}</span></div>
         ${approvalHtml}
         ${bodyHtml}
       </div>
