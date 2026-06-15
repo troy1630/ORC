@@ -1,7 +1,8 @@
 services:
   orc-api:
     build:
-      context: ../backend
+      context: ..
+      dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://orc:orc@postgres:5432/orc}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -10,11 +11,6 @@ services:
       TZ: America/Denver
     ports:
       - "8001:8000"
-    volumes:
-      - ../agents:/app/agents
-      - ../skills:/app/skills
-      - ../knowledge:/app/knowledge
-      - ../docs:/app/docs:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -23,7 +19,8 @@ services:
 
   orc-worker:
     build:
-      context: ../backend
+      context: ..
+      dockerfile: backend/Dockerfile
     command: ["python", "-m", "app.worker"]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://orc:orc@postgres:5432/orc}
@@ -31,11 +28,6 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       TZ: America/Denver
-    volumes:
-      - ../agents:/app/agents:ro
-      - ../skills:/app/skills:ro
-      - ../knowledge:/app/knowledge:ro
-      - ../docs:/app/docs:ro
     depends_on:
       postgres:
         condition: service_healthy

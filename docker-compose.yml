@@ -1,7 +1,8 @@
 services:
   orc-api:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: orc-api
     env_file:
       - .env
@@ -18,7 +19,8 @@ services:
 
   orc-worker:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: orc-worker
     env_file:
       - .env
