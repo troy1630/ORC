@@ -1,11 +1,12 @@
 # Skill Definition
 
-name: hourly-critical-error-review
+name: Hourly Critical Error Review
 id: hourly-critical-error-review
 version: 0.1.0
 category: observability
 risk_level: low
 approval_required: false
+agent: oracle
 
 ## Purpose
 

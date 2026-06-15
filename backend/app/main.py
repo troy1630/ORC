@@ -4533,7 +4533,8 @@ def decide_approval(approval_id: int, body: ApprovalDecisionIn) -> dict:
         row.execution_allowed = decision == "approved"
         s.commit()
         s.refresh(row)
-        target = "executioner" if row.execution_allowed else row.requester_agent
+        should_execute = row.execution_allowed and _requires_execution_approval(row.title, row.rationale or "")
+        target = "executioner" if should_execute else row.requester_agent
         summary = (
             f"Gate Keeper approved {row.action_type} for {row.target or row.title}."
             if row.execution_allowed
@@ -4547,7 +4548,7 @@ def decide_approval(approval_id: int, body: ApprovalDecisionIn) -> dict:
             summary,
             {"approval_id": row.id, "status": row.status, "reason": row.decision_reason},
         )
-        if row.execution_allowed:
+        if should_execute:
             try:
                 _run_executioner(row.id, row.title, row.rationale or "", s)
             except Exception as _exc:
@@ -4814,19 +4815,24 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
         "You are The Oracle, the investigator of the ORC platform. "
         "You investigate container changes and anomalies, explain root causes, and recommend next actions. "
         "You show evidence before making recommendations and clearly separate facts from hypotheses. "
-        "You route risky actions to Gate Keeper for approval."
+        "You route risky infrastructure actions to Gate Keeper for approval. "
+        "Read-only analysis skills with approval_required=false are available when they appear in the registry; "
+        "do not call them draft or unapproved."
     ),
     "gate-keeper": (
         "You are Gate Keeper, the approval and policy authority of the ORC platform. "
         "You review risky proposed actions, enforce policy, and decide whether execution should proceed. "
         "Speak in plain English. Start with a short summary of what is being requested, then state the decision and any conditions. "
         "Keep the rest compressed. You require human approval for git pulls, restarts, redeploys, and credential changes. "
-        "You record who requested what and why for every decision."
+        "You record who requested what and why for every decision. "
+        "Do not approve read-only skill lookup, skill availability checks, or analysis-only skills; those are not execution requests. "
+        "If a registered skill has approval_required=false, state that it is available without execution approval."
     ),
     "executioner": (
         "You are Executioner, the approved-action executor of the ORC platform. "
         "You only perform infrastructure actions (git pulls, container refreshes, restarts) "
         "when an approved request exists. You never act without a matching approval. "
+        "Do not execute read-only analysis skills or skill availability checks; those belong to ORC, Sage, or the owning agent. "
         "When the request refers to a container, workload, or service by name, use search_containers first. "
         "If more than one match is returned, ask which one the operator means before acting. "
         "When a target name is ambiguous, ask for clarification before acting. "
@@ -4835,8 +4841,9 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
     "sage": (
         "You are Sage, the learning and skill authoring agent of the ORC platform. "
         "You capture lessons from incidents, document outcomes, and propose reusable skills. "
-        "You do not execute actions. You keep documentation readable and mark entries as drafts "
-        "until an admin approves them."
+        "You do not execute actions. You keep proposed documentation readable. "
+        "A skill that exists in the live registry is available according to its metadata; "
+        "only uncommitted proposals outside the registry should be described as drafts."
     ),
     "orc-orchestrator": (
         "You are ORC Orchestrator, the master coordinator and AI router of the ORC platform. "
@@ -4850,6 +4857,9 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
         "- **executioner** (executor): Carries out approved actions using registered tools. Only invoked automatically after gate-keeper approval.\n"
         "- **sage** (learning & skills): Looks up skill definitions, captures lessons, authors new skills.\n\n"
         "CONTEXT RULES:\n"
+        "- Treat the Available Skills and Skill Metadata Index as the source of truth for registered skill availability.\n"
+        "- A registered skill with approval_required=false is available and is not in draft status.\n"
+        "- Skill lookup, skill availability checks, and read-only analysis skills are not infrastructure mutations and must not be routed to gate-keeper or executioner.\n"
         "- Treat the operational configuration snapshot as the source of truth for currently configured connections and poll intervals.\n"
         "- Treat the active focused watches list as the source of truth for temporary container-specific accelerated monitoring.\n"
         "- Treat the target inventory hint as the source of truth for matching containers when it is present.\n"
@@ -4868,7 +4878,7 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
         "ROUTING FORMAT: When you need to delegate, emit one or more route blocks exactly like this:\n"
         "```route\nagent_id: gate-keeper\ninstruction: Approve changing the UAR connection poll interval to 30 seconds for 10 minutes, then revert.\n```\n\n"
         "RULES:\n"
-        "1. Route to sage FIRST if the operator references a skill you need to look up.\n"
+        "1. Route to sage FIRST if the operator references a skill you need to look up; for an agent's own read-only skill, route directly to that owning agent.\n"
         "2. Route to gate-keeper for ANY infrastructure mutation — including poll interval changes.\n"
         "3. If the request is a simple question you can answer from context, answer directly — no routing needed.\n"
         "4. If a request names a container or workload and more than one match exists, ask which one before routing execution.\n"
@@ -4876,7 +4886,8 @@ _AGENT_DESCRIPTIONS: dict[str, str] = {
         "6. Final answers to the operator must be 2-4 sentences maximum. No bullet lists. No markdown headers. Plain concise language.\n"
         "7. Never fabricate agent responses — only summarize what the agents actually said.\n"
         "8. Do NOT route 'poll every X seconds' requests to raven — raven cannot change poll intervals. Route to gate-keeper instead.\n"
-        "9. Do NOT route focused watch creation, increased monitoring frequency, or temporary container-specific watch setup to raven. Those must go to gate-keeper, then executioner. Raven only reports what it sees."
+        "9. Do NOT route focused watch creation, increased monitoring frequency, or temporary container-specific watch setup to raven. Those must go to gate-keeper, then executioner. Raven only reports what it sees.\n"
+        "10. Do NOT ask Gate Keeper to approve a skill merely because Sage once drafted it; if the skill is listed with approval_required=false, it is already available."
     ),
 }
 
@@ -5228,6 +5239,67 @@ def _agent_chat_internal(agent_id: str, instruction: str, session, extra_context
     return reply
 
 
+_EXECUTION_APPROVAL_KEYWORDS = (
+    "restart",
+    "redeploy",
+    "refresh",
+    "git pull",
+    "pull from git",
+    "update container",
+    "recreate container",
+    "change poll",
+    "poll interval",
+    "polling frequency",
+    "focused watch",
+    "temporary watch",
+    "increase monitoring",
+    "credential",
+    "secret",
+    "config change",
+    "configuration change",
+    "delete",
+    "remove",
+    "rotate",
+)
+
+_READ_ONLY_SKILL_KEYWORDS = (
+    "skill",
+    "draft",
+    "available",
+    "availability",
+    "approved",
+    "critical error review",
+    "hourly critical error review",
+)
+
+
+def _requires_execution_approval(instruction: str, rationale: str = "") -> bool:
+    """Return true only for approvals that should wake Executioner."""
+    text = f"{instruction or ''}\n{rationale or ''}".lower()
+    has_execution_action = any(keyword in text for keyword in _EXECUTION_APPROVAL_KEYWORDS)
+    if not has_execution_action:
+        return False
+    if any(keyword in text for keyword in _READ_ONLY_SKILL_KEYWORDS) and not any(
+        keyword in text
+        for keyword in (
+            "restart",
+            "redeploy",
+            "refresh",
+            "git pull",
+            "poll interval",
+            "polling frequency",
+            "focused watch",
+            "credential",
+            "secret",
+            "delete",
+            "remove",
+            "rotate",
+        )
+    ):
+        return False
+    return True
+
+
 def _auto_create_approval(instruction: str, gate_keeper_reply: str, session) -> ApprovalRequest:
     """Create an ApprovalRequest when Gate Keeper is involved in a routing decision."""
     req = ApprovalRequest(
@@ -5304,8 +5376,9 @@ def _run_orc_loop(user_message: str, session, thread_id: str = "operations") -> 
             approval_row = None
             agent_reply = _agent_chat_internal(target_id, instruction, session, thread_id=thread_id)
 
-            # Gate Keeper: auto-create an ApprovalRequest so it shows in Approvals tab
-            if target_id == "gate-keeper":
+            # Gate Keeper: auto-create an ApprovalRequest only for actual execution work.
+            # Read-only skill checks should never wake Executioner.
+            if target_id == "gate-keeper" and _requires_execution_approval(instruction, agent_reply):
                 approval_row = _auto_create_approval(instruction, agent_reply, session)
 
             _record_agent_message(

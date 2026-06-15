@@ -13,6 +13,7 @@ from typing import Any
 from .config import REPO_ROOT
 from .db import Connection, FocusedWatch, SessionLocal
 from .portainer import PortainerClient
+from .registry import load_registry
 
 _REGISTRY: dict[str, dict] = {}  # name → {fn, schema}
 
@@ -158,6 +159,30 @@ def _safe_skill_file(skill_id: str) -> Path:
     return target
 
 
+def _skill_slug(value: str) -> str:
+    slug = "".join(ch.lower() if ch.isalnum() else "-" for ch in value.strip())
+    return "-".join(part for part in slug.split("-") if part)
+
+
+def _resolve_skill_file(skill_id: str) -> tuple[Path | None, str]:
+    requested = skill_id.strip()
+    requested_slug = _skill_slug(requested)
+    for item in load_registry(REPO_ROOT, "skills"):
+        path = Path(item.path)
+        candidates = {
+            item.item_id,
+            item.name,
+            path.parent.name,
+            _skill_slug(item.item_id),
+            _skill_slug(item.name),
+            _skill_slug(path.parent.name),
+        }
+        if requested in candidates or requested_slug in candidates:
+            target = (REPO_ROOT / item.path).resolve()
+            return target, item.item_id
+    return None, requested
+
+
 @orc_tool(
     description=(
         "Read a skill Markdown definition by skill ID so agents can inspect the live registry entry "
@@ -176,11 +201,11 @@ def _safe_skill_file(skill_id: str) -> Path:
 )
 def read_skill_definition(skill_id: str) -> dict:
     try:
-        target = _safe_skill_file(skill_id)
-        if not target.exists():
+        target, canonical_id = _resolve_skill_file(skill_id)
+        if target is None or not target.exists():
             return {"error": f"Skill '{skill_id}' not found"}
         return {
-            "skill_id": skill_id,
+            "skill_id": canonical_id,
             "path": str(target.relative_to(REPO_ROOT)),
             "content": target.read_text(encoding="utf-8"),
         }
@@ -210,10 +235,13 @@ def read_skill_definition(skill_id: str) -> dict:
 )
 def write_skill_definition(skill_id: str, content: str) -> dict:
     try:
-        target = _safe_skill_file(skill_id)
+        target, canonical_id = _resolve_skill_file(skill_id)
+        if target is None:
+            target = _safe_skill_file(_skill_slug(skill_id))
+            canonical_id = _skill_slug(skill_id)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-        return {"ok": True, "skill_id": skill_id, "path": str(target.relative_to(REPO_ROOT))}
+        return {"ok": True, "skill_id": canonical_id, "path": str(target.relative_to(REPO_ROOT))}
     except Exception as exc:
         return {"error": str(exc)}
 
