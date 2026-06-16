@@ -4432,6 +4432,10 @@ def agent_chat(agent_id: str, body: AgentChatIn, request: Request) -> dict:
         if agent_id == "orc-orchestrator":
             # Full multi-agent routing loop
             reply = _run_orc_loop(user_message, s, thread_id=thread_id)
+        elif agent_id == "oracle" and _is_hourly_critical_error_review_request(user_message):
+            # This skill has a real backend implementation; run it instead of letting
+            # the Oracle merely promise to do it.
+            reply = _run_hourly_critical_error_review(s)["message"]
         else:
             # Direct single-agent call with agent-filtered skill context
             reply = _agent_chat_internal(agent_id, user_message, s, thread_id=thread_id)
@@ -4617,7 +4621,11 @@ def create_learning(body: LearningCreateIn) -> dict:
         return _learning_dict(row)
 
 
-def _oracle_summary(window_hours: int = 1, friendly_names: dict[str, str] | None = None) -> dict:
+def _oracle_summary(
+    window_hours: int = 1,
+    friendly_names: dict[str, str] | None = None,
+    severities: tuple[str, ...] = ("warning", "error", "critical"),
+) -> dict:
     friendly_names = friendly_names or {}
     cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
     with SessionLocal() as s:
@@ -4626,7 +4634,7 @@ def _oracle_summary(window_hours: int = 1, friendly_names: dict[str, str] | None
             .outerjoin(Connection, ObservedEvent.connection_id == Connection.id)
             .filter(
                 ObservedEvent.occurred_at >= cutoff,
-                ObservedEvent.severity.in_(["warning", "error", "critical"]),
+                ObservedEvent.severity.in_(list(severities)),
             )
             .order_by(ObservedEvent.occurred_at.desc())
             .all()
@@ -5334,6 +5342,21 @@ def _run_orc_loop(user_message: str, session, thread_id: str = "operations") -> 
     if not orc:
         return "*(ORC Orchestrator agent not found)*"
 
+    if _is_hourly_critical_error_review_request(user_message):
+        instruction = "Run the Hourly Critical Error Review and report the results back to ORC."
+        _record_agent_message(session, "orc-orchestrator", "oracle", "routing", instruction, thread_id=thread_id)
+        result = _run_hourly_critical_error_review(session)
+        _record_agent_message(
+            session,
+            "oracle",
+            "orc-orchestrator",
+            "analysis_result",
+            result["message"],
+            result["payload"],
+            thread_id=thread_id,
+        )
+        return "The Oracle completed the Hourly Critical Error Review and posted the results here."
+
     orc_context = _build_orc_context(session, "orc-orchestrator")
     recent = _recent_thread_context(session, thread_id)
     if recent:
@@ -5374,7 +5397,13 @@ def _run_orc_loop(user_message: str, session, thread_id: str = "operations") -> 
 
             _record_agent_message(session, "orc-orchestrator", target_id, "routing", instruction, thread_id=thread_id)
             approval_row = None
-            agent_reply = _agent_chat_internal(target_id, instruction, session, thread_id=thread_id)
+            agent_payload = None
+            if target_id == "oracle" and _is_hourly_critical_error_review_request(instruction):
+                result = _run_hourly_critical_error_review(session)
+                agent_reply = result["message"]
+                agent_payload = result["payload"]
+            else:
+                agent_reply = _agent_chat_internal(target_id, instruction, session, thread_id=thread_id)
 
             # Gate Keeper: auto-create an ApprovalRequest only for actual execution work.
             # Read-only skill checks should never wake Executioner.
@@ -5387,7 +5416,7 @@ def _run_orc_loop(user_message: str, session, thread_id: str = "operations") -> 
                 "orc-orchestrator",
                 "response",
                 agent_reply,
-                {"approval_id": approval_row.id} if approval_row else None,
+                {"approval_id": approval_row.id} if approval_row else agent_payload,
                 thread_id=thread_id,
             )
 
@@ -5420,8 +5449,8 @@ def _run_orc_loop(user_message: str, session, thread_id: str = "operations") -> 
 
 def _oracle_prompt(summary: dict) -> list[dict[str, str]]:
     system_prompt = (
-        "You are The Oracle inside ORC, an operations advisor reviewing the last hour "
-        "of container warnings and errors collected from Portainer-managed applications. "
+        "You are The Oracle inside ORC, an operations advisor reviewing recent "
+        "container operational events collected from Portainer-managed applications. "
         "Use only summary.top_issues and show at most three issues. "
         "Each issue must include the friendly_name, falling back to the container if needed. "
         "Respond in plain text using Markdown bold for important information. "
@@ -5596,9 +5625,64 @@ def _oracle_review(summary: dict, session) -> str:
     if not summary["total_events"]:
         return (
             "**No issues found in the last hour.**\n\n"
-            "**What I should do:** Keep monitoring and re-run the Oracle when Raven captures fresh warnings or errors."
+            "**What I should do:** Keep monitoring and re-run the Oracle when Raven captures fresh critical or error events."
         )
     return _llm_call(_oracle_prompt(summary), "oracle", "oracle_review", session)
+
+
+def _is_hourly_critical_error_review_request(text: str) -> bool:
+    value = (text or "").lower()
+    if "why" in value and any(phrase in value for phrase in ("not post", "not posted", "didn't post", "did not post", "not respond", "didn't respond", "did not respond")):
+        return False
+    mentions_review = (
+        "hourly critical error review" in value
+        or "critical error review" in value
+        or ("hourly" in value and "critical" in value and "error" in value and "review" in value)
+    )
+    if not mentions_review:
+        return False
+    return any(
+        word in value
+        for word in (
+            "run",
+            "execute",
+            "perform",
+            "start",
+            "activate",
+            "review",
+            "analyze",
+            "analyse",
+            "post",
+            "report",
+            "results",
+        )
+    )
+
+
+def _format_hourly_critical_error_review(summary: dict, analysis: str) -> str:
+    return (
+        "**Hourly Critical Error Review completed.**\n\n"
+        f"Window: {summary['window_start']} to {summary['window_end']}\n"
+        f"Critical/error events: {summary['errors']}; affected containers: {summary['unique_containers']}.\n\n"
+        f"{analysis}"
+    )
+
+
+def _run_hourly_critical_error_review(session) -> dict:
+    summary = _oracle_summary(window_hours=1, severities=("error", "critical"))
+    analysis = _oracle_review(summary, session)
+    message = _format_hourly_critical_error_review(summary, analysis)
+    payload = {
+        "skill_id": "hourly-critical-error-review",
+        "window_start": summary["window_start"],
+        "window_end": summary["window_end"],
+        "total_events": summary["total_events"],
+        "errors": summary["errors"],
+        "warnings": summary["warnings"],
+        "unique_containers": summary["unique_containers"],
+        "top_issues": summary["top_issues"],
+    }
+    return {"message": message, "payload": payload, "summary": summary, "analysis": analysis}
 
 
 def _hours_window(hours: int) -> int:
