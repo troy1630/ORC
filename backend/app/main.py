@@ -405,6 +405,61 @@ def _markdown_sections(raw: str) -> dict[str, str]:
     return {key: "\n".join(value).strip() for key, value in sections.items()}
 
 
+def _markdown_title(raw: str, fallback: str) -> str:
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            return stripped[2:].strip() or fallback
+    return fallback
+
+
+def _list_memory_entries() -> list[dict]:
+    memory_root = REPO_ROOT / "memory"
+    classes = {"episodic", "semantic", "procedural", "evaluative"}
+    entries: list[dict] = []
+    if not memory_root.exists():
+        return entries
+    for path in memory_root.rglob("*.md"):
+        try:
+            rel = path.relative_to(memory_root)
+        except ValueError:
+            continue
+        if len(rel.parts) < 2 or rel.parts[0] not in classes or path.name.lower() == "template.md":
+            continue
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        metadata = _markdown_metadata(raw)
+        sections = _markdown_sections(raw)
+        memory_type = (metadata.get("memory_type") or rel.parts[0]).strip().lower()
+        if memory_type not in classes:
+            memory_type = rel.parts[0]
+        summary = (
+            sections.get("summary")
+            or sections.get("fact")
+            or sections.get("symptom")
+            or sections.get("purpose")
+            or sections.get("root cause")
+            or raw[:240]
+        )
+        title = metadata.get("title") or metadata.get("name") or _markdown_title(raw, path.stem)
+        entries.append(
+            {
+                "id": metadata.get("id") or path.stem,
+                "title": title,
+                "memory_type": memory_type,
+                "path": path.relative_to(REPO_ROOT).as_posix(),
+                "summary": re.sub(r"\s+", " ", summary).strip()[:360],
+                "outcome": metadata.get("outcome", ""),
+                "confidence": metadata.get("confidence", ""),
+                "created_at": metadata.get("created_at", ""),
+            }
+        )
+    entries.sort(key=lambda item: (item["memory_type"], item["title"].lower(), item["path"]))
+    return entries
+
+
 def _registry_file_for_id(kind: str, item_id: str) -> Path:
     file_name = {"tools": "tool.md", "runbooks": "runbook.md", "skills": "skills.md", "agents": "agent.md"}.get(kind)
     if not file_name:
@@ -1080,8 +1135,7 @@ html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="cha
 .profile-map-title{font-size:.86rem;font-weight:900}
 .profile-map-copy{font-size:.74rem;color:var(--mut);line-height:1.38;margin-top:3px;max-width:760px}
 .profile-map-tools{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
-.profile-legend{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-.profile-legend span{border:1px solid #30363d;border-radius:999px;padding:3px 8px;font-size:.66rem;color:#c9d5e2;background:#0d1117}
+.profile-filter-group{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .profile-filter{display:flex;align-items:center;gap:7px;font-size:.72rem;color:var(--mut);white-space:nowrap}
 .profile-filter select{background:#0d1117;border:1px solid var(--bdr);border-radius:7px;color:var(--txt);font-size:.76rem;padding:5px 9px;min-width:180px;outline:none}
 .profile-filter select:focus{border-color:var(--pur)}
@@ -1428,7 +1482,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .instruction-hero{grid-template-columns:1fr}
   .instruction-pillbox{justify-content:flex-start}
   .plane-grid,.layer-grid,.governance-grid,.memory-grid,.learning-loop{grid-template-columns:1fr}
-  .profile-map-top{flex-direction:column}.profile-map-tools{align-items:flex-start}.profile-legend{justify-content:flex-start}.profile-card-grid{grid-template-columns:1fr}.profile-map-canvas{height:420px;min-height:360px}
+  .profile-map-top{flex-direction:column}.profile-map-tools{align-items:flex-start}.profile-filter-group{justify-content:flex-start}.profile-card-grid{grid-template-columns:1fr}.profile-map-canvas{height:420px;min-height:360px}
   .issue-list{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
   .metric-table-head,.metric-summary,.metric-stack{grid-template-columns:minmax(150px,1fr) 52px 54px 70px}
   .metric-table-head span:nth-child(5),.metric-summary .home-health,.metric-stack .home-health{display:none}
@@ -1644,16 +1698,18 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
               <div class="profile-map-copy">A live registry map showing each agent as a character circle and every skill, memory class, runbook, worker tool, and policy surface as its own hoverable dot.</div>
             </div>
             <div class="profile-map-tools">
-              <label class="profile-filter">Agent <select id="profile-agent-filter" onchange="renderInstructionProfiles()"><option value="all">All agents</option></select></label>
-              <div class="profile-legend">
-                <span>Agent</span>
-                <span>Skill</span>
-                <span>Memory</span>
-                <span>Learning</span>
-                <span>Runbook</span>
-                <span>Worker Tool</span>
-                <span>Policy/Bus</span>
-                <span>Declared Only</span>
+              <div class="profile-filter-group">
+                <label class="profile-filter">Agent <select id="profile-agent-filter" onchange="renderInstructionProfiles()"><option value="all">All agents</option></select></label>
+                <label class="profile-filter">Category <select id="profile-category-filter" onchange="renderInstructionProfiles()">
+                  <option value="all">All categories</option>
+                  <option value="skills">Skills</option>
+                  <option value="memory">Memory</option>
+                  <option value="learnings">Learnings</option>
+                  <option value="runbooks">Runbooks</option>
+                  <option value="tools">Worker Tools</option>
+                  <option value="approvals">Policy and Approvals</option>
+                  <option value="message-bus">Message Bus</option>
+                </select></label>
               </div>
             </div>
           </div>
@@ -2102,10 +2158,10 @@ let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,m
 let _networkChecking={server:'',container:''};
 let _focusedNetworkChecking={};
 let _viewMode='corporate';
-let _orch={agents:[],skills:[],tools:[],runbooks:[],messages:[],approvals:[],learnings:[],paths:{}};
+let _orch={agents:[],skills:[],tools:[],runbooks:[],memory_entries:[],messages:[],approvals:[],learnings:[],paths:{}};
 let _orchTab='chat', _adminTab='connections', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null, _skillEditId='', _agentEditId='';
 let _instructionTab='framework';
-let _profileAgentFilter='all', _profileNetwork=null;
+let _profileAgentFilter='all', _profileCategoryFilter='all', _profileNetwork=null;
 let _agentDraftIcon='/assets/characters/agent-scout.png', _agentLogoDraft='';
 let _hbData=new Array(60).fill(0), _hbBucket=0, _hbAlerts=[], _hbAlertBuf=[], _hbAlertPoints=[];
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
@@ -3721,6 +3777,16 @@ function profileSkillIds(agent){
 function profileNorm(value){
   return String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
 }
+const PROFILE_CATEGORY_FILTERS=[
+  {id:'all',label:'All categories'},
+  {id:'skills',label:'Skills'},
+  {id:'memory',label:'Memory'},
+  {id:'learnings',label:'Learnings'},
+  {id:'runbooks',label:'Runbooks'},
+  {id:'tools',label:'Worker Tools'},
+  {id:'approvals',label:'Policy and Approvals'},
+  {id:'message-bus',label:'Message Bus'},
+];
 function syncProfileAgentFilter(agents){
   const el=document.getElementById('profile-agent-filter');
   if(!el)return 'all';
@@ -3736,6 +3802,15 @@ function syncProfileAgentFilter(agents){
   el.value=valid?current:'all';
   _profileAgentFilter=el.value||'all';
   return _profileAgentFilter;
+}
+function syncProfileCategoryFilter(){
+  const el=document.getElementById('profile-category-filter');
+  if(!el)return 'all';
+  const current=el.value||_profileCategoryFilter||'all';
+  const valid=PROFILE_CATEGORY_FILTERS.some(item=>item.id===current);
+  el.value=valid?current:'all';
+  _profileCategoryFilter=el.value||'all';
+  return _profileCategoryFilter;
 }
 function profileSurfaceIdsForAgent(agent){
   const plane=String(agent.profile?.plane||agent.role||'').toLowerCase();
@@ -3845,6 +3920,7 @@ function renderInstructionProfiles(){
     return String(a.name||a.id).localeCompare(String(b.name||b.id));
   });
   const selectedAgent=syncProfileAgentFilter(allAgents);
+  const selectedCategory=syncProfileCategoryFilter();
   const agents=selectedAgent==='all'?allAgents:allAgents.filter(agent=>agent.id===selectedAgent);
   if(!agents.length){
     if(canvas)canvas.innerHTML='<div class="profile-empty">No agent profiles found.</div>';
@@ -3893,12 +3969,31 @@ function renderInstructionProfiles(){
   const skillNodes=[...declared.values()].sort((a,b)=>a.label.localeCompare(b.label));
   const visibleSurfaceIds=new Set();
   agents.forEach(agent=>profileSurfaceIdsForAgent(agent).forEach(id=>visibleSurfaceIds.add(id)));
-  const memoryItems=[
-    {id:'memory-episodic',label:'Episodic',sub:'who, what, where, when, why',path:'memory/episodic/',surface:'memory',type:'memory'},
-    {id:'memory-semantic',label:'Semantic',sub:'facts, notes, policies',path:'memory/semantic/',surface:'memory',type:'memory'},
-    {id:'memory-procedural',label:'Procedural',sub:'runbooks, escalation, rollback',path:'memory/procedural/',surface:'memory',type:'memory'},
-    {id:'memory-evaluative',label:'Evaluative',sub:'success rates and improvements',path:'memory/evaluative/',surface:'memory',type:'memory'},
+  const memoryClasses=['episodic','semantic','procedural','evaluative'];
+  const memoryClassItems=[
+    {id:'memory-episodic',label:'Episodic',sub:'who, what, where, when, why',path:'memory/episodic/',surface:'memory',type:'memory-class'},
+    {id:'memory-semantic',label:'Semantic',sub:'facts, notes, policies',path:'memory/semantic/',surface:'memory',type:'memory-class'},
+    {id:'memory-procedural',label:'Procedural',sub:'runbooks, escalation, rollback',path:'memory/procedural/',surface:'memory',type:'memory-class'},
+    {id:'memory-evaluative',label:'Evaluative',sub:'success rates and improvements',path:'memory/evaluative/',surface:'memory',type:'memory-class'},
   ];
+  const memoryEntryItems=(_orch.memory_entries||[]).map(item=>{
+    const rawType=profileNorm(item.memory_type||'semantic');
+    const memoryType=memoryClasses.includes(rawType)?rawType:'semantic';
+    const entryKey=profileNorm(item.id||item.title||item.path)||profileNorm(item.path)||'memory-entry';
+    const classLabel=memoryType.charAt(0).toUpperCase()+memoryType.slice(1);
+    const meta=[item.outcome||'',item.confidence?`confidence: ${item.confidence}`:'',item.created_at||''].filter(Boolean).join(' / ');
+    return {
+      id:`memory-entry-${memoryType}-${entryKey}`,
+      label:item.title||item.path||'Memory entry',
+      sub:`${classLabel} memory`,
+      path:item.path||`memory/${memoryType}/`,
+      detail:item.summary||meta||'Memory entry',
+      surface:'memory',
+      type:'memory-entry',
+      parent:`memory-${memoryType}`,
+    };
+  });
+  const memoryItems=[...memoryClassItems,...memoryEntryItems];
   const learningItems=(_orch.learnings||[]).map(item=>({
     id:`learning-${profileNorm(item.id||item.title||item.markdown_path)}`,
     label:item.title||item.markdown_path||'Learning entry',
@@ -3934,12 +4029,16 @@ function renderInstructionProfiles(){
   const resources=selectedAgent==='all'
     ? allResources
     : allResources.filter(item=>visibleSurfaceIds.has(item.surface));
+  const filteredSkillNodes=(selectedCategory==='all'||selectedCategory==='skills')?skillNodes:[];
+  const filteredResources=selectedCategory==='all'
+    ? resources
+    : resources.filter(item=>item.surface===selectedCategory);
 
   if(canvas){
     if(!window.vis||!window.vis.Network){
       canvas.innerHTML='<div class="profile-empty">Interactive map library did not load. Check network access for vis-network.</div>';
     }else{
-      const categoryDefs=[
+      const allCategoryDefs=[
         {id:'skills',label:'Skills',nodeLabel:'Skills',kind:'skills',surface:'skills',description:'Skills this agent can use',x:-60,y:-110},
         {id:'memory',label:'Memory',nodeLabel:'Memory',kind:'memory',surface:'memory',description:'Sage memory classes and knowledge stores',x:90,y:-110},
         {id:'learnings',label:'Learnings',nodeLabel:'Learnings',kind:'learnings',surface:'learnings',description:'Sage lessons and reusable breadcrumbs',x:-60,y:18},
@@ -3948,18 +4047,19 @@ function renderInstructionProfiles(){
         {id:'approvals',label:'Policy and Approvals',nodeLabel:'Policy',kind:'approvals',surface:'approvals',description:'Gatekeeper policy and approval checks',x:90,y:145},
         {id:'message-bus',label:'Message Bus',nodeLabel:'Bus',kind:'message',surface:'message-bus',description:'Agent message routing',x:15,y:255},
       ];
+      const categoryDefs=selectedCategory==='all'?allCategoryDefs:allCategoryDefs.filter(cat=>cat.surface===selectedCategory);
       const activeCategories=categoryDefs.filter(cat=>{
-        if(cat.surface==='skills')return skillNodes.length>0;
-        return resources.some(item=>item.surface===cat.surface);
+        if(cat.surface==='skills')return filteredSkillNodes.length>0;
+        return filteredResources.some(item=>item.surface===cat.surface);
       });
       const nodes=[];
       const edges=[];
       agents.forEach((agent,index)=>{
         nodes.push(profileAgentNetworkNode(agent,index,agents.length));
       });
-      const itemBuckets={skills:skillNodes};
+      const itemBuckets={skills:filteredSkillNodes};
       activeCategories.forEach(cat=>{
-        if(cat.surface!=='skills')itemBuckets[cat.id]=resources.filter(item=>item.surface===cat.surface);
+        if(cat.surface!=='skills')itemBuckets[cat.id]=filteredResources.filter(item=>item.surface===cat.surface);
       });
       activeCategories.forEach(cat=>{
         const itemCount=(itemBuckets[cat.id]||[]).length;
@@ -3973,20 +4073,45 @@ function renderInstructionProfiles(){
       });
       activeCategories.forEach(cat=>{
         const items=itemBuckets[cat.id]||[];
+        const rootItems=items.filter(item=>!item.parent);
+        const childItems=items.filter(item=>item.parent);
         const radius=cat.id==='skills'?74:52;
-        items.forEach((item,index)=>{
-          const angle=(Math.PI*2*index/Math.max(items.length,1))-(Math.PI/2);
+        const itemPositions=new Map();
+        rootItems.forEach((item,index)=>{
+          const angle=(Math.PI*2*index/Math.max(rootItems.length,1))-(Math.PI/2);
           const x=cat.x+Math.cos(angle)*radius;
           const y=cat.y+Math.sin(angle)*radius;
           const kind=item.missing?'missing':cat.kind;
           const itemId=`item:${cat.id}:${item.id}`;
-          nodes.push(profileNetworkNode(itemId,kind,item.label,[item.sub,item.path,item.detail],{size:cat.id==='skills'?8:7,mass:0.65,x,y,borderWidth:2}));
+          const size=cat.id==='skills'?8:(item.type==='memory-class'?8:7);
+          nodes.push(profileNetworkNode(itemId,kind,item.label,[item.sub,item.path,item.detail],{size,mass:0.65,x,y,borderWidth:2}));
           edges.push(profileNetworkEdge(`cat:${cat.id}`,itemId,item.missing?'missing':'hub'));
+          itemPositions.set(item.id,{x,y,nodeId:itemId});
+        });
+        const childrenByParent=new Map();
+        childItems.forEach(item=>{
+          const key=item.parent;
+          if(!childrenByParent.has(key))childrenByParent.set(key,[]);
+          childrenByParent.get(key).push(item);
+        });
+        childrenByParent.forEach((children,parentId)=>{
+          const parent=itemPositions.get(parentId);
+          if(!parent)return;
+          const childRadius=24+Math.min(children.length,10);
+          children.forEach((item,index)=>{
+            const angle=(Math.PI*2*index/Math.max(children.length,1))-(Math.PI/2);
+            const x=parent.x+Math.cos(angle)*childRadius;
+            const y=parent.y+Math.sin(angle)*childRadius;
+            const kind=item.missing?'missing':cat.kind;
+            const itemId=`item:${cat.id}:${item.id}`;
+            nodes.push(profileNetworkNode(itemId,kind,item.label,[item.sub,item.path,item.detail],{size:5,mass:0.35,x,y,borderWidth:1.5}));
+            edges.push(profileNetworkEdge(parent.nodeId,itemId,item.missing?'missing':'hub'));
+          });
         });
       });
       agents.forEach(agent=>{
         const agentId=`agent:${agent.id}`;
-        if(skillNodes.length)edges.push(profileNetworkEdge(agentId,'cat:skills','hub'));
+        if(filteredSkillNodes.length&&activeCategories.some(cat=>cat.surface==='skills'))edges.push(profileNetworkEdge(agentId,'cat:skills','hub'));
         profileSurfaceIdsForAgent(agent).forEach(surfaceId=>{
           if(activeCategories.some(cat=>cat.surface===surfaceId))edges.push(profileNetworkEdge(agentId,`cat:${surfaceId}`,'hub'));
         });
@@ -4141,6 +4266,7 @@ function renderSkills(){
     </div>`).join('');
 }
 const CHAT_COLLAPSE_LEN=280;
+const _chatExpandedIds=new Set();
 function chatBubbleText(id,text){
   if(!text)return '<div class="chat-text"><em class="muted">—</em></div>';
   if(text.length<=CHAT_COLLAPSE_LEN)return `<div class="chat-text">${esc(text)}</div>`;
@@ -4193,23 +4319,36 @@ function chatAgentClass(agentId){
   const raw=String(agentId||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
   return raw?`agent-${raw}`:'';
 }
-function toggleChatExpand(id){
+function applyChatExpandedState(id,expanded){
   const el=document.getElementById('ct-'+id);
   if(!el)return;
   const short=el.querySelector('.chat-short');
   const full=el.querySelector('.chat-full');
   const btn=el.querySelector('.chat-expand-btn');
-  const expanded=full.style.display!=='none';
-  if(short)short.style.display=expanded?'':'none';
-  if(full)full.style.display=expanded?'none':'';
-  if(btn)btn.textContent=expanded?'▸ Show more':'▴ Show less';
+  if(short)short.style.display=expanded?'none':'';
+  if(full)full.style.display=expanded?'':'none';
+  if(btn)btn.textContent=expanded?'▴ Show less':'▸ Show more';
+}
+function toggleChatExpand(id){
+  const el=document.getElementById('ct-'+id);
+  if(!el)return;
+  const full=el.querySelector('.chat-full');
+  if(!full)return;
+  const nextExpanded=full.style.display==='none';
+  if(nextExpanded)_chatExpandedIds.add(String(id));
+  else _chatExpandedIds.delete(String(id));
+  applyChatExpandedState(id,nextExpanded);
 }
 function renderChat(){
   const el=document.getElementById('orch-chat-list');
   if(!el)return;
+  const wasNearBottom=(el.scrollHeight-el.scrollTop-el.clientHeight)<32;
+  const preservedScrollTop=el.scrollTop;
   const msgs=[...(_orch.messages||[])].reverse();
   document.getElementById('orch-message-count').textContent=`${msgs.length} messages`;
-  if(!msgs.length){el.innerHTML='<div class="empty">No messages yet. Tell ORC what you need.</div>';return;}
+  if(!msgs.length){_chatExpandedIds.clear();el.innerHTML='<div class="empty">No messages yet. Tell ORC what you need.</div>';return;}
+  const visibleIds=new Set(msgs.map(m=>String(m.id)));
+  _chatExpandedIds.forEach(id=>{if(!visibleIds.has(id))_chatExpandedIds.delete(id);});
   el.innerHTML=msgs.map(m=>{
     const src=orchAgent(m.source_agent),tgt=orchAgent(m.target_agent);
     const isOperator=m.source_agent==='operator';
@@ -4234,7 +4373,9 @@ function renderChat(){
       </div>
     </div>`;
   }).join('');
-  el.scrollTop=el.scrollHeight;
+  _chatExpandedIds.forEach(id=>applyChatExpandedState(id,true));
+  if(_chatExpandedIds.size)el.scrollTop=preservedScrollTop;
+  else if(wasNearBottom)el.scrollTop=el.scrollHeight;
 }
 function renderApprovals(){
   const el=document.getElementById('orch-approvals');
@@ -5345,11 +5486,13 @@ def orchestration_summary() -> dict:
     skills = [asdict(item) for item in load_registry(REPO_ROOT, "skills")]
     tools = [asdict(item) for item in load_registry(REPO_ROOT, "tools")]
     runbooks = [asdict(item) for item in load_registry(REPO_ROOT, "runbooks")]
+    memory_entries = _list_memory_entries()
     return {
         "agents": agents,
         "skills": skills,
         "tools": tools,
         "runbooks": runbooks,
+        "memory_entries": memory_entries,
         "messages": messages,
         "approvals": approvals,
         "learnings": learnings,
