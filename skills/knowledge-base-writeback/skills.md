@@ -4,6 +4,9 @@ name: knowledge-base-writeback
 version: 0.1.0
 category: documentation
 risk_level: low
+autonomy_level: 1
+governance: yellow
+allowed_plane: memory-learning
 
 ## Purpose
 

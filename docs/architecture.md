@@ -61,9 +61,12 @@ Run ORC as a Portainer stack with these containers:
 An agent is a policy-bearing actor with:
 
 - identity
+- plane
 - scope
 - trigger rules
 - allowed skills
+- autonomy level
+- governance boundary
 - approval boundary
 - output contract
 
@@ -75,6 +78,49 @@ A skill is a reusable capability with:
 - integration dependencies
 - risk level
 - audit requirements
+
+## Six-Plane Operating Model
+
+ORC separates durable decision roles from disposable execution surfaces:
+
+1. **Control Plane - ORC**: owns routing, state, incident lifecycle, next-step planning, and registry coordination.
+2. **Observation Plane - Raven**: gathers logs, events, health signals, messages, and post-action verification.
+3. **Reasoning Plane - Oracle**: diagnoses evidence, ranks hypotheses, and recommends next steps.
+4. **Memory / Learning Plane - Sage**: retrieves prior patterns and writes structured learning.
+5. **Policy Plane - Gatekeeper**: enforces autonomy, governance color, approval policy, and escalation.
+6. **Action Plane - Executioner**: executes only approved actions and records evidence.
+
+## Three Runtime Layers
+
+1. **Stable Core**: long-lived ORC API, agent definitions, registry loader, message bus, approval matrix, incident store, and Markdown memory.
+2. **Tool Runner / Worker Pool**: disposable Docker workers for scripts, log analysis, approved runbooks, and promoted tools.
+3. **Builder / Sandbox Dev**: isolated Docker workspace for generated code, tests, lint, dry-runs, packaging, and promotion requests.
+
+Agents do not directly mutate the Stable Core. They produce plans, learning entries, tool proposals, runbook proposals, and approval requests.
+
+## Separate Registries
+
+ORC uses separate Markdown registries:
+
+- `skills/*/skills.md`: instructions and runbook-like procedures that guide an agent.
+- `tools/*/tool.md`: executable capabilities that run in workers or the builder sandbox.
+- `runbooks/*/runbook.md`: approved operational procedures with verification and rollback.
+- `memory/*/*.md`: Sage-managed episodic, semantic, procedural, and evaluative memory.
+
+## Autonomy And Governance
+
+Autonomy levels:
+
+- Level 0: observe only.
+- Level 1: recommend.
+- Level 2: execute approved runbooks.
+- Level 3: build and test new tools in sandbox.
+
+Governance colors:
+
+- Green: read-only analysis and reporting.
+- Yellow: policy-checked workflows that follow registered skills or runbooks.
+- Red: human-approved production mutation, redeploy, destructive action, credential change, or tool promotion.
 
 ## Orchestration Flow
 

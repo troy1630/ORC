@@ -5,6 +5,9 @@ id: git-container-refresh
 version: 0.1.0
 category: execution
 risk_level: high
+autonomy_level: 2
+governance: red
+allowed_plane: action
 approval_required: true
 
 ## Purpose

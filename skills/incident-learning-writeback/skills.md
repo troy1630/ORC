@@ -5,6 +5,9 @@ id: incident-learning-writeback
 version: 0.1.0
 category: learning
 risk_level: low
+autonomy_level: 1
+governance: green
+allowed_plane: memory-learning
 approval_required: false
 
 ## Purpose

@@ -5,6 +5,9 @@ id: raven
 version: 0.1.0
 role: observer and message bus
 risk_level: low
+plane: observation
+autonomy_level: 0
+governance_boundary: green
 approval_required: false
 
 ## Purpose

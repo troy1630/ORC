@@ -5,6 +5,9 @@ id: hourly-critical-error-review
 version: 0.1.0
 category: observability
 risk_level: low
+autonomy_level: 1
+governance: green
+allowed_plane: reasoning
 approval_required: false
 agent: oracle
 

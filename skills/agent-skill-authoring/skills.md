@@ -5,6 +5,9 @@ id: agent-skill-authoring
 version: 0.1.0
 category: learning
 risk_level: low
+autonomy_level: 3
+governance: yellow
+allowed_plane: memory-learning
 approval_required: false
 
 ## Purpose

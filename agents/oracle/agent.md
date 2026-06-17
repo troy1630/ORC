@@ -5,6 +5,9 @@ id: oracle
 version: 0.1.0
 role: investigator
 risk_level: medium
+plane: reasoning
+autonomy_level: 1
+governance_boundary: yellow
 approval_required: true
 
 ## Purpose

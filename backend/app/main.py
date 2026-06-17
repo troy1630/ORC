@@ -276,6 +276,9 @@ def _skill_markdown(body: SkillBuildIn, skill_id: str) -> str:
             "version: 0.1.0",
             f"category: {body.category.strip() or 'automation'}",
             f"risk_level: {body.risk_level.strip() or 'medium'}",
+            "autonomy_level: 1",
+            "governance: yellow",
+            "allowed_plane: reasoning",
             f"approval_required: {_bool_text(body.approval_required)}",
             f"agent: {body.agent_id.strip()}",
             "",
@@ -763,7 +766,29 @@ html[data-view-mode="character"] #pane-overview,html[data-view-mode="character"]
   linear-gradient(rgba(13,17,23,.18),rgba(13,17,23,.34)),
   url('/assets/kingdoms/pale-strategy-map.png') center/cover no-repeat}
 html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="character"] #pane-network::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at center,rgba(255,255,255,.04),rgba(13,17,23,.06) 52%,rgba(13,17,23,.18) 100%);pointer-events:none}
-#pane-home{min-height:calc(100vh - 92px);padding:12px;background:#0f141b}
+#pane-home,#pane-instructions{min-height:calc(100vh - 92px);padding:12px;background:#0f141b}
+.instructions-page{display:flex;flex-direction:column;gap:12px;max-width:1180px}
+.instruction-hero{border:1px solid var(--bdr);border-radius:8px;background:#111820;padding:18px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:end}
+.instruction-kicker{font-size:.72rem;color:var(--mut);font-weight:850;letter-spacing:.08em;text-transform:uppercase}
+.instruction-title{font-size:1.35rem;font-weight:900;margin-top:5px}
+.instruction-copy{font-size:.86rem;color:#c9d5e2;line-height:1.5;max-width:780px;margin-top:8px}
+.instruction-pillbox{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.instruction-section{border:1px solid var(--bdr);border-radius:8px;background:var(--sur);padding:14px}
+.instruction-section h2{font-size:.82rem;letter-spacing:.05em;text-transform:uppercase;margin:0 0 10px}
+.instruction-section p{font-size:.82rem;color:#c9d5e2;line-height:1.48;margin:0 0 8px}
+.plane-grid,.layer-grid,.governance-grid,.memory-grid{display:grid;gap:8px}
+.plane-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.layer-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.governance-grid,.memory-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.instruction-tile{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;min-width:0}
+.instruction-tile strong{display:block;font-size:.8rem;margin-bottom:4px}
+.instruction-tile span,.instruction-tile li{font-size:.74rem;color:var(--mut);line-height:1.38}
+.instruction-tile ul{margin:7px 0 0 16px;padding:0}
+.learning-loop{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;counter-reset:loop}
+.learning-step{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;min-height:92px}
+.learning-step::before{counter-increment:loop;content:counter(loop);display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#253041;color:#e6edf3;font-size:.72rem;font-weight:900;margin-bottom:8px}
+.learning-step strong{display:block;font-size:.78rem;margin-bottom:4px}
+.learning-step span{font-size:.72rem;color:var(--mut);line-height:1.35}
 .home-grid{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:12px;min-height:calc(100vh - 116px)}
 .dash-section{border:1px solid var(--bdr);border-radius:8px;background:var(--sur);padding:12px;min-width:0}
 .dash-title{font-size:.78rem;font-weight:850;letter-spacing:.04em;text-transform:uppercase;color:var(--txt);margin-bottom:9px}
@@ -1091,7 +1116,10 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .aside{display:none}
   .aside-width-grip{display:none}
   .main{padding:12px}
-  #pane-home,#pane-overview,#pane-network,#pane-orchestration{padding:10px}
+  #pane-home,#pane-instructions,#pane-overview,#pane-network,#pane-orchestration{padding:10px}
+  .instruction-hero{grid-template-columns:1fr}
+  .instruction-pillbox{justify-content:flex-start}
+  .plane-grid,.layer-grid,.governance-grid,.memory-grid,.learning-loop{grid-template-columns:1fr}
   .issue-list{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
   .metric-table-head,.metric-summary,.metric-stack{grid-template-columns:minmax(150px,1fr) 52px 54px 70px}
   .metric-table-head span:nth-child(5),.metric-summary .home-health,.metric-stack .home-health{display:none}
@@ -1134,6 +1162,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     <button class="tab" id="tab-network" onclick="showTab('network')">Network</button>
     <button class="tab" id="tab-events" onclick="showTab('events')">Events</button>
     <button class="tab" id="tab-orchestration" onclick="showTab('orchestration')">Orchestration</button>
+    <button class="tab" id="tab-instructions" onclick="showTab('instructions')">Instructions</button>
     <button class="tab" id="tab-admin" onclick="showTab('admin')" style="display:none">Admin</button>
   </div>
   <div class="nav-r">
@@ -1175,6 +1204,97 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
       <section class="dash-section">
         <div class="dash-title">Last 7 issues</div>
         <div class="recent-list" id="home-recent"><div class="empty">Loading recent issues...</div></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- INSTRUCTIONS -->
+  <div class="pane" id="pane-instructions">
+    <div class="instructions-page">
+      <section class="instruction-hero">
+        <div>
+          <div class="instruction-kicker">Operator Training</div>
+          <div class="instruction-title">ORC Agent Framework</div>
+          <div class="instruction-copy">Use this map to understand how ORC separates durable agent judgment from disposable execution. Agents decide, remember, approve, and verify. Workers run bounded jobs. The builder sandbox creates candidate tools that need human approval before promotion.</div>
+        </div>
+        <div class="instruction-pillbox">
+          <span class="status-chip approved">Stable Core</span>
+          <span class="status-chip pending">Worker Pool</span>
+          <span class="status-chip rejected">Builder Sandbox</span>
+        </div>
+      </section>
+
+      <section class="instruction-section">
+        <h2>Six Planes</h2>
+        <div class="plane-grid">
+          <div class="instruction-tile"><strong>Control: ORC</strong><span>Routes work, owns state, assembles plans, and keeps the workflow moving in order.</span></div>
+          <div class="instruction-tile"><strong>Observation: Raven</strong><span>Collects logs, events, health signals, messages, and before/after verification.</span></div>
+          <div class="instruction-tile"><strong>Reasoning: Oracle</strong><span>Diagnoses evidence, ranks hypotheses, and recommends next steps.</span></div>
+          <div class="instruction-tile"><strong>Memory: Sage</strong><span>Retrieves history, writes learnings, and proposes reusable patterns.</span></div>
+          <div class="instruction-tile"><strong>Policy: Gatekeeper</strong><span>Checks autonomy, governance color, approval rules, and escalation boundaries.</span></div>
+          <div class="instruction-tile"><strong>Action: Executioner</strong><span>Runs approved actions only, records results, and stops on policy mismatch.</span></div>
+        </div>
+      </section>
+
+      <section class="instruction-section">
+        <h2>Three Layers</h2>
+        <div class="layer-grid">
+          <div class="instruction-tile">
+            <strong>1. Stable Core</strong>
+            <span>Long-lived application layer.</span>
+            <ul><li>ORC and core agents</li><li>message bus and registries</li><li>approval matrix and memory</li></ul>
+          </div>
+          <div class="instruction-tile">
+            <strong>2. Worker Pool</strong>
+            <span>Disposable Docker workers.</span>
+            <ul><li>run scripts</li><li>analyze logs</li><li>execute approved runbooks</li></ul>
+          </div>
+          <div class="instruction-tile">
+            <strong>3. Builder Sandbox</strong>
+            <span>Isolated development workspace.</span>
+            <ul><li>write code</li><li>test, lint, dry-run</li><li>submit promotion requests</li></ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="instruction-section">
+        <h2>Autonomy And Governance</h2>
+        <div class="governance-grid">
+          <div class="instruction-tile"><strong>Level 0</strong><span>Observe only. Read, collect, classify, and report.</span></div>
+          <div class="instruction-tile"><strong>Level 1</strong><span>Recommend. Diagnose and propose plans.</span></div>
+          <div class="instruction-tile"><strong>Level 2</strong><span>Execute approved runbooks after policy allows it.</span></div>
+          <div class="instruction-tile"><strong>Level 3</strong><span>Build and test new tools in sandbox. Promotion still needs human approval.</span></div>
+        </div>
+        <div class="governance-grid" style="margin-top:8px">
+          <div class="instruction-tile"><strong>Green</strong><span>Read-only retrieval, classification, summaries, and reports.</span></div>
+          <div class="instruction-tile"><strong>Yellow</strong><span>Policy-checked work following registered skills or runbooks.</span></div>
+          <div class="instruction-tile"><strong>Red</strong><span>Human-approved redeploys, destructive changes, credentials, and promotion.</span></div>
+          <div class="instruction-tile"><strong>Rule</strong><span>Generated tools never promote themselves. Gatekeeper and a human decide.</span></div>
+        </div>
+      </section>
+
+      <section class="instruction-section">
+        <h2>Learning Loop</h2>
+        <div class="learning-loop">
+          <div class="learning-step"><strong>Observe</strong><span>Raven gathers evidence.</span></div>
+          <div class="learning-step"><strong>Diagnose</strong><span>Oracle analyzes the current case.</span></div>
+          <div class="learning-step"><strong>Compare</strong><span>Sage retrieves similar incidents and patterns.</span></div>
+          <div class="learning-step"><strong>Decide</strong><span>ORC builds a recommended plan.</span></div>
+          <div class="learning-step"><strong>Check Policy</strong><span>Gatekeeper approves, downgrades, or blocks.</span></div>
+          <div class="learning-step"><strong>Execute</strong><span>Executioner runs the allowed action.</span></div>
+          <div class="learning-step"><strong>Verify</strong><span>Raven checks whether the signal improved.</span></div>
+          <div class="learning-step"><strong>Retrospective</strong><span>Sage records symptom, root cause, action, outcome, confidence, and promotion recommendation.</span></div>
+        </div>
+      </section>
+
+      <section class="instruction-section">
+        <h2>Sage Memory</h2>
+        <div class="memory-grid">
+          <div class="instruction-tile"><strong>Episodic</strong><span>Who, what, where, when, and why for an incident.</span></div>
+          <div class="instruction-tile"><strong>Semantic</strong><span>Facts, notes, policies, and environment knowledge.</span></div>
+          <div class="instruction-tile"><strong>Procedural</strong><span>How to handle issues, escalate, roll back, and promote runbooks.</span></div>
+          <div class="instruction-tile"><strong>Evaluative</strong><span>Success rates, what worked, what failed, and what should improve.</span></div>
+        </div>
       </section>
     </div>
   </div>
@@ -1731,7 +1851,7 @@ function showTab(id){
   if(id==='admin'){showAdminTab(_adminTab||'connections');}
 }
 function tabsForViewMode(mode=_viewMode){
-  return ['overview','network','events','orchestration','admin'];
+  return ['overview','network','events','orchestration','instructions','admin'];
 }
 function tabAllowed(id){return id==='home'||tabsForViewMode().includes(id);}
 function firstTabForMode(){return tabsForViewMode()[0];}
@@ -3453,6 +3573,9 @@ id: new-skill
 version: 0.1.0
 category: automation
 risk_level: medium
+autonomy_level: 1
+governance: yellow
+allowed_plane: reasoning
 approval_required: true
 agent: ${agent}
 
@@ -4345,9 +4468,13 @@ def orchestration_summary() -> dict:
             )
         ]
     skills = [asdict(item) for item in load_registry(REPO_ROOT, "skills")]
+    tools = [asdict(item) for item in load_registry(REPO_ROOT, "tools")]
+    runbooks = [asdict(item) for item in load_registry(REPO_ROOT, "runbooks")]
     return {
         "agents": agents,
         "skills": skills,
+        "tools": tools,
+        "runbooks": runbooks,
         "messages": messages,
         "approvals": approvals,
         "learnings": learnings,
@@ -4355,6 +4482,9 @@ def orchestration_summary() -> dict:
         "paths": {
             "agents": str((REPO_ROOT / "agents").relative_to(REPO_ROOT)),
             "skills": str((REPO_ROOT / "skills").relative_to(REPO_ROOT)),
+            "tools": str((REPO_ROOT / "tools").relative_to(REPO_ROOT)),
+            "runbooks": str((REPO_ROOT / "runbooks").relative_to(REPO_ROOT)),
+            "memory": str((REPO_ROOT / "memory").relative_to(REPO_ROOT)),
             "knowledge": str((REPO_ROOT / "knowledge").relative_to(REPO_ROOT)),
         },
     }
@@ -4377,6 +4507,9 @@ def create_orchestration_agent(body: AgentCreateIn) -> dict:
             "version: 0.1.0",
             f"role: {body.role.strip() or 'specialist'}",
             f"risk_level: {body.risk_level.strip() or 'low'}",
+            "plane: control",
+            "autonomy_level: 1",
+            "governance_boundary: yellow",
             f"approval_required: {_bool_text(body.approval_required)}",
             f"icon: {body.icon.strip() or _default_agent_icon(agent_id, body.role)}",
             "",
@@ -6117,6 +6250,18 @@ def registry_agents() -> dict:
 @app.get("/registry/skills")
 def registry_skills() -> dict:
     items = load_registry(REPO_ROOT, "skills")
+    return {"count": len(items), "items": [asdict(item) for item in items]}
+
+
+@app.get("/registry/tools")
+def registry_tools() -> dict:
+    items = load_registry(REPO_ROOT, "tools")
+    return {"count": len(items), "items": [asdict(item) for item in items]}
+
+
+@app.get("/registry/runbooks")
+def registry_runbooks() -> dict:
+    items = load_registry(REPO_ROOT, "runbooks")
     return {"count": len(items), "items": [asdict(item) for item in items]}
 
 

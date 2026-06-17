@@ -5,6 +5,9 @@ id: approval-policy-check
 version: 0.1.0
 category: governance
 risk_level: high
+autonomy_level: 1
+governance: red
+allowed_plane: policy
 approval_required: true
 
 ## Purpose

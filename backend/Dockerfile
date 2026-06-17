@@ -11,8 +11,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app ./app
 COPY agents ./agents
 COPY skills ./skills
+COPY tools ./tools
+COPY runbooks ./runbooks
+COPY memory ./memory
 COPY docs ./docs
-RUN mkdir -p /app/knowledge
+RUN mkdir -p /app/knowledge /app/worker-jobs
 
 EXPOSE 8000
 

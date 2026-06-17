@@ -5,6 +5,9 @@ id: executioner
 version: 0.1.0
 role: approved execution
 risk_level: high
+plane: action
+autonomy_level: 2
+governance_boundary: red
 approval_required: true
 
 ## Purpose

@@ -1,80 +1,120 @@
 # ORC Implementation Plan
 
-## Phase 0: Foundation
+## Build Assumption
 
-Goal: make the project buildable and inspectable.
+Agents are durable roles, not disposable workers. ORC owns the control flow, workers run bounded jobs, and the builder sandbox creates candidate tools that require human approval before promotion.
 
-1. Stand up the FastAPI service, worker process, Postgres, and Redis.
-2. Implement loading of `agent.md` and `skills.md` files.
-3. Add health checks, config loading, and audit logging.
-4. Deploy the stack in Portainer on a non-production Linux machine.
+## Architecture Planes
 
-## Phase 1: Portainer Observability
+1. Control Plane: ORC owns routing, state, planning, incident lifecycle, and registry coordination.
+2. Observation Plane: Raven gathers signals and verifies outcomes.
+3. Reasoning Plane: Oracle diagnoses evidence and recommends next steps.
+4. Memory / Learning Plane: Sage retrieves history and writes structured learnings.
+5. Policy Plane: Gatekeeper enforces autonomy, risk, and approval boundaries.
+6. Action Plane: Executioner runs only approved actions.
 
-Goal: collect and classify operational events.
+## Runtime Layers
 
-1. Build Portainer API client.
-2. Support configured environments, stacks, and containers.
-3. Normalize logs into structured event records.
-4. Detect high-value categories:
-   - critical errors
-   - authentication activity
-   - restarts and crashes
-   - deployments and image changes
+1. Stable Core: long-lived ORC service, agents, registry, message bus, approval matrix, incident store, and memory files.
+2. Tool Runner / Worker Pool: disposable Docker workers that run scripts, log analysis, approved runbooks, and promoted tools.
+3. Builder / Sandbox Dev: isolated Docker workspace for generated code, tests, lint, dry-runs, packaging, and promotion requests.
 
-## Phase 2: Context Correlation
+## Autonomy Levels
 
-Goal: explain what happened, not just what was logged.
+- Level 0: observe only.
+- Level 1: recommend.
+- Level 2: execute approved runbooks.
+- Level 3: build and test new tools in sandbox. Promotion still requires human approval.
 
-1. Build custom API connector framework.
-2. Add one or two concrete application connectors.
-3. Correlate container events with application state.
-4. Create workflow episode and incident grouping.
+## Governance Colors
 
-## Phase 3: Approval and Actioning
+- Green: read-only, retrieve, classify, summarize, report.
+- Yellow: policy-checked workflows that must follow registered skills or runbooks.
+- Red: human-approved production mutation, redeploy, credential, destructive, or promotion action.
 
-Goal: allow safe intervention.
+## Phase 1: Stabilize The Architecture
 
-1. Create approval request model and UI/API endpoints.
-2. Add Outlook notification support through Microsoft Graph.
-3. Allow agents to propose remediations.
-4. Require approval before execution.
-5. Write action audit logs and outcomes.
+Goal: clear separation of observe, reason, remember, approve, and act.
 
-## Phase 4: Knowledge Base
+Build:
 
-Goal: convert operations into reusable documentation.
+1. Plane metadata on core agents.
+2. Separate `skills/`, `tools/`, and `runbooks/` registries.
+3. Approval matrix and governance metadata.
+4. Incident schema and retrospective learning template.
+5. Markdown memory classes for episodic, semantic, procedural, and evaluative memory.
+6. Instructions tab that teaches the model to operators.
 
-1. Create Markdown knowledge entry templates.
-2. Add documenter agent workflows.
-3. Store incident summaries, runbooks, and post-action notes.
-4. Link entries back to source evidence.
+Exit criteria:
 
-## Phase 5: Visual Experience
+- Agents declare plane, autonomy level, and governance boundary.
+- Skills/tools/runbooks declare autonomy level and governance color.
+- ORC UI explains the mental model.
+- No production action path bypasses Gatekeeper.
 
-Goal: express workflow as an understandable, distinctive interface.
+## Phase 2: Add Retrieval And Learnings
 
-1. Build dashboard and timeline views.
-2. Add agent status views and conversation traces.
-3. Design mystical orc branding and motion language.
-4. Introduce the video game-inspired workflow scene after the core operator UX is stable.
+Goal: improve from past cases.
 
-## Suggested Build Order For Claude
+Build:
 
-1. Finish backend domain models and persistence.
-2. Implement registry loading from Markdown.
-3. Implement Portainer connector and log ingestion.
-4. Add incident correlation and approval workflow.
-5. Add Outlook notifications.
-6. Add knowledge writer.
-7. Build the operator UI.
+1. Incident repository.
+2. Pattern library.
+3. Procedural runbook library.
+4. Countermeasure knowledge base.
+5. Retrieval scoring across memory classes.
+6. Sage retrospective writer.
 
-## Exit Criteria Per Phase
+Exit criteria:
 
-Each phase should be considered done only when it has:
+- Oracle can request similar incidents from Sage.
+- Sage can return matching symptoms, actions, outcomes, and confidence.
+- Retrospectives can recommend runbook promotion.
 
-- runnable containers
-- configuration docs
-- tests for the new core logic
-- auditability for actions taken
-- example Markdown definitions where relevant
+## Phase 3: Add Safe Autonomy
+
+Goal: approved actions can run without redeploying the Stable Core.
+
+Build:
+
+1. Docker-based worker pool.
+2. Runbook execution records.
+3. Verification steps.
+4. Rollback steps.
+5. Action confidence thresholds.
+6. Worker job workspace and audit evidence.
+
+Exit criteria:
+
+- Executioner runs only approved runbooks.
+- Raven verifies before/after signals.
+- Failed verification routes back to Gatekeeper and Sage.
+
+## Phase 4: Add Tool Generation
+
+Goal: the platform can extend itself safely.
+
+Build:
+
+1. Builder sandbox container.
+2. Generated tool template.
+3. Tests, lint, dry-run, and package workflow.
+4. Promotion workflow.
+5. Canary deployment for new worker tools.
+
+Exit criteria:
+
+- Generated tools are created in the builder sandbox.
+- Gatekeeper and a human approve promotion.
+- Promoted tools run only in the worker pool, not in the Stable Core.
+
+## Learning Loop
+
+1. Observe: Raven gathers data.
+2. Diagnose: Oracle analyzes the data.
+3. Compare: Sage retrieves similar incidents and known patterns.
+4. Decide: ORC builds a recommended next-step plan.
+5. Check policy: Gatekeeper approves, downgrades, or blocks.
+6. Execute: Executioner runs the action if allowed.
+7. Verify: Raven confirms whether the issue improved or worsened.
+8. Retrospective: Sage writes symptom, root cause, action, outcome, confidence, and promotion recommendation.

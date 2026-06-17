@@ -5,6 +5,9 @@ id: agent-message-routing
 version: 0.1.0
 category: orchestration
 risk_level: low
+autonomy_level: 0
+governance: green
+allowed_plane: observation
 approval_required: false
 
 ## Purpose

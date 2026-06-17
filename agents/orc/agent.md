@@ -5,6 +5,9 @@ id: orc-orchestrator
 version: 0.1.0
 role: master orchestrator
 risk_level: medium
+plane: control
+autonomy_level: 1
+governance_boundary: yellow
 approval_required: true
 
 ## Purpose

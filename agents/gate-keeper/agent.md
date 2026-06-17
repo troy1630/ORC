@@ -5,6 +5,9 @@ id: gate-keeper
 version: 0.1.0
 role: approval and policy
 risk_level: high
+plane: policy
+autonomy_level: 1
+governance_boundary: red
 approval_required: true
 
 ## Purpose

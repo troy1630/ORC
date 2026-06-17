@@ -4,6 +4,9 @@ name: portainer-log-review
 version: 0.1.0
 category: observability
 risk_level: low
+autonomy_level: 0
+governance: green
+allowed_plane: observation
 
 ## Purpose
 

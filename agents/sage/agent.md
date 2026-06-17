@@ -5,6 +5,9 @@ id: sage
 version: 0.1.0
 role: learning and skill authoring
 risk_level: low
+plane: memory-learning
+autonomy_level: 1
+governance_boundary: green
 approval_required: false
 
 ## Purpose

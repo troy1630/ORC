@@ -21,7 +21,16 @@ def _to_bool(value: str | None) -> bool | None:
 
 
 def load_registry(root: Path, kind: str) -> list[RegistryItem]:
-    pattern = "agents/*/agent.md" if kind == "agents" else "skills/*/skills.md"
+    patterns = {
+        "agents": "agents/*/agent.md",
+        "skills": "skills/*/skills.md",
+        "tools": "tools/*/tool.md",
+        "runbooks": "runbooks/*/runbook.md",
+    }
+    pattern = patterns.get(kind)
+    if not pattern:
+        return []
+
     items: list[RegistryItem] = []
 
     for file_path in sorted(root.glob(pattern)):
@@ -32,7 +41,7 @@ def load_registry(root: Path, kind: str) -> list[RegistryItem]:
                 name=parsed.get("name", file_path.parent.name),
                 item_id=parsed.get("id", parsed.get("name", file_path.parent.name)),
                 version=parsed.get("version", "0.0.0"),
-                role_or_category=parsed.get("role", parsed.get("category", "unknown")),
+                role_or_category=parsed.get("role", parsed.get("category", parsed.get("plane", "unknown"))),
                 approval_required=_to_bool(parsed.get("approval_required")),
                 icon=parsed.get("icon", ""),
             )

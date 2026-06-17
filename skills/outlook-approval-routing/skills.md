@@ -4,6 +4,9 @@ name: outlook-approval-routing
 version: 0.1.0
 category: communication
 risk_level: medium
+autonomy_level: 1
+governance: yellow
+allowed_plane: policy
 
 ## Purpose
 

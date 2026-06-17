@@ -11,6 +11,9 @@ services:
     volumes:
       - ./agents:/app/agents
       - ./skills:/app/skills
+      - ./tools:/app/tools
+      - ./runbooks:/app/runbooks
+      - ./memory:/app/memory
       - ./knowledge:/app/knowledge
       - ./docs:/app/docs:ro
     depends_on:
@@ -28,11 +31,49 @@ services:
     volumes:
       - ./agents:/app/agents:ro
       - ./skills:/app/skills:ro
+      - ./tools:/app/tools:ro
+      - ./runbooks:/app/runbooks:ro
+      - ./memory:/app/memory:ro
       - ./knowledge:/app/knowledge:ro
       - ./docs:/app/docs:ro
     depends_on:
       - postgres
       - redis
+
+  orc-tool-runner:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env
+    command: ["python", "-m", "app.worker"]
+    volumes:
+      - ./agents:/app/agents:ro
+      - ./skills:/app/skills:ro
+      - ./tools:/app/tools:ro
+      - ./runbooks:/app/runbooks:ro
+      - ./memory:/app/memory:ro
+      - ./knowledge:/app/knowledge:ro
+      - ./docs:/app/docs:ro
+      - worker_jobs:/app/worker-jobs
+    depends_on:
+      - postgres
+      - redis
+
+  orc-builder:
+    build:
+      context: .
+      dockerfile: builder/Dockerfile
+    container_name: orc-builder
+    working_dir: /workspace
+    volumes:
+      - ./builder/workspace:/workspace
+      - ./skills:/app/skills
+      - ./tools:/app/tools
+      - ./runbooks:/app/runbooks
+      - ./memory:/app/memory
+      - ./docs:/app/docs:ro
+    command: ["sleep", "infinity"]
 
   postgres:
     image: postgres:16
@@ -50,3 +91,4 @@ services:
 
 volumes:
   postgres_data:
+  worker_jobs:
