@@ -1001,6 +1001,7 @@ _HTML = """<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ORC</title>
 <link rel="icon" href="/assets/favicon.ico" sizes="any">
+<script src="https://unpkg.com/vis-network@10.0.2/standalone/umd/vis-network.min.js"></script>
 <style>
 :root{--bg:#0d1117;--sur:#161b22;--bdr:#30363d;--txt:#e6edf3;--mut:#8b949e;--grn:#3fb950;--red:#f85149;--yel:#d29922;--blu:#58a6ff;--pur:#a371f7}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1083,7 +1084,10 @@ html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="cha
 .profile-filter{display:flex;align-items:center;gap:7px;font-size:.72rem;color:var(--mut);white-space:nowrap}
 .profile-filter select{background:#0d1117;border:1px solid var(--bdr);border-radius:7px;color:var(--txt);font-size:.76rem;padding:5px 9px;min-width:180px;outline:none}
 .profile-filter select:focus{border-color:var(--pur)}
-.profile-map-canvas{min-height:390px;overflow:auto;background:#0d1117}
+.profile-map-canvas{height:520px;min-height:390px;overflow:hidden;background:#0d1117;position:relative}
+.profile-map-canvas canvas{outline:none}
+.profile-map-canvas .vis-network{background:#0d1117}
+.vis-tooltip{position:absolute;background:#111820!important;border:1px solid #30363d!important;border-radius:7px!important;color:#e6edf3!important;font-size:12px!important;line-height:1.35!important;padding:8px 10px!important;max-width:300px!important;white-space:normal!important;box-shadow:0 16px 30px rgba(0,0,0,.35)!important}
 .profile-map-svg{display:block;min-width:900px;width:100%;height:auto}
 .profile-edge{fill:none;stroke:#344153;stroke-width:1;opacity:.55}
 .profile-edge.missing{stroke:#8b949e;stroke-dasharray:3 5}.profile-edge.resource{stroke:#4b5566;stroke-dasharray:4 6}
@@ -2108,7 +2112,7 @@ let _viewMode='corporate';
 let _orch={agents:[],skills:[],tools:[],runbooks:[],messages:[],approvals:[],learnings:[],paths:{}};
 let _orchTab='chat', _adminTab='connections', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null, _skillEditId='', _agentEditId='';
 let _instructionTab='framework';
-let _profileAgentFilter='all';
+let _profileAgentFilter='all', _profileNetwork=null;
 let _agentDraftIcon='/assets/characters/agent-scout.png', _agentLogoDraft='';
 let _hbData=new Array(60).fill(0), _hbBucket=0, _hbAlerts=[], _hbAlertBuf=[], _hbAlertPoints=[];
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
@@ -3781,6 +3785,61 @@ function profileSurfaceIdsForAgent(agent){
   if(['orc-orchestrator','oracle','gate-keeper','executioner'].includes(id))surfaceIds.push('approvals');
   if(['orc-orchestrator','sage','executioner'].includes(id))surfaceIds.push('tools');
   return [...new Set(surfaceIds)];
+}
+function profileTitleHtml(title,rows=[]){
+  const body=rows.filter(Boolean).map(row=>`<div>${esc(row)}</div>`).join('');
+  return `<div><strong>${esc(title)}</strong>${body?`<div style="margin-top:4px;color:#c9d5e2">${body}</div>`:''}</div>`;
+}
+function profileColor(kind){
+  return {
+    agent:{background:'#142033',border:'#58a6ff'},
+    skills:{background:'#56d364',border:'#173b25'},
+    memory:{background:'#38bdf8',border:'#164e63'},
+    runbooks:{background:'#3b82f6',border:'#1d4ed8'},
+    tools:{background:'#a371f7',border:'#5b21b6'},
+    approvals:{background:'#f59e0b',border:'#92400e'},
+    message:{background:'#94a3b8',border:'#475569'},
+    missing:{background:'#8b949e',border:'#30363d'},
+  }[kind]||{background:'#8b949e',border:'#30363d'};
+}
+function profileNetworkNode(id,kind,title,rows=[],extra={}){
+  const color=profileColor(kind);
+  return {
+    id,
+    shape:'dot',
+    size:extra.size||8,
+    label:'',
+    title:profileTitleHtml(title,rows),
+    color:{background:color.background,border:color.border,highlight:{background:color.background,border:'#f0f6fc'},hover:{background:color.background,border:'#f0f6fc'}},
+    borderWidth:extra.borderWidth||2,
+    mass:extra.mass||1,
+    x:extra.x,
+    y:extra.y,
+  };
+}
+function profileAgentNetworkNode(agent,index,total){
+  const angle=total<=1?Math.PI:Math.PI*1.5+(index/Math.max(total,1))*Math.PI;
+  const x=total<=1?-260:-250+Math.cos(angle)*95;
+  const y=total<=1?0:Math.sin(angle)*180;
+  const profile=agent.profile||{};
+  return {
+    id:`agent:${agent.id}`,
+    shape:'circularImage',
+    image:agent.icon||agentArt(agent),
+    brokenImage:'/assets/characters/agent-scout.png',
+    size:28,
+    label:'',
+    title:profileTitleHtml(agent.name||agent.id,[profile.plane||agent.role||'agent',profile.purpose||'']),
+    color:{border:'#58a6ff',background:'#142033',highlight:{border:'#f0f6fc'},hover:{border:'#f0f6fc'}},
+    borderWidth:3,
+    mass:3,
+    x,
+    y,
+  };
+}
+function profileNetworkEdge(from,to,kind='default'){
+  const colors={default:'#3d4656',missing:'#8b949e',hub:'#586174'};
+  return {from,to,color:{color:colors[kind]||colors.default,highlight:'#f0f6fc',hover:'#f0f6fc'},width:kind==='hub'?1.6:1,smooth:{type:'continuous'},selectionWidth:2,hoverWidth:2};
 }
 function renderInstructionProfiles(){
   const canvas=document.getElementById('profile-map-canvas');
