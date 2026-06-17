@@ -1363,7 +1363,7 @@ canvas{display:block;width:100%;height:58px}
 .chat-meta{font-size:.69rem;color:var(--mut);margin-bottom:4px;display:flex;gap:5px;flex-wrap:wrap}
 .chat-channel{color:#f2f7ff;font-weight:850}
 .chat-arrow{color:#9fb3c8;font-weight:850}
-.chat-text{font-size:.85rem;line-height:1.4;overflow-wrap:anywhere}
+.chat-text{font-size:.85rem;line-height:1.4;overflow-wrap:anywhere;white-space:pre-wrap}
 .chat-approval-pill{display:inline-flex;align-items:center;gap:8px;margin:0 0 7px;padding:7px 10px;border-radius:999px;border:1px solid rgba(245,194,66,.58);background:rgba(245,194,66,.24);color:#fff1b3;font-size:.79rem;font-weight:800}
 .chat-approval-pill a,.chat-approval-pill button{font-size:.76rem}
 .chat-approval-actions{display:inline-flex;gap:6px;align-items:center}
@@ -4138,7 +4138,7 @@ function splitAgentChatText(m){
   const clean=raw.replace(/^Plain-English summary:\\s*/i,'').replace(/^Summary:\\s*/i,'').replace(/\\s+/g,' ').trim();
   const firstSentence=clean.split(/(?<=[.!?])\\s+/)[0]||clean;
   const short=firstSentence.length>220?firstSentence.slice(0,217)+'…':firstSentence;
-  const detail=detailFromPayload||clean;
+  const detail=detailFromPayload||raw;
   return {short:short||clean||'—', detail:detail!==short?detail:''};
 }
 function chatBubbleSummaryDetail(id,short,detail){
@@ -6764,7 +6764,27 @@ def _oracle_pattern(message: str) -> str:
     text = message.strip().lower()
     text = _ORACLE_UUID_RE.sub("<id>", text)
     text = _ORACLE_NUM_RE.sub("<n>", text)
+    text = re.sub(r"^(error|err|warning|warn|critical|fatal|exception)\s*[:\-]\s*", "", text)
+    text = re.sub(r"\b(error|exception)\s*[:\-]\s*", "", text)
     text = re.sub(r"\s+", " ", text)
+    if "timeout exceeded" in text and "trying to connect" in text:
+        return "timeout exceeded when trying to connect"
+    if "getaddrinfo" in text and "eai_again" in text:
+        service = ""
+        match = re.search(r"eai_again\s+([a-z0-9_.-]+)", text)
+        if match:
+            service = f": {match.group(1)}"
+        return f"dns resolution failure{service}"
+    if "econnrefused" in text or "connection refused" in text:
+        return "connection refused"
+    if "enotfound" in text or "name or service not known" in text:
+        return "dns name not found"
+    if "no space left on device" in text:
+        return "disk full"
+    if "out of memory" in text or "oom" in text:
+        return "out of memory"
+    if "permission denied" in text or "unauthorized" in text or "forbidden" in text:
+        return "authorization or permission failure"
     return text[:220]
 
 
@@ -7596,13 +7616,84 @@ def _run_executioner(approval_id: int, instruction: str, rationale: str, session
     )
 
 
+def _oracle_local_cause_and_countermeasure(issue: dict) -> tuple[str, str]:
+    text = f"{issue.get('pattern', '')} {issue.get('example', '')}".lower()
+    if "timeout exceeded" in text or "timeout" in text:
+        return (
+            "The affected app is waiting too long for a downstream service or network path to respond.",
+            "Check the target service health, DNS, network path, and recent deploy/resource saturation; request approval before restart, redeploy, or scaling.",
+        )
+    if "dns resolution" in text or "getaddrinfo" in text or "eai_again" in text or "enotfound" in text:
+        service = ""
+        match = re.search(r"(?:eai_again|dns resolution failure:)\s+([a-z0-9_.-]+)", text)
+        if match:
+            service = f" for `{match.group(1)}`"
+        return (
+            f"Docker or service DNS resolution is failing{service}, so the app cannot locate its dependency.",
+            "Verify service/container health, Docker network membership, DNS settings, and dependency names; restart or redeploy only after approval.",
+        )
+    if "connection refused" in text or "econnrefused" in text:
+        return (
+            "The dependency host is reachable but the expected service port is not accepting connections.",
+            "Check whether the dependency process is running, listening on the expected port, and passing health checks.",
+        )
+    if "disk full" in text or "no space left" in text:
+        return (
+            "The host or container filesystem appears to be out of writable space.",
+            "Review disk usage and log growth, then clean or expand storage through an approved maintenance action.",
+        )
+    if "out of memory" in text or "oom" in text:
+        return (
+            "The process likely exceeded available memory or was killed under memory pressure.",
+            "Check memory limits and recent traffic/load; consider scaling or limit changes through approval.",
+        )
+    if "authorization" in text or "permission" in text or "unauthorized" in text or "forbidden" in text:
+        return (
+            "The request is being rejected by credentials, permissions, or policy.",
+            "Verify token validity, service account permissions, and recent credential/config changes before rotating secrets through approval.",
+        )
+    return (
+        "The repeated message points to a recurring service-level failure, but the exact dependency is not certain from the summary alone.",
+        "Inspect the source logs around the repeated message, compare recent deploys/config changes, and ask Sage for similar prior incidents.",
+    )
+
+
+def _oracle_local_review(summary: dict, reason: str = "") -> str:
+    if not summary.get("total_events"):
+        return (
+            f"**No issues found in the {_review_window_label(summary.get('window_hours', 1))}.**\n\n"
+            "**Countermeasure:** Keep monitoring and re-run the Oracle when Raven captures fresh critical or error events."
+        )
+    lines: list[str] = []
+    if reason:
+        lines.append(f"Using local Oracle analysis because {reason}.")
+        lines.append("")
+    for idx, issue in enumerate(summary.get("top_issues", [])[:3], start=1):
+        root_cause, countermeasure = _oracle_local_cause_and_countermeasure(issue)
+        friendly = issue.get("friendly_name") or issue.get("container") or "Unknown"
+        container = issue.get("container") or "unknown"
+        pattern = issue.get("pattern") or issue.get("example") or "repeated error"
+        events = issue.get("events", 0)
+        lines.append(
+            f"{idx}. **{friendly}** (`{container}`) - **Issue:** {pattern} observed **{events} times**."
+        )
+        lines.append(f"   **Possible root cause:** {root_cause}")
+        lines.append(f"   **Countermeasure:** {countermeasure}")
+    return "\n".join(lines)
+
+
 def _oracle_review(summary: dict, session) -> str:
     if not summary["total_events"]:
         return (
             f"**No issues found in the {_review_window_label(summary.get('window_hours', 1))}.**\n\n"
             "**Countermeasure:** Keep monitoring and re-run the Oracle when Raven captures fresh critical or error events."
         )
-    return _llm_call(_oracle_prompt(summary), "oracle", "oracle_review", session)
+    if not os.getenv("OPENAI_API_KEY", "").strip():
+        return _oracle_local_review(summary, "the LLM is not configured")
+    try:
+        return _llm_call(_oracle_prompt(summary), "oracle", "oracle_review", session)
+    except HTTPException as exc:
+        return _oracle_local_review(summary, exc.detail or "the LLM request failed")
 
 
 def _is_critical_error_review_request(text: str) -> bool:
