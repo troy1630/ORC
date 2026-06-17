@@ -123,6 +123,11 @@ class SkillBuildIn(BaseModel):
     success_criteria: str = ""
 
 
+class SkillMarkdownIn(BaseModel):
+    skill_id: str = ""
+    markdown: str
+
+
 class ApprovalCreateIn(BaseModel):
     title: str
     requester_agent: str = "oracle"
@@ -225,6 +230,26 @@ def _bullet_block(value: str) -> str:
     return "\n".join(f"- {line}" for line in lines) if lines else "- Not specified"
 
 
+def _skill_template_comment() -> str:
+    return "\n".join(
+        [
+            "<!--",
+            "Author this file like a developer-maintained runbook for an AI teammate.",
+            "",
+            "Before replacing this guidance",
+            "- Keep instructions concise, imperative, and specific to this skill.",
+            "- Put stable procedural rules here, not general AI advice.",
+            "- Include exact inputs, outputs, approval boundaries, and validation checks.",
+            "- Move long reference material into a linked reference file when the skill grows.",
+            "- Prefer scripts for fragile or repeated operations that should be deterministic.",
+            "- Ask Codex to edit this Markdown directly when the procedure becomes clearer.",
+            "",
+            "Delete this comment when the skill is ready.",
+            "-->",
+        ]
+    )
+
+
 def _safe_markdown_path(root: Path, *parts: str) -> Path:
     base = root.resolve()
     target = (root / Path(*parts)).resolve()
@@ -254,6 +279,8 @@ def _skill_markdown(body: SkillBuildIn, skill_id: str) -> str:
             f"approval_required: {_bool_text(body.approval_required)}",
             f"agent: {body.agent_id.strip()}",
             "",
+            _skill_template_comment(),
+            "",
             "## Purpose",
             "",
             body.purpose.strip(),
@@ -270,6 +297,11 @@ def _skill_markdown(body: SkillBuildIn, skill_id: str) -> str:
             "",
             _bullet_block(body.procedure),
             "",
+            "## Approval Boundary",
+            "",
+            "- State which actions are read-only and which require approval.",
+            "- Route risky, destructive, or external-system changes to the assigned approval path.",
+            "",
             "## Rollback",
             "",
             _bullet_block(body.rollback),
@@ -284,6 +316,21 @@ def _skill_markdown(body: SkillBuildIn, skill_id: str) -> str:
             "",
         ]
     )
+
+
+def _skill_metadata_from_markdown(raw: str) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            break
+        if not stripped or stripped.startswith("#") or stripped.startswith("<!--") or stripped.startswith("-->"):
+            continue
+        if ":" not in stripped:
+            continue
+        key, value = stripped.split(":", 1)
+        metadata[key.strip().lower()] = value.strip()
+    return metadata
 
 
 def _skill_file_for_id(skill_id: str) -> tuple[Path, str]:
@@ -1002,6 +1049,13 @@ canvas{display:block;width:100%;height:58px}
 .approval-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .skill-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .skill-list{max-height:220px;overflow:auto;padding-right:2px}
+.skill-row.selected{border-color:rgba(163,113,247,.62);background:#111827}
+.skill-file-panel{min-height:620px;display:flex;flex-direction:column}
+.skill-editor-head{align-items:flex-start}
+.skill-editor-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.skill-file-meta{display:flex;gap:6px;flex-wrap:wrap;min-height:22px;margin-bottom:8px}
+.skill-file-meta .status-chip{text-transform:none;font-size:.66rem;letter-spacing:0}
+.skill-md-editor{flex:1;min-height:520px;font-family:Consolas,"Cascadia Mono","SFMono-Regular",monospace;font-size:.78rem;line-height:1.5;white-space:pre;overflow:auto;tab-size:2}
 .user-list{display:flex;flex-direction:column;gap:8px}
 .user-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:9px;align-items:center;border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:9px}
 .user-name{font-size:.82rem;font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1322,26 +1376,20 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
             </div>
             <div class="skill-list" id="orch-skills"><div class="empty">Loading skills...</div></div>
           </section>
-          <section class="orch-panel">
-            <div class="orch-panel-head"><div class="orch-panel-title">Skill Builder</div></div>
-            <div class="orch-form">
-              <div class="orch-field"><label>Agent</label><select class="orch-select" id="skill-agent"></select></div>
-              <div class="orch-field"><label>Skill Name</label><input class="orch-input" id="skill-name" placeholder="refresh container from git"></div>
-              <div class="orch-field"><label>Skill ID</label><input class="orch-input" id="skill-id" placeholder="refresh-container-from-git"></div>
-              <div class="orch-field"><label>Category</label><input class="orch-input" id="skill-category" value="automation"></div>
-              <div class="orch-field"><label>Risk</label><select class="orch-select" id="skill-risk"><option>low</option><option selected>medium</option><option>high</option></select></div>
-              <label class="agent-enabled"><input id="skill-approval" type="checkbox" checked> Approval required</label>
-              <div class="orch-field wide"><label>Purpose</label><textarea class="orch-textarea" id="skill-purpose"></textarea></div>
-              <div class="orch-field wide"><label>Inputs</label><textarea class="orch-textarea" id="skill-inputs"></textarea></div>
-              <div class="orch-field wide"><label>Outputs</label><textarea class="orch-textarea" id="skill-outputs"></textarea></div>
-              <div class="orch-field wide"><label>Procedure</label><textarea class="orch-textarea" id="skill-procedure"></textarea></div>
-              <div class="orch-field wide"><label>Rollback</label><textarea class="orch-textarea" id="skill-rollback"></textarea></div>
-              <div class="orch-field wide"><label>Success Criteria</label><textarea class="orch-textarea" id="skill-success"></textarea></div>
-              <div class="approval-actions wide">
-                <button class="btnp" id="skill-save-btn" onclick="createSkill()">Create Skill</button>
-                <button class="btns" id="skill-cancel-btn" onclick="resetSkillForm()" style="display:none">Cancel</button>
+          <section class="orch-panel skill-file-panel">
+            <div class="orch-panel-head skill-editor-head">
+              <div>
+                <div class="orch-panel-title" id="skill-editor-title">Skill File</div>
+                <div class="orch-count" id="skill-file-path">skills/new-skill/skills.md</div>
+              </div>
+              <div class="skill-editor-actions">
+                <button class="btns" type="button" onclick="resetSkillForm()">New</button>
+                <button class="btns" id="skill-reload-btn" type="button" onclick="reloadSkillFile()" style="display:none">Reload</button>
+                <button class="btnp" id="skill-save-btn" type="button" onclick="saveSkillMarkdown()">Create File</button>
               </div>
             </div>
+            <div class="skill-file-meta" id="skill-file-meta"></div>
+            <textarea class="orch-textarea skill-md-editor" id="skill-markdown" spellcheck="false"></textarea>
           </section>
         </div>
       </section>
@@ -3189,12 +3237,12 @@ function renderSkills(){
   if(!el)return;
   if(!_orch.skills.length){el.innerHTML='<div class="empty">No skills registered.</div>';return;}
   el.innerHTML=_orch.skills.map(s=>`
-    <div class="skill-row">
+    <div class="skill-row ${s.item_id===_skillEditId?'selected':''}">
       <div class="skill-head">
         <div class="skill-title" title="${esc(s.name)}">${esc(s.name)}</div>
         <div class="skill-actions">
           <span class="status-chip ${s.approval_required?'pending':'approved'}">${s.approval_required?'gated':'available'}</span>
-          <button class="btns" type="button" data-skill-id="${esc(s.item_id)}" onclick="openSkillFromEl(this)">Open</button>
+          <button class="btns" type="button" data-skill-id="${esc(s.item_id)}" onclick="openSkillFromEl(this)">File</button>
         </div>
       </div>
       <div class="skill-meta"><span>${esc(s.role_or_category||'unknown')}</span><span>${esc(s.version||'0.0.0')}</span><span>${esc(s.path||'')}</span></div>
@@ -3369,6 +3417,8 @@ function renderOrchestration(){
   fillOrchSelects();
   renderAgents();
   renderSkills();
+  const skillEditor=document.getElementById('skill-markdown');
+  if(skillEditor&&!skillEditor.value&&!_skillEditId)resetSkillForm();
   renderChat();
   renderApprovals();
   renderLearnings();
@@ -3394,48 +3444,109 @@ async function createAgent(){
     await loadOrchestration();
   }catch(e){alert((_agentEditId?'Save':'Create')+' agent failed: '+e.message);}
 }
+function skillDraftMarkdown(){
+  const agent=(_orch.agents||[]).find(a=>a.id==='sage')?.id||(_orch.agents?.[0]?.id)||'sage';
+  return `# Skill Definition
+
+name: new-skill
+id: new-skill
+version: 0.1.0
+category: automation
+risk_level: medium
+approval_required: true
+agent: ${agent}
+
+<!--
+Author this file like a developer-maintained runbook for an AI teammate.
+
+Before replacing this guidance
+- Keep instructions concise, imperative, and specific to this skill.
+- Put stable procedural rules here, not general AI advice.
+- Include exact inputs, outputs, approval boundaries, and validation checks.
+- Move long reference material into a linked reference file when the skill grows.
+- Prefer scripts for fragile or repeated operations that should be deterministic.
+- Ask Codex to edit this Markdown directly when the procedure becomes clearer.
+
+Delete this comment when the skill is ready.
+-->
+
+## Purpose
+
+State the repeatable capability this skill gives the assigned agent.
+
+## Inputs
+
+- List the information, files, credentials, tools, or context the agent needs.
+
+## Outputs
+
+- List the artifacts, decisions, messages, or changed systems this skill produces.
+
+## Procedure
+
+1. Describe the first action the agent should take.
+2. Describe the decision points that change the workflow.
+3. Describe the validation step before reporting success.
+
+## Approval Boundary
+
+- State which actions are read-only.
+- State which actions require Gate Keeper or human approval.
+
+## Rollback
+
+- List how to undo or stop the work if the procedure changes state.
+
+## Success Criteria
+
+- List the observable conditions that mean the skill worked.
+
+## Audit Requirements
+
+- Record requesting user, deciding agent, approval decision, action target, result, and evidence links.
+`;
+}
+function skillIdFromMarkdown(markdown){
+  const idMatch=markdown.match(/^id:\\s*(.+)$/mi);
+  const nameMatch=markdown.match(/^name:\\s*(.+)$/mi);
+  return (idMatch?.[1]||nameMatch?.[1]||'skill').trim();
+}
 function setSkillEditMode(skillId){
   _skillEditId=skillId||'';
   const save=document.getElementById('skill-save-btn');
-  const cancel=document.getElementById('skill-cancel-btn');
-  const idField=document.getElementById('skill-id');
-  if(save)save.textContent=_skillEditId?'Save Skill':'Create Skill';
-  if(cancel)cancel.style.display=_skillEditId?'':'none';
-  if(idField)idField.disabled=!!_skillEditId;
+  const reload=document.getElementById('skill-reload-btn');
+  if(save)save.textContent=_skillEditId?'Save File':'Create File';
+  if(reload)reload.style.display=_skillEditId?'':'none';
+  renderSkills();
 }
 function resetSkillForm(){
-  ['skill-name','skill-id','skill-purpose','skill-inputs','skill-outputs','skill-procedure','skill-rollback','skill-success'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el)el.value='';
-  });
-  const category=document.getElementById('skill-category');
-  const risk=document.getElementById('skill-risk');
-  const approval=document.getElementById('skill-approval');
-  if(category)category.value='automation';
-  if(risk)risk.value='medium';
-  if(approval)approval.checked=true;
+  const editor=document.getElementById('skill-markdown');
+  if(editor)editor.value=skillDraftMarkdown();
+  const title=document.getElementById('skill-editor-title');
+  const path=document.getElementById('skill-file-path');
+  const meta=document.getElementById('skill-file-meta');
+  if(title)title.textContent='New Skill Draft';
+  if(path)path.textContent='skills/new-skill/skills.md';
+  if(meta)meta.innerHTML='<span class="status-chip pending">draft</span><span class="status-chip">Markdown</span>';
   setSkillEditMode('');
+  editor?.focus();
 }
 function fillSkillForm(skill){
-  const agent=document.getElementById('skill-agent');
-  if(agent&&skill.agent_id&&!Array.from(agent.options).some(o=>o.value===skill.agent_id)){
-    const opt=document.createElement('option');
-    opt.value=skill.agent_id;
-    opt.textContent=skill.agent_id;
-    agent.appendChild(opt);
+  const editor=document.getElementById('skill-markdown');
+  const title=document.getElementById('skill-editor-title');
+  const path=document.getElementById('skill-file-path');
+  const meta=document.getElementById('skill-file-meta');
+  if(editor)editor.value=skill.raw_markdown||'';
+  if(title)title.textContent=skill.skill_name||'Skill File';
+  if(path)path.textContent=skill.path||'skills.md';
+  if(meta){
+    meta.innerHTML=[
+      `<span class="status-chip">${esc(skill.skill_id||'skill')}</span>`,
+      `<span class="status-chip">${esc(skill.category||'automation')}</span>`,
+      `<span class="status-chip ${skill.approval_required?'pending':'approved'}">${skill.approval_required?'approval required':'available'}</span>`,
+      skill.agent_id?`<span class="status-chip">${esc(skill.agent_id)}</span>`:''
+    ].filter(Boolean).join('');
   }
-  if(agent)agent.value=skill.agent_id||agent.value;
-  document.getElementById('skill-name').value=skill.skill_name||'';
-  document.getElementById('skill-id').value=skill.skill_id||'';
-  document.getElementById('skill-category').value=skill.category||'automation';
-  document.getElementById('skill-risk').value=skill.risk_level||'medium';
-  document.getElementById('skill-approval').checked=!!skill.approval_required;
-  document.getElementById('skill-purpose').value=skill.purpose||'';
-  document.getElementById('skill-inputs').value=skill.inputs||'';
-  document.getElementById('skill-outputs').value=skill.outputs||'';
-  document.getElementById('skill-procedure').value=skill.procedure||'';
-  document.getElementById('skill-rollback').value=skill.rollback||'';
-  document.getElementById('skill-success').value=skill.success_criteria||'';
   setSkillEditMode(skill.skill_id||'');
 }
 async function openSkillFromEl(btn){
@@ -3451,7 +3562,7 @@ async function openSkillFromEl(btn){
     if(!r.ok)throw new Error(d.detail||d.message||'Skill could not be opened');
     fillSkillForm(d);
     showOrchTab('skills');
-    document.getElementById('skill-name')?.focus();
+    document.getElementById('skill-markdown')?.focus();
   }catch(e){
     alert('Open skill failed: '+e.message);
   }finally{
@@ -3459,16 +3570,34 @@ async function openSkillFromEl(btn){
     btn.disabled=false;
   }
 }
-async function createSkill(){
-  const body={agent_id:orchVal('skill-agent'),skill_name:orchVal('skill-name'),skill_id:orchVal('skill-id'),category:orchVal('skill-category')||'automation',risk_level:orchVal('skill-risk')||'medium',approval_required:orchChecked('skill-approval'),purpose:orchVal('skill-purpose'),inputs:orchVal('skill-inputs'),outputs:orchVal('skill-outputs'),procedure:orchVal('skill-procedure'),rollback:orchVal('skill-rollback'),success_criteria:orchVal('skill-success')};
-  if(!body.agent_id||!body.skill_name||!body.purpose||!body.procedure){alert('Agent, skill name, purpose, and procedure are required.');return;}
+async function reloadSkillFile(){
+  if(!_skillEditId){resetSkillForm();return;}
+  try{
+    const r=await fetch(`/orchestration/skills/${encodeURIComponent(_skillEditId)}`);
+    const d=await r.json().catch(()=>({}));
+    if(r.status===401){setAuthView(null);throw new Error('Login required');}
+    if(!r.ok)throw new Error(d.detail||d.message||'Skill could not be reloaded');
+    fillSkillForm(d);
+  }catch(e){alert('Reload skill failed: '+e.message);}
+}
+async function saveSkillMarkdown(){
+  const editor=document.getElementById('skill-markdown');
+  const markdown=editor?.value||'';
+  if(!markdown.trim()){alert('Skill Markdown is required.');editor?.focus();return;}
+  const btn=document.getElementById('skill-save-btn');
+  if(btn){btn.textContent='Saving';btn.disabled=true;}
   try{
     const updating=!!_skillEditId;
-    const url=updating?`/orchestration/skills/${encodeURIComponent(_skillEditId)}`:'/orchestration/skills';
-    await postJson(url,body,updating?'PUT':'POST');
-    if(!updating)resetSkillForm();
+    const url=updating?`/orchestration/skills/${encodeURIComponent(_skillEditId)}/markdown`:'/orchestration/skills/markdown';
+    const body={skill_id:updating?_skillEditId:skillIdFromMarkdown(markdown),markdown};
+    const d=await postJson(url,body,updating?'PUT':'POST');
+    fillSkillForm(d);
     await loadOrchestration();
   }catch(e){alert((_skillEditId?'Save':'Create')+' skill failed: '+e.message);}
+  finally{
+    if(btn)btn.disabled=false;
+    setSkillEditMode(_skillEditId);
+  }
 }
 async function sendAgentMessage(){
   const summary=orchVal('msg-summary');
@@ -4471,6 +4600,37 @@ def create_skill(body: SkillBuildIn) -> dict:
     return {"ok": True, "skill_id": skill_id, "path": str(target_file.relative_to(REPO_ROOT))}
 
 
+@app.post("/orchestration/skills/markdown", status_code=201)
+def create_skill_markdown(body: SkillMarkdownIn) -> dict:
+    markdown = body.markdown.rstrip()
+    if not markdown.strip():
+        raise HTTPException(status_code=400, detail="Skill Markdown is required")
+
+    metadata = _skill_metadata_from_markdown(markdown)
+    skill_id = _slug(body.skill_id or metadata.get("id") or metadata.get("name") or "skill", "skill")
+    skills_root = REPO_ROOT / "skills"
+    try:
+        target_dir = _safe_markdown_path(skills_root, skill_id)
+        target_file = target_dir / "skills.md"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_file.write_text(markdown + "\n", encoding="utf-8")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to write skill file: {exc}") from exc
+
+    skill_name = metadata.get("name") or skill_id
+    target_agent = metadata.get("agent") or ""
+    with SessionLocal() as s:
+        _record_agent_message(
+            s,
+            "sage",
+            target_agent,
+            "skill_proposal",
+            f"Sage drafted skill {skill_name} as Markdown.",
+            {"path": str(target_file.relative_to(REPO_ROOT)), "risk_level": metadata.get("risk_level", "medium")},
+        )
+    return {"ok": True, **_parse_skill_file(target_file)}
+
+
 @app.get("/orchestration/skills/{skill_id}")
 def get_skill(skill_id: str) -> dict:
     target_file, _ = _skill_file_for_id(skill_id)
@@ -4492,6 +4652,28 @@ def update_skill(skill_id: str, body: SkillBuildIn) -> dict:
             {"path": str(target_file.relative_to(REPO_ROOT)), "risk_level": body.risk_level},
         )
     return {"ok": True, "skill_id": canonical_id, "path": str(target_file.relative_to(REPO_ROOT))}
+
+
+@app.put("/orchestration/skills/{skill_id}/markdown")
+def update_skill_markdown(skill_id: str, body: SkillMarkdownIn) -> dict:
+    markdown = body.markdown.rstrip()
+    if not markdown.strip():
+        raise HTTPException(status_code=400, detail="Skill Markdown is required")
+
+    target_file, canonical_id = _skill_file_for_id(skill_id)
+    target_file.write_text(markdown + "\n", encoding="utf-8")
+    metadata = _skill_metadata_from_markdown(markdown)
+
+    with SessionLocal() as s:
+        _record_agent_message(
+            s,
+            "sage",
+            metadata.get("agent") or "",
+            "skill_update",
+            f"Sage updated skill {metadata.get('name') or canonical_id} as Markdown.",
+            {"path": str(target_file.relative_to(REPO_ROOT)), "risk_level": metadata.get("risk_level", "medium")},
+        )
+    return {"ok": True, **_parse_skill_file(target_file)}
 
 
 @app.post("/orchestration/approvals", status_code=201)
