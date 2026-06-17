@@ -1083,13 +1083,19 @@ html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="cha
 .profile-filter{display:flex;align-items:center;gap:7px;font-size:.72rem;color:var(--mut);white-space:nowrap}
 .profile-filter select{background:#0d1117;border:1px solid var(--bdr);border-radius:7px;color:var(--txt);font-size:.76rem;padding:5px 9px;min-width:180px;outline:none}
 .profile-filter select:focus{border-color:var(--pur)}
-.profile-map-canvas{min-height:520px;overflow:auto;background:#0d1117}
-.profile-map-svg{display:block;min-width:960px;width:100%;height:auto}
-.profile-edge{fill:none;stroke:#334154;stroke-width:1.25;opacity:.82}
-.profile-edge.core{stroke:#7c3aed;stroke-width:1.7;opacity:.9}.profile-edge.surface{stroke:#2f8f83;stroke-dasharray:5 5}.profile-edge.missing{stroke:#8b949e;stroke-dasharray:3 5}
-.profile-node rect{stroke-width:1.2;rx:8;filter:drop-shadow(0 8px 16px rgba(0,0,0,.22))}
-.profile-node.agent rect{fill:#142033;stroke:#3b82f6}.profile-node.skill rect{fill:#171f24;stroke:#56d364}.profile-node.surface rect{fill:#1c1824;stroke:#d29922}.profile-node.missing rect{fill:#15191f;stroke:#8b949e;stroke-dasharray:4 4}
-.profile-node text{fill:#e6edf3;font-size:12px;font-weight:800}.profile-node .sub{fill:#9fb0c3;font-size:10px;font-weight:650}
+.profile-map-canvas{min-height:390px;overflow:auto;background:#0d1117}
+.profile-map-svg{display:block;min-width:900px;width:100%;height:auto}
+.profile-edge{fill:none;stroke:#344153;stroke-width:1;opacity:.55}
+.profile-edge.missing{stroke:#8b949e;stroke-dasharray:3 5}.profile-edge.resource{stroke:#4b5566;stroke-dasharray:4 6}
+.profile-dot{cursor:help}.profile-dot .node-dot{stroke:#0d1117;stroke-width:2;filter:drop-shadow(0 5px 10px rgba(0,0,0,.28))}
+.profile-dot .ring{fill:#111820;stroke:#3b82f6;stroke-width:2.2;filter:drop-shadow(0 8px 16px rgba(0,0,0,.32))}
+.profile-dot.agent image{pointer-events:none}.profile-dot .label{fill:#c9d5e2;font-size:10px;font-weight:800}.profile-dot.agent .label{font-size:10px;text-anchor:middle}
+.profile-dot .sub-label{fill:#8391a5;font-size:8.5px;font-weight:650}
+.profile-dot.skill .node-dot{fill:#56d364}.profile-dot.missing .node-dot{fill:#8b949e;stroke-dasharray:3 3}
+.profile-dot.memory .node-dot{fill:#38bdf8}.profile-dot.runbook .node-dot{fill:#3b82f6}.profile-dot.tool .node-dot{fill:#a371f7}
+.profile-dot.approval .node-dot{fill:#f59e0b}.profile-dot.message .node-dot{fill:#94a3b8}
+.profile-dot:hover .node-dot,.profile-dot:hover .ring{stroke:#f0f6fc;stroke-width:3}.profile-dot:hover .label{fill:#fff}
+.profile-section-label{fill:#8391a5;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
 .profile-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
 .profile-card{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;min-width:0}
 .profile-card-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;min-width:0}.profile-card-head img{width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid #30363d}
@@ -1639,14 +1645,17 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
           <div class="profile-map-top">
             <div>
               <div class="profile-map-title">Agent Capability Profiles</div>
-              <div class="profile-map-copy">A live registry map showing which agents declare access to skills, and how the core surfaces are governed through memory, runbooks, approvals, and worker tools.</div>
+              <div class="profile-map-copy">A live registry map showing each agent as a character circle and every skill, memory class, runbook, worker tool, and policy surface as its own hoverable dot.</div>
             </div>
             <div class="profile-map-tools">
               <label class="profile-filter">Agent <select id="profile-agent-filter" onchange="renderInstructionProfiles()"><option value="all">All agents</option></select></label>
               <div class="profile-legend">
                 <span>Agent</span>
                 <span>Skill</span>
-                <span>Governed Surface</span>
+                <span>Memory</span>
+                <span>Runbook</span>
+                <span>Worker Tool</span>
+                <span>Policy/Bus</span>
                 <span>Declared Only</span>
               </div>
             </div>
@@ -3718,20 +3727,32 @@ function profileShort(value,max=24){
   const text=String(value||'');
   return text.length>max?text.slice(0,max-1)+'...':text;
 }
-function profileNodeSvg(node){
-  const cls=['profile-node',node.type,node.missing?'missing':''].filter(Boolean).join(' ');
-  const label=profileShort(node.label, node.type==='skill'?24:22);
-  const sub=profileShort(node.sub||'', node.type==='surface'?28:24);
-  return `<g class="${cls}" transform="translate(${node.x},${node.y})">
-    <title>${esc(node.label)}${node.sub?` - ${esc(node.sub)}`:''}</title>
-    <rect width="${node.w}" height="${node.h}"></rect>
-    <text x="12" y="20">${esc(label)}</text>
-    <text class="sub" x="12" y="36">${esc(sub)}</text>
+function profileDotTitle(node){
+  return [node.label,node.sub,node.path,node.detail].filter(Boolean).join('\\n');
+}
+function profileDotSvg(node){
+  const cls=['profile-dot',node.type,node.missing?'missing':''].filter(Boolean).join(' ');
+  const title=esc(profileDotTitle(node));
+  if(node.type==='agent'){
+    return `<g class="${cls}">
+      <title>${title}</title>
+      <circle class="ring" cx="${node.x}" cy="${node.y}" r="${node.r}"></circle>
+      <image href="${esc(node.image||'')}" x="${node.x-node.r+3}" y="${node.y-node.r+3}" width="${(node.r-3)*2}" height="${(node.r-3)*2}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${esc(node.clipId)})"></image>
+      <text class="label" x="${node.x}" y="${node.y+node.r+14}">${esc(profileShort(node.label,18))}</text>
+    </g>`;
+  }
+  return `<g class="${cls}">
+    <title>${title}</title>
+    <circle class="node-dot" cx="${node.x}" cy="${node.y}" r="${node.r}"></circle>
+    <text class="label" x="${node.x+12}" y="${node.y+4}">${esc(profileShort(node.label,24))}</text>
   </g>`;
 }
+function profileClipDef(node){
+  return `<clipPath id="${esc(node.clipId)}" clipPathUnits="userSpaceOnUse"><circle cx="${node.x}" cy="${node.y}" r="${node.r-4}"></circle></clipPath>`;
+}
 function profilePath(from,to){
-  const x1=from.x+from.w, y1=from.y+(from.h/2), x2=to.x, y2=to.y+(to.h/2);
-  const mid=Math.max(40,(x2-x1)/2);
+  const x1=from.x+(from.type==='agent'?from.r:from.r+3), y1=from.y, x2=to.x-to.r-2, y2=to.y;
+  const mid=Math.max(34,(x2-x1)/2);
   return `M${x1} ${y1} C${x1+mid} ${y1}, ${x2-mid} ${y2}, ${x2} ${y2}`;
 }
 function syncProfileAgentFilter(agents){
@@ -3794,7 +3815,9 @@ function renderInstructionProfiles(){
         declared.set(key,{
           id:key,
           label:found?.name||raw,
-          sub:found?`${found.role_or_category||'skill'} skill`:'declared only',
+          sub:found?`${found.role_or_category||'skill'} skill`:'declared in profile only',
+          path:found?.path||'',
+          detail:found?.approval_required?'Approval required':'Available skill',
           missing:!found,
           type:'skill',
         });
@@ -3807,6 +3830,8 @@ function renderInstructionProfiles(){
         id:profileNorm(skill.item_id),
         label:skill.name||skill.item_id,
         sub:`${skill.role_or_category||'skill'} skill`,
+        path:skill.path||'',
+        detail:skill.approval_required?'Approval required':'Available skill',
         missing:false,
         type:'skill',
       });
@@ -3816,36 +3841,78 @@ function renderInstructionProfiles(){
   const skillNodes=[...declared.values()].sort((a,b)=>a.label.localeCompare(b.label));
   const visibleSurfaceIds=new Set();
   agents.forEach(agent=>profileSurfaceIdsForAgent(agent).forEach(id=>visibleSurfaceIds.add(id)));
-  const allSurfaces=[
-    {id:'message-bus',label:'Message Bus',sub:'agent messages'},
-    {id:'memory',label:'Sage Memory',sub:'memory + knowledge'},
-    {id:'runbooks',label:'Runbook Registry',sub:`${(_orch.runbooks||[]).length} runbooks`},
-    {id:'approvals',label:'Approval Matrix',sub:'Gatekeeper policy'},
-    {id:'tools',label:'Worker Tools',sub:`${(_orch.tools||[]).length} tools`},
+  const memoryItems=[
+    {id:'memory-episodic',label:'Episodic',sub:'who, what, where, when, why',path:'memory/episodic/',surface:'memory',type:'memory'},
+    {id:'memory-semantic',label:'Semantic',sub:'facts, notes, policies',path:'memory/semantic/',surface:'memory',type:'memory'},
+    {id:'memory-procedural',label:'Procedural',sub:'runbooks, escalation, rollback',path:'memory/procedural/',surface:'memory',type:'memory'},
+    {id:'memory-evaluative',label:'Evaluative',sub:'success rates and improvements',path:'memory/evaluative/',surface:'memory',type:'memory'},
   ];
-  const surfaces=selectedAgent==='all'?allSurfaces:allSurfaces.filter(surface=>visibleSurfaceIds.has(surface.id));
-  const leftX=44, midX=372, rightX=720;
-  const agentH=48, skillH=42, surfaceH=52;
-  const height=Math.max(560, 96+Math.max(agents.length*70, skillNodes.length*48, surfaces.length*82));
+  const runbookItems=(_orch.runbooks||[]).map(item=>({
+    id:`runbook-${profileNorm(item.item_id)}`,
+    label:item.name||item.item_id,
+    sub:`${item.role_or_category||'runbook'} runbook`,
+    path:item.path||'',
+    detail:item.approval_required?'Approval required':'Can run within policy',
+    surface:'runbooks',
+    type:'runbook',
+  }));
+  const toolItems=(_orch.tools||[]).map(item=>({
+    id:`tool-${profileNorm(item.item_id)}`,
+    label:item.name||item.item_id,
+    sub:`${item.role_or_category||'worker'} tool`,
+    path:item.path||'',
+    detail:item.approval_required?'Promotion or execution gated':'Worker pool tool',
+    surface:'tools',
+    type:'tool',
+  }));
+  const policyItems=[
+    {id:'message-bus',label:'Message Bus',sub:'agent messages and routing',path:'agent_messages',surface:'message-bus',type:'message'},
+    {id:'approval-matrix',label:'Approval Matrix',sub:'Gatekeeper policy checks',path:'docs/approval-matrix.md',surface:'approvals',type:'approval'},
+  ];
+  const allResources=[...memoryItems,...runbookItems,...toolItems,...policyItems];
+  const resources=selectedAgent==='all'
+    ? allResources
+    : allResources.filter(item=>visibleSurfaceIds.has(item.surface));
+
+  const width=900;
+  const agentX=78, skillX=290, resourceX=620;
+  const agentStep=selectedAgent==='all'?62:72;
+  const agentStartY=78;
+  const skillStartY=76, resourceStartY=76;
+  const rowGap=30, skillCols=2, resourceCols=2, skillColGap=174, resourceColGap=160;
+  const agentHeight=agentStartY+(agents.length-1)*agentStep+78;
+  const skillHeight=skillStartY+Math.ceil(Math.max(skillNodes.length,1)/skillCols)*rowGap+42;
+  const resourceHeight=resourceStartY+Math.ceil(Math.max(resources.length,1)/resourceCols)*rowGap+42;
+  const height=Math.max(360,agentHeight,skillHeight,resourceHeight);
   const agentNodes=new Map();
   agents.forEach((agent,i)=>{
     const plane=agent.profile?.plane||agent.role||'agent';
-    agentNodes.set(agent.id,{id:agent.id,label:agent.name||agent.id,sub:plane,type:'agent',x:leftX,y:54+i*70,w:220,h:agentH});
+    const y=agentStartY+i*agentStep;
+    agentNodes.set(agent.id,{
+      id:agent.id,
+      label:agent.name||agent.id,
+      sub:plane,
+      detail:agent.profile?.purpose||'',
+      type:'agent',
+      image:agent.icon||agentArt(agent),
+      clipId:`profile-clip-${profileNorm(agent.id)}-${i}`,
+      x:agentX,
+      y,
+      r:24,
+    });
   });
   const skillNodeMap=new Map();
   skillNodes.forEach((skill,i)=>{
-    skillNodeMap.set(skill.id,{...skill,x:midX,y:54+i*48,w:230,h:skillH});
+    const col=i%skillCols, row=Math.floor(i/skillCols);
+    skillNodeMap.set(skill.id,{...skill,x:skillX+(col*skillColGap),y:skillStartY+(row*rowGap),r:7});
   });
-  const surfaceNodeMap=new Map();
-  surfaces.forEach((surface,i)=>{
-    surfaceNodeMap.set(surface.id,{...surface,type:'surface',x:rightX,y:70+i*82,w:210,h:surfaceH});
+  const resourceNodeMap=new Map();
+  resources.forEach((resource,i)=>{
+    const col=i%resourceCols, row=Math.floor(i/resourceCols);
+    resourceNodeMap.set(resource.id,{...resource,x:resourceX+(col*resourceColGap),y:resourceStartY+(row*rowGap),r:7});
   });
 
   const edges=[];
-  const orc=agentNodes.get('orc-orchestrator');
-  if(orc){
-    agentNodes.forEach((node,id)=>{if(id!=='orc-orchestrator')edges.push({from:orc,to:node,cls:'core'});});
-  }
   agents.forEach(agent=>{
     const from=agentNodes.get(agent.id);
     if(!from)return;
@@ -3855,19 +3922,26 @@ function renderInstructionProfiles(){
       if(to)edges.push({from,to,cls:to.missing?'missing':''});
     });
     profileSurfaceIdsForAgent(agent).forEach(surfaceId=>{
-      const to=surfaceNodeMap.get(surfaceId);
-      if(to)edges.push({from,to,cls:'surface'});
+      resourceNodeMap.forEach(to=>{
+        if(to.surface===surfaceId)edges.push({from,to,cls:'resource'});
+      });
     });
   });
 
   if(canvas){
     const svgEdges=edges.map(edge=>`<path class="profile-edge ${edge.cls||''}" d="${profilePath(edge.from,edge.to)}"></path>`).join('');
-    const svgNodes=[
-      ...[...agentNodes.values()].map(profileNodeSvg),
-      ...[...skillNodeMap.values()].map(profileNodeSvg),
-      ...[...surfaceNodeMap.values()].map(profileNodeSvg),
+    const defs=[...agentNodes.values()].map(profileClipDef).join('');
+    const sectionLabels=[
+      `<text class="profile-section-label" x="42" y="32">Agents</text>`,
+      `<text class="profile-section-label" x="${skillX-8}" y="32">Skills</text>`,
+      `<text class="profile-section-label" x="${resourceX-8}" y="32">Memory / Runbooks / Tools</text>`,
     ].join('');
-    canvas.innerHTML=`<svg class="profile-map-svg" viewBox="0 0 980 ${height}" role="img" aria-label="Agent profile capability map">${svgEdges}${svgNodes}</svg>`;
+    const svgNodes=[
+      ...[...agentNodes.values()].map(profileDotSvg),
+      ...[...skillNodeMap.values()].map(profileDotSvg),
+      ...[...resourceNodeMap.values()].map(profileDotSvg),
+    ].join('');
+    canvas.innerHTML=`<svg class="profile-map-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Agent profile capability map"><defs>${defs}</defs>${sectionLabels}${svgEdges}${svgNodes}</svg>`;
   }
   if(cards){
     cards.innerHTML=agents.map(agent=>{
