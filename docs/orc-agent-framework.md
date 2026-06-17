@@ -10,6 +10,21 @@ Think of ORC as an operating system for agents:
 
 Agents are durable roles. Workers are disposable execution surfaces.
 
+## Chat-First Operation
+
+Agent Chat is the primary operator surface. The operator should be able to talk to ORC the way they would direct a senior teammate:
+
+- "Review the logs from the last hour."
+- "Search memory for restart failures."
+- "Prepare a redeploy approval for api-worker."
+- "Promote tool; tool_id=log-parser; title=Log Parser; tests=unit tests passed; dry run=parsed sample logs without mutation."
+
+ORC turns those instructions into governed work:
+
+- Green requests, such as read-only log review and memory search, can run immediately.
+- Red requests, such as redeploy, restart, destructive change, credential change, or tool promotion, create Gatekeeper approval requests first.
+- Chat messages carry runbook, evidence, and approval metadata so the conversation remains the operational record.
+
 ## Six Planes
 
 | Plane | Agent | Job |
@@ -122,6 +137,7 @@ That final retrospective is how ORC improves over time.
 
 The current implementation exposes these surfaces:
 
+- Agent Chat can search memory, execute green runbooks, and prepare red approval-gated work from natural operator commands.
 - Memory search scans Markdown memory, knowledge, runbooks, tools, and framework docs.
 - Incident creation writes episodic memory under `memory/episodic/`.
 - Green runbooks can execute immediately and write evidence under `knowledge/runbook-executions/`.

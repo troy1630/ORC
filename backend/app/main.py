@@ -704,6 +704,59 @@ def _ensure_seed_messages(session) -> None:
     session.commit()
 
 
+def _markdown_list_items(section: str) -> list[str]:
+    items: list[str] = []
+    for raw_line in (section or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith(("-", "*")):
+            line = line[1:].strip()
+        elif re.match(r"^\d+\.\s+", line):
+            line = re.sub(r"^\d+\.\s+", "", line).strip()
+        items.append(line)
+    return items
+
+
+def _agent_profile_metadata(agent_id: str) -> dict:
+    profile = {
+        "plane": "",
+        "risk_level": "",
+        "autonomy_level": "",
+        "governance_boundary": "",
+        "approval_required": None,
+        "purpose": "",
+        "inputs": [],
+        "outputs": [],
+        "allowed_skills": [],
+        "rules": [],
+        "definition_path": "",
+    }
+    try:
+        path = _registry_file_for_id("agents", agent_id)
+        raw = path.read_text(encoding="utf-8")
+        metadata = _markdown_metadata(raw)
+        sections = _markdown_sections(raw)
+        profile.update(
+            {
+                "plane": metadata.get("plane", ""),
+                "risk_level": metadata.get("risk_level", ""),
+                "autonomy_level": metadata.get("autonomy_level", ""),
+                "governance_boundary": metadata.get("governance_boundary", metadata.get("governance", "")),
+                "approval_required": _markdown_bool(metadata.get("approval_required"), False),
+                "purpose": re.sub(r"\s+", " ", sections.get("purpose", "")).strip(),
+                "inputs": _markdown_list_items(sections.get("inputs", "")),
+                "outputs": _markdown_list_items(sections.get("outputs", "")),
+                "allowed_skills": _markdown_list_items(sections.get("allowed skills", "")),
+                "rules": _markdown_list_items(sections.get("rules", "")),
+                "definition_path": str(path.relative_to(REPO_ROOT)),
+            }
+        )
+    except Exception:
+        pass
+    return profile
+
+
 def _agent_dict(row: AgentRuntimeState) -> dict:
     return {
         "id": row.agent_id,
@@ -713,6 +766,7 @@ def _agent_dict(row: AgentRuntimeState) -> dict:
         "logo_data": row.logo_data or DEFAULT_CORPORATE_LOGO,
         "trust_mode": row.trust_mode,
         "enabled": row.enabled,
+        "profile": _agent_profile_metadata(row.agent_id),
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
 
@@ -944,6 +998,10 @@ html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="cha
 .instruction-title{font-size:1.35rem;font-weight:900;margin-top:5px}
 .instruction-copy{font-size:.86rem;color:#c9d5e2;line-height:1.5;max-width:780px;margin-top:8px}
 .instruction-pillbox{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.instruction-subtabs{display:flex;gap:6px;align-items:center;border:1px solid var(--bdr);border-radius:8px;background:#111820;padding:6px}
+.instruction-subtab{border:1px solid transparent;background:transparent;color:var(--mut);border-radius:7px;padding:7px 12px;font-size:.78rem;font-weight:850;cursor:pointer}
+.instruction-subtab:hover{color:var(--txt);background:#17202b}.instruction-subtab.on{color:var(--txt);background:#243044;border-color:#334154}
+.instruction-view{display:none;flex-direction:column;gap:12px}.instruction-view.on{display:flex}
 .instruction-section{border:1px solid var(--bdr);border-radius:8px;background:var(--sur);padding:14px}
 .instruction-section h2{font-size:.82rem;letter-spacing:.05em;text-transform:uppercase;margin:0 0 10px}
 .instruction-section p{font-size:.82rem;color:#c9d5e2;line-height:1.48;margin:0 0 8px}
@@ -960,6 +1018,26 @@ html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="cha
 .learning-step::before{counter-increment:loop;content:counter(loop);display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#253041;color:#e6edf3;font-size:.72rem;font-weight:900;margin-bottom:8px}
 .learning-step strong{display:block;font-size:.78rem;margin-bottom:4px}
 .learning-step span{font-size:.72rem;color:var(--mut);line-height:1.35}
+.profile-map-shell{border:1px solid var(--bdr);border-radius:8px;background:#101720;overflow:hidden}
+.profile-map-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid #21262d}
+.profile-map-title{font-size:.86rem;font-weight:900}
+.profile-map-copy{font-size:.74rem;color:var(--mut);line-height:1.38;margin-top:3px;max-width:760px}
+.profile-legend{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.profile-legend span{border:1px solid #30363d;border-radius:999px;padding:3px 8px;font-size:.66rem;color:#c9d5e2;background:#0d1117}
+.profile-map-canvas{min-height:520px;overflow:auto;background:#0d1117}
+.profile-map-svg{display:block;min-width:960px;width:100%;height:auto}
+.profile-edge{fill:none;stroke:#334154;stroke-width:1.25;opacity:.82}
+.profile-edge.core{stroke:#7c3aed;stroke-width:1.7;opacity:.9}.profile-edge.surface{stroke:#2f8f83;stroke-dasharray:5 5}.profile-edge.missing{stroke:#8b949e;stroke-dasharray:3 5}
+.profile-node rect{stroke-width:1.2;rx:8;filter:drop-shadow(0 8px 16px rgba(0,0,0,.22))}
+.profile-node.agent rect{fill:#142033;stroke:#3b82f6}.profile-node.skill rect{fill:#171f24;stroke:#56d364}.profile-node.surface rect{fill:#1c1824;stroke:#d29922}.profile-node.missing rect{fill:#15191f;stroke:#8b949e;stroke-dasharray:4 4}
+.profile-node text{fill:#e6edf3;font-size:12px;font-weight:800}.profile-node .sub{fill:#9fb0c3;font-size:10px;font-weight:650}
+.profile-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
+.profile-card{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;min-width:0}
+.profile-card-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;min-width:0}.profile-card-head img{width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid #30363d}
+.profile-card-name{font-weight:900;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.profile-card-meta{font-size:.68rem;color:var(--mut);margin-top:1px}
+.profile-card-purpose{font-size:.72rem;color:#c9d5e2;line-height:1.36;margin:7px 0}
+.profile-chip-row{display:flex;gap:5px;flex-wrap:wrap}.profile-skill-chip{border:1px solid #30363d;border-radius:999px;background:#111820;color:#c9d5e2;font-size:.64rem;padding:2px 7px}
+.profile-empty{padding:18px;color:var(--mut);font-size:.8rem}
 .home-grid{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:12px;min-height:calc(100vh - 116px)}
 .dash-section{border:1px solid var(--bdr);border-radius:8px;background:var(--sur);padding:12px;min-width:0}
 .dash-title{font-size:.78rem;font-weight:850;letter-spacing:.04em;text-transform:uppercase;color:var(--txt);margin-bottom:9px}
@@ -1291,6 +1369,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .instruction-hero{grid-template-columns:1fr}
   .instruction-pillbox{justify-content:flex-start}
   .plane-grid,.layer-grid,.governance-grid,.memory-grid,.learning-loop{grid-template-columns:1fr}
+  .profile-map-top{flex-direction:column}.profile-legend{justify-content:flex-start}.profile-card-grid{grid-template-columns:1fr}.profile-map-canvas{min-height:420px}
   .issue-list{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
   .metric-table-head,.metric-summary,.metric-stack{grid-template-columns:minmax(150px,1fr) 52px 54px 70px}
   .metric-table-head span:nth-child(5),.metric-summary .home-health,.metric-stack .home-health{display:none}
@@ -1395,9 +1474,26 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
         </div>
       </section>
 
+      <div class="instruction-subtabs">
+        <button class="instruction-subtab on" id="instruction-tab-framework" type="button" onclick="showInstructionSubpage('framework')">Framework</button>
+        <button class="instruction-subtab" id="instruction-tab-profiles" type="button" onclick="showInstructionSubpage('profiles')">Profiles</button>
+      </div>
+
+      <div class="instruction-view on" id="instruction-view-framework">
+      <section class="instruction-section">
+        <h2>Chat-First Operation</h2>
+        <div class="governance-grid">
+          <div class="instruction-tile"><strong>Start With ORC</strong><span>Use Agent Chat as the command surface. ORC routes the request across Raven, Oracle, Sage, Gatekeeper, and Executioner.</span></div>
+          <div class="instruction-tile"><strong>Green Commands Run</strong><span>Ask for log review or memory retrieval and ORC will run the bounded workflow immediately.</span></div>
+          <div class="instruction-tile"><strong>Red Commands Wait</strong><span>Ask for redeploy, restart, or tool promotion and ORC prepares a Gatekeeper approval instead of mutating anything silently.</span></div>
+          <div class="instruction-tile"><strong>Watch The Thread</strong><span>Approvals, runbook evidence, and memory results are attached to chat messages so the conversation stays the source of truth.</span></div>
+        </div>
+      </section>
+
       <section class="instruction-section">
         <h2>What Is Wired Now</h2>
         <div class="governance-grid">
+          <div class="instruction-tile"><strong>Agent Chat Autonomy</strong><span>Natural chat commands can search memory, execute green runbooks, and prepare red approval requests.</span></div>
           <div class="instruction-tile"><strong>Sage Retrieval</strong><span>Searches Markdown memory, knowledge, runbooks, tools, and framework docs for similar patterns.</span></div>
           <div class="instruction-tile"><strong>Incident Memory</strong><span>Creates episodic Markdown records with symptom, context, root cause, action, outcome, and confidence.</span></div>
           <div class="instruction-tile"><strong>Runbook Execution</strong><span>Green runbooks run immediately and write evidence. Red runbooks create approval-gated Executioner handoffs.</span></div>
@@ -1477,6 +1573,29 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
           <div class="instruction-tile"><strong>Evaluative</strong><span>Success rates, what worked, what failed, and what should improve.</span></div>
         </div>
       </section>
+      </div>
+
+      <div class="instruction-view" id="instruction-view-profiles">
+        <section class="profile-map-shell">
+          <div class="profile-map-top">
+            <div>
+              <div class="profile-map-title">Agent Capability Profiles</div>
+              <div class="profile-map-copy">A live registry map showing which agents declare access to skills, and how the core surfaces are governed through memory, runbooks, approvals, and worker tools.</div>
+            </div>
+            <div class="profile-legend">
+              <span>Agent</span>
+              <span>Skill</span>
+              <span>Governed Surface</span>
+              <span>Declared Only</span>
+            </div>
+          </div>
+          <div class="profile-map-canvas" id="profile-map-canvas"><div class="profile-empty">Loading profiles...</div></div>
+        </section>
+        <section class="instruction-section">
+          <h2>Profile Details</h2>
+          <div id="profile-card-grid" class="profile-card-grid"><div class="profile-empty">Loading profiles...</div></div>
+        </section>
+      </div>
     </div>
   </div>
 
@@ -1624,7 +1743,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
             <div id="chat-typing" style="display:none;padding:4px 12px;font-size:0.8rem;color:var(--muted,#888);font-style:italic;">Agent is thinking...</div>
             <div class="chat-compose">
               <select id="chat-agent-target" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border,#333);background:var(--card,#1e1e1e);color:inherit;font-size:0.85rem;min-width:160px;"></select>
-              <input class="orch-input" id="msg-summary" placeholder="Message the selected agent..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAgentMessage();}">
+              <input class="orch-input" id="msg-summary" placeholder="Tell ORC: review logs, search memory, or prepare a redeploy approval..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAgentMessage();}">
               <button class="btnp" id="chat-send-btn" onclick="sendAgentMessage()">Send</button>
             </div>
           </section>
@@ -1915,8 +2034,9 @@ let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,m
 let _networkChecking={server:'',container:''};
 let _focusedNetworkChecking={};
 let _viewMode='corporate';
-let _orch={agents:[],skills:[],messages:[],approvals:[],learnings:[],paths:{}};
+let _orch={agents:[],skills:[],tools:[],runbooks:[],messages:[],approvals:[],learnings:[],paths:{}};
 let _orchTab='chat', _adminTab='connections', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null, _skillEditId='', _agentEditId='';
+let _instructionTab='framework';
 let _agentDraftIcon='/assets/characters/agent-scout.png', _agentLogoDraft='';
 let _hbData=new Array(60).fill(0), _hbBucket=0, _hbAlerts=[], _hbAlertBuf=[], _hbAlertPoints=[];
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
@@ -2049,6 +2169,30 @@ function showOrchTab(id){
   if(view)view.classList.add('on');
   if(_orchTab==='setup')loadUsers();
 }
+function showInstructionSubpage(id){
+  _instructionTab=id==='profiles'?'profiles':'framework';
+  document.querySelectorAll('.instruction-subtab').forEach(t=>t.classList.remove('on'));
+  document.querySelectorAll('.instruction-view').forEach(v=>v.classList.remove('on'));
+  document.getElementById('instruction-tab-'+_instructionTab)?.classList.add('on');
+  document.getElementById('instruction-view-'+_instructionTab)?.classList.add('on');
+  if(_instructionTab==='profiles')ensureInstructionProfiles();
+}
+async function ensureInstructionProfiles(){
+  const needsData=!((_orch.agents||[]).length);
+  if(needsData){
+    try{
+      _orch=await fetch('/orchestration/summary').then(r=>r.json());
+    }catch(e){
+      const canvas=document.getElementById('profile-map-canvas');
+      const cards=document.getElementById('profile-card-grid');
+      const msg=`Could not load profiles: ${esc(e.message||'request failed')}`;
+      if(canvas)canvas.innerHTML=`<div class="profile-empty">${msg}</div>`;
+      if(cards)cards.innerHTML=`<div class="profile-empty">${msg}</div>`;
+      return;
+    }
+  }
+  renderInstructionProfiles();
+}
 function showAdminTab(id){
   if(_currentUser?.role!=='admin'){showTab('overview');return;}
   _adminTab=id||'connections';
@@ -2075,6 +2219,7 @@ function showTab(id){
   if(id==='network')loadNetwork();
   if(id==='events')loadEvts();
   if(id==='orchestration'){showOrchTab(_orchTab||'chat');loadOrchestration();}
+  if(id==='instructions')showInstructionSubpage(_instructionTab||'framework');
   if(id==='admin'){showAdminTab(_adminTab||'connections');}
 }
 function tabsForViewMode(mode=_viewMode){
@@ -3477,6 +3622,7 @@ async function loadOrchestration(){
   try{
     _orch=await fetch('/orchestration/summary').then(r=>r.json());
     renderOrchestration();
+    renderInstructionProfiles();
   }catch(e){
     const el=document.getElementById('orch-agents');
     if(el)el.innerHTML=`<div class="empty">Could not load orchestration: ${esc(e.message||'request failed')}</div>`;
@@ -3496,6 +3642,164 @@ function fillOrchSelects(){
   if(chatTarget){
     const cur=chatTarget.value||'orc-orchestrator';
     chatTarget.innerHTML=(_orch.agents||[]).filter(a=>a.enabled).map(a=>`<option value="${esc(a.id)}"${a.id===cur?' selected':''}>${esc(a.name||a.id)}</option>`).join('');
+  }
+}
+function profileSkillIds(agent){
+  const skills=agent?.profile?.allowed_skills||[];
+  return Array.isArray(skills)?skills.map(s=>String(s).trim()).filter(Boolean):[];
+}
+function profileNorm(value){
+  return String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+}
+function profileShort(value,max=24){
+  const text=String(value||'');
+  return text.length>max?text.slice(0,max-1)+'...':text;
+}
+function profileNodeSvg(node){
+  const cls=['profile-node',node.type,node.missing?'missing':''].filter(Boolean).join(' ');
+  const label=profileShort(node.label, node.type==='skill'?24:22);
+  const sub=profileShort(node.sub||'', node.type==='surface'?28:24);
+  return `<g class="${cls}" transform="translate(${node.x},${node.y})">
+    <title>${esc(node.label)}${node.sub?` - ${esc(node.sub)}`:''}</title>
+    <rect width="${node.w}" height="${node.h}"></rect>
+    <text x="12" y="20">${esc(label)}</text>
+    <text class="sub" x="12" y="36">${esc(sub)}</text>
+  </g>`;
+}
+function profilePath(from,to){
+  const x1=from.x+from.w, y1=from.y+(from.h/2), x2=to.x, y2=to.y+(to.h/2);
+  const mid=Math.max(40,(x2-x1)/2);
+  return `M${x1} ${y1} C${x1+mid} ${y1}, ${x2-mid} ${y2}, ${x2} ${y2}`;
+}
+function renderInstructionProfiles(){
+  const canvas=document.getElementById('profile-map-canvas');
+  const cards=document.getElementById('profile-card-grid');
+  if(!canvas&&!cards)return;
+  const coreOrder=['orc-orchestrator','raven','oracle','sage','gate-keeper','executioner'];
+  const agents=[...(_orch.agents||[])].sort((a,b)=>{
+    const ai=coreOrder.indexOf(a.id), bi=coreOrder.indexOf(b.id);
+    if(ai!==-1||bi!==-1)return (ai===-1?99:ai)-(bi===-1?99:bi);
+    return String(a.name||a.id).localeCompare(String(b.name||b.id));
+  });
+  if(!agents.length){
+    if(canvas)canvas.innerHTML='<div class="profile-empty">No agent profiles found.</div>';
+    if(cards)cards.innerHTML='<div class="profile-empty">No agent profiles found.</div>';
+    return;
+  }
+
+  const skillLookup=new Map();
+  (_orch.skills||[]).forEach(skill=>{
+    skillLookup.set(profileNorm(skill.item_id),skill);
+    skillLookup.set(profileNorm(skill.name),skill);
+  });
+  const declared=new Map();
+  agents.forEach(agent=>{
+    profileSkillIds(agent).forEach(raw=>{
+      const key=profileNorm(raw);
+      if(!key)return;
+      const found=skillLookup.get(key);
+      if(!declared.has(key)){
+        declared.set(key,{
+          id:key,
+          label:found?.name||raw,
+          sub:found?`${found.role_or_category||'skill'} skill`:'declared only',
+          missing:!found,
+          type:'skill',
+        });
+      }
+    });
+  });
+  if(!declared.size){
+    (_orch.skills||[]).slice(0,12).forEach(skill=>{
+      declared.set(profileNorm(skill.item_id),{
+        id:profileNorm(skill.item_id),
+        label:skill.name||skill.item_id,
+        sub:`${skill.role_or_category||'skill'} skill`,
+        missing:false,
+        type:'skill',
+      });
+    });
+  }
+
+  const skillNodes=[...declared.values()].sort((a,b)=>a.label.localeCompare(b.label));
+  const surfaces=[
+    {id:'message-bus',label:'Message Bus',sub:'agent messages'},
+    {id:'memory',label:'Sage Memory',sub:'memory + knowledge'},
+    {id:'runbooks',label:'Runbook Registry',sub:`${(_orch.runbooks||[]).length} runbooks`},
+    {id:'approvals',label:'Approval Matrix',sub:'Gatekeeper policy'},
+    {id:'tools',label:'Worker Tools',sub:`${(_orch.tools||[]).length} tools`},
+  ];
+  const leftX=44, midX=372, rightX=720;
+  const agentH=48, skillH=42, surfaceH=52;
+  const height=Math.max(560, 96+Math.max(agents.length*70, skillNodes.length*48, surfaces.length*82));
+  const agentNodes=new Map();
+  agents.forEach((agent,i)=>{
+    const plane=agent.profile?.plane||agent.role||'agent';
+    agentNodes.set(agent.id,{id:agent.id,label:agent.name||agent.id,sub:plane,type:'agent',x:leftX,y:54+i*70,w:220,h:agentH});
+  });
+  const skillNodeMap=new Map();
+  skillNodes.forEach((skill,i)=>{
+    skillNodeMap.set(skill.id,{...skill,x:midX,y:54+i*48,w:230,h:skillH});
+  });
+  const surfaceNodeMap=new Map();
+  surfaces.forEach((surface,i)=>{
+    surfaceNodeMap.set(surface.id,{...surface,type:'surface',x:rightX,y:70+i*82,w:210,h:surfaceH});
+  });
+
+  const edges=[];
+  const orc=agentNodes.get('orc-orchestrator');
+  if(orc){
+    agentNodes.forEach((node,id)=>{if(id!=='orc-orchestrator')edges.push({from:orc,to:node,cls:'core'});});
+  }
+  agents.forEach(agent=>{
+    const from=agentNodes.get(agent.id);
+    if(!from)return;
+    profileSkillIds(agent).forEach(raw=>{
+      const key=profileNorm(raw);
+      const to=skillNodeMap.get(key);
+      if(to)edges.push({from,to,cls:to.missing?'missing':''});
+    });
+    const plane=String(agent.profile?.plane||agent.role||'').toLowerCase();
+    const id=agent.id;
+    const surfaceIds=[];
+    if(id==='raven'||id==='orc-orchestrator')surfaceIds.push('message-bus');
+    if(id==='sage'||id==='oracle'||id==='orc-orchestrator'||plane.includes('memory'))surfaceIds.push('memory');
+    if(['orc-orchestrator','oracle','raven','gate-keeper','executioner'].includes(id))surfaceIds.push('runbooks');
+    if(['orc-orchestrator','oracle','gate-keeper','executioner'].includes(id))surfaceIds.push('approvals');
+    if(['orc-orchestrator','sage','executioner'].includes(id))surfaceIds.push('tools');
+    surfaceIds.forEach(surfaceId=>{
+      const to=surfaceNodeMap.get(surfaceId);
+      if(to)edges.push({from,to,cls:'surface'});
+    });
+  });
+
+  if(canvas){
+    const svgEdges=edges.map(edge=>`<path class="profile-edge ${edge.cls||''}" d="${profilePath(edge.from,edge.to)}"></path>`).join('');
+    const svgNodes=[
+      ...[...agentNodes.values()].map(profileNodeSvg),
+      ...[...skillNodeMap.values()].map(profileNodeSvg),
+      ...[...surfaceNodeMap.values()].map(profileNodeSvg),
+    ].join('');
+    canvas.innerHTML=`<svg class="profile-map-svg" viewBox="0 0 980 ${height}" role="img" aria-label="Agent profile capability map">${svgEdges}${svgNodes}</svg>`;
+  }
+  if(cards){
+    cards.innerHTML=agents.map(agent=>{
+      const profile=agent.profile||{};
+      const skills=profileSkillIds(agent);
+      const chips=skills.length?skills.map(skill=>`<span class="profile-skill-chip">${esc(skill)}</span>`).join(''):'<span class="profile-skill-chip">No declared skills</span>';
+      const meta=[profile.plane||agent.role||'agent', profile.governance_boundary||agent.trust_mode||'', profile.autonomy_level?`L${profile.autonomy_level}`:''].filter(Boolean).join(' / ');
+      return `<div class="profile-card">
+        <div class="profile-card-head">
+          <img src="${esc(agentArt(agent))}" alt="">
+          <div style="min-width:0">
+            <div class="profile-card-name" title="${esc(agent.name||agent.id)}">${esc(agent.name||agent.id)}</div>
+            <div class="profile-card-meta">${esc(meta)}${profile.definition_path?` / ${esc(profile.definition_path)}`:''}</div>
+          </div>
+        </div>
+        <div class="profile-card-purpose">${esc(profile.purpose||'No purpose statement declared.')}</div>
+        <div class="profile-chip-row">${chips}</div>
+      </div>`;
+    }).join('');
   }
 }
 function renderAgents(){
@@ -5015,17 +5319,31 @@ def agent_chat(agent_id: str, body: AgentChatIn, request: Request) -> dict:
         # Store operator's message for audit before any early clarification exit.
         _record_agent_message(s, "operator", agent_id, "instruction", user_message, thread_id=thread_id)
 
+        reply_payload: dict = {}
+
         if agent_id == "orc-orchestrator":
             clarification = _clarify_ambiguous_target(user_message, s)
             if clarification:
-                _record_agent_message(s, "orc-orchestrator", "operator", "response", clarification, thread_id=thread_id)
+                _record_agent_message(
+                    s,
+                    "orc-orchestrator",
+                    "operator",
+                    "response",
+                    clarification,
+                    {"needs_clarification": True},
+                    thread_id=thread_id,
+                )
                 return {
                     "reply": clarification,
                     "agent_id": agent_id,
                     "created_at": datetime.now(timezone.utc).isoformat(),
+                    "payload": {"needs_clarification": True},
                 }
 
-        if agent_id == "orc-orchestrator":
+        autonomous_reply = _chat_autonomy_action(agent_id, user_message, s, thread_id=thread_id)
+        if autonomous_reply:
+            reply, reply_payload = autonomous_reply
+        elif agent_id == "orc-orchestrator":
             # Full multi-agent routing loop
             reply = _run_orc_loop(user_message, s, thread_id=thread_id)
         elif agent_id == "oracle" and _is_hourly_critical_error_review_request(user_message):
@@ -5039,8 +5357,11 @@ def agent_chat(agent_id: str, body: AgentChatIn, request: Request) -> dict:
         if not reply:
             reply = f"*(No response from {agent.name})*"
 
-        reply_row = _record_agent_message(s, agent_id, "operator", "response", reply, thread_id=thread_id)
-        return {"reply": reply, "agent_id": agent_id, "created_at": reply_row.created_at.isoformat()}
+        reply_row = _record_agent_message(s, agent_id, "operator", "response", reply, reply_payload, thread_id=thread_id)
+        response = {"reply": reply, "agent_id": agent_id, "created_at": reply_row.created_at.isoformat()}
+        if reply_payload:
+            response["payload"] = reply_payload
+        return response
 
 
 @app.post("/orchestration/skills", status_code=201)
@@ -5658,6 +5979,242 @@ def create_tool_promotion(body: ToolPromotionIn) -> dict:
         s.commit()
         s.refresh(row)
         return _tool_promotion_dict(row)
+
+
+def _chat_has_any(text: str, terms: tuple[str, ...]) -> bool:
+    return any(term in text for term in terms)
+
+
+def _chat_is_memory_request(text: str) -> bool:
+    return (
+        _chat_has_any(text, ("search memory", "search sage", "query memory", "look up memory", "check memory"))
+        or _chat_has_any(text, ("what do we know about", "similar incidents", "known patterns", "past cases"))
+    )
+
+
+def _chat_memory_query(message: str) -> str:
+    cleaned = message.strip()
+    patterns = (
+        r"^\s*(?:please\s+)?(?:ask\s+)?sage\s+(?:to\s+)?(?:search|query|check|look\s+up)\s+(?:memory\s+)?(?:for|about)?\s*",
+        r"^\s*(?:please\s+)?(?:search|query|check|look\s+up)\s+(?:sage\s+)?(?:memory|knowledge|learnings)\s+(?:for|about)?\s*",
+        r"^\s*(?:what\s+do\s+we\s+know\s+about|show\s+similar\s+incidents\s+for|find\s+similar\s+incidents\s+for|similar\s+incidents\s+for)\s+",
+    )
+    for pattern in patterns:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.I).strip()
+    return cleaned or message.strip()
+
+
+def _chat_is_log_review_request(text: str) -> bool:
+    if "approved-log-review" in text:
+        return True
+    has_review_verb = _chat_has_any(text, ("review", "check", "analyze", "analyse", "inspect", "run"))
+    has_log_subject = _chat_has_any(text, ("logs", "log review", "warnings", "errors", "critical events"))
+    return has_review_verb and has_log_subject and not _chat_is_red_action_request(text)
+
+
+def _chat_is_red_action_request(text: str) -> bool:
+    return _chat_has_any(
+        text,
+        (
+            "redeploy",
+            "restart",
+            "refresh container",
+            "recreate container",
+            "container redeploy",
+            "container restart",
+            "git pull",
+            "delete",
+            "remove",
+            "rotate credential",
+            "rotate secret",
+        ),
+    )
+
+
+def _chat_extract_target(message: str) -> str:
+    candidates: list[str] = []
+    patterns = (
+        r"(?:target|for|container|service|app)\s+(?:the\s+)?([A-Za-z0-9_.:/-]+)",
+        r"(?:redeploy|restart|refresh|recreate)\s+(?:the\s+)?(?:container|service|app)?\s*([A-Za-z0-9_.:/-]+)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, message, flags=re.I)
+        if match:
+            candidates.append(match.group(1).strip(" .,;:"))
+    ignored = {"", "the", "a", "an", "container", "service", "app", "for", "target"}
+    for candidate in candidates:
+        if candidate.lower() not in ignored:
+            return candidate
+    return "unspecified target"
+
+
+def _chat_field(message: str, *names: str) -> str:
+    escaped = [re.escape(name).replace(r"\ ", r"[\s_-]+") for name in names]
+    pattern = r"(?:^|[;\n])\s*(?:" + "|".join(escaped) + r")\s*[:=]\s*([^;\n]+)"
+    match = re.search(pattern, message, flags=re.I)
+    return match.group(1).strip() if match else ""
+
+
+def _chat_is_tool_promotion_request(text: str) -> bool:
+    return "promote" in text and _chat_has_any(text, ("tool", "worker", "skill"))
+
+
+def _format_memory_hits(items: list[dict]) -> str:
+    if not items:
+        return "No matching memory entries were found."
+    lines = []
+    for index, item in enumerate(items[:3], start=1):
+        lines.append(f"{index}. {item['title']} ({item['path']}) - {item['summary']}")
+    return "\n".join(lines)
+
+
+def _chat_autonomy_action(
+    agent_id: str,
+    user_message: str,
+    session,
+    thread_id: str = "operations",
+) -> tuple[str, dict] | None:
+    text = user_message.lower()
+    actor = agent_id or "orc-orchestrator"
+
+    if actor in {"orc-orchestrator", "sage"} and _chat_is_memory_request(text):
+        query = _chat_memory_query(user_message)
+        _record_agent_message(
+            session,
+            "orc-orchestrator",
+            "sage",
+            "routing",
+            f"Sage, search memory for: {query}",
+            {"query": query},
+            thread_id=thread_id,
+        )
+        items = _memory_search(query, limit=5)
+        detail = _format_memory_hits(items)
+        _record_agent_message(
+            session,
+            "sage",
+            "orc-orchestrator",
+            "memory_results",
+            f"Sage searched memory for '{query}' and found {len(items)} matching item(s).",
+            {"query": query, "results": items, "detail": detail},
+            thread_id=thread_id,
+        )
+        reply = f"Sage searched memory for '{query}'.\n\n{detail}"
+        return reply, {"autonomy_action": "memory_search", "query": query, "results": items, "detail": detail}
+
+    if actor in {"orc-orchestrator", "raven", "oracle"} and _chat_is_log_review_request(text):
+        _record_agent_message(
+            session,
+            "orc-orchestrator",
+            "gate-keeper",
+            "policy_check",
+            "Gatekeeper classified the requested log review as green: read-only evidence gathering.",
+            {"runbook_id": "approved-log-review", "governance": "green"},
+            thread_id=thread_id,
+        )
+        result = execute_runbook(
+            "approved-log-review",
+            RunbookExecuteIn(target=_chat_extract_target(user_message), rationale=user_message, requested_by="operator"),
+        )
+        _record_agent_message(
+            session,
+            "raven",
+            "oracle",
+            "observation",
+            "Raven completed the bounded log-review evidence collection for Oracle.",
+            {
+                "runbook_execution_id": result["id"],
+                "evidence_path": result.get("evidence_path", ""),
+                "status": result.get("status", ""),
+            },
+            thread_id=thread_id,
+        )
+        reply = (
+            f"I ran the green Approved Log Review runbook. Status: {result['status']}. "
+            f"{result.get('result') or 'Evidence was recorded.'}"
+        )
+        if result.get("evidence_path"):
+            reply += f"\n\nEvidence: {result['evidence_path']}"
+        return reply, {
+            "autonomy_action": "runbook_execute",
+            "runbook_id": result["runbook_id"],
+            "runbook_execution_id": result["id"],
+            "status": result["status"],
+            "evidence_path": result.get("evidence_path", ""),
+            "detail": result.get("result", ""),
+        }
+
+    if actor in {"orc-orchestrator", "gate-keeper", "executioner"} and _chat_is_red_action_request(text):
+        target = _chat_extract_target(user_message)
+        result = execute_runbook(
+            "container-redeploy-human-approved",
+            RunbookExecuteIn(target=target, rationale=user_message, requested_by="operator"),
+        )
+        _record_agent_message(
+            session,
+            "orc-orchestrator",
+            "gate-keeper",
+            "policy_check",
+            f"Gatekeeper classified this as red and requires human approval before Executioner acts on {target}.",
+            {
+                "approval_id": result.get("approval_id"),
+                "runbook_execution_id": result["id"],
+                "runbook_id": result["runbook_id"],
+                "target": target,
+                "governance": "red",
+            },
+            thread_id=thread_id,
+        )
+        approval_id = result.get("approval_id")
+        reply = (
+            f"I prepared the red Container Redeploy Human Approved runbook for {target}. "
+            f"It is waiting for Gatekeeper/human approval {approval_id}; Executioner will not act until that approval is granted."
+        )
+        return reply, {
+            "autonomy_action": "approval_gated_runbook",
+            "runbook_id": result["runbook_id"],
+            "runbook_execution_id": result["id"],
+            "approval_id": approval_id,
+            "target": target,
+            "status": result["status"],
+            "detail": result.get("result", ""),
+        }
+
+    if actor == "orc-orchestrator" and _chat_is_tool_promotion_request(text):
+        tool_id = _chat_field(user_message, "tool_id", "tool id", "id")
+        title = _chat_field(user_message, "title", "name") or tool_id
+        tests = _chat_field(user_message, "tests", "test summary")
+        dry_run = _chat_field(user_message, "dry run", "dry_run", "dry run summary")
+        if not (tool_id and title and tests and dry_run):
+            reply = (
+                "I can prepare a tool promotion from chat, but I need the promotion packet first: "
+                "tool_id, title, tests, and dry run. Example: "
+                "promote tool; tool_id=log-parser; title=Log Parser; tests=unit tests passed; dry run=parsed sample logs without mutation."
+            )
+            return reply, {"autonomy_action": "tool_promotion_missing_fields"}
+        result = create_tool_promotion(
+            ToolPromotionIn(
+                tool_id=tool_id,
+                title=title,
+                test_summary=tests,
+                dry_run_summary=dry_run,
+                requested_by="operator",
+            )
+        )
+        reply = (
+            f"I prepared the generated tool promotion for {result['tool_id']}. "
+            f"Status: {result['status']}. Approval {result.get('approval_id')} is required before it enters the worker registry."
+        )
+        return reply, {
+            "autonomy_action": "tool_promotion",
+            "promotion_id": result["id"],
+            "tool_id": result["tool_id"],
+            "approval_id": result.get("approval_id"),
+            "artifact_path": result.get("artifact_path", ""),
+            "status": result["status"],
+        }
+
+    return None
 
 
 @app.post("/orchestration/tool-promotions/{promotion_id}/promote")
