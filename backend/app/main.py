@@ -1084,22 +1084,10 @@ html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="cha
 .profile-filter{display:flex;align-items:center;gap:7px;font-size:.72rem;color:var(--mut);white-space:nowrap}
 .profile-filter select{background:#0d1117;border:1px solid var(--bdr);border-radius:7px;color:var(--txt);font-size:.76rem;padding:5px 9px;min-width:180px;outline:none}
 .profile-filter select:focus{border-color:var(--pur)}
-.profile-map-canvas{height:520px;min-height:390px;overflow:hidden;background:#0d1117;position:relative}
+.profile-map-canvas{height:480px;min-height:370px;overflow:hidden;background:#0d1117;position:relative}
 .profile-map-canvas canvas{outline:none}
 .profile-map-canvas .vis-network{background:#0d1117}
 .vis-tooltip{position:absolute;background:#111820!important;border:1px solid #30363d!important;border-radius:7px!important;color:#e6edf3!important;font-size:12px!important;line-height:1.35!important;padding:8px 10px!important;max-width:300px!important;white-space:normal!important;box-shadow:0 16px 30px rgba(0,0,0,.35)!important}
-.profile-map-svg{display:block;min-width:900px;width:100%;height:auto}
-.profile-edge{fill:none;stroke:#344153;stroke-width:1;opacity:.55}
-.profile-edge.missing{stroke:#8b949e;stroke-dasharray:3 5}.profile-edge.resource{stroke:#4b5566;stroke-dasharray:4 6}
-.profile-dot{cursor:help}.profile-dot .node-dot{stroke:#0d1117;stroke-width:2;filter:drop-shadow(0 5px 10px rgba(0,0,0,.28))}
-.profile-dot .ring{fill:#111820;stroke:#3b82f6;stroke-width:2.2;filter:drop-shadow(0 8px 16px rgba(0,0,0,.32))}
-.profile-dot.agent image{pointer-events:none}.profile-dot .label{fill:#c9d5e2;font-size:10px;font-weight:800}.profile-dot.agent .label{font-size:10px;text-anchor:middle}
-.profile-dot .sub-label{fill:#8391a5;font-size:8.5px;font-weight:650}
-.profile-dot.skill .node-dot{fill:#56d364}.profile-dot.missing .node-dot{fill:#8b949e;stroke-dasharray:3 3}
-.profile-dot.memory .node-dot{fill:#38bdf8}.profile-dot.runbook .node-dot{fill:#3b82f6}.profile-dot.tool .node-dot{fill:#a371f7}
-.profile-dot.approval .node-dot{fill:#f59e0b}.profile-dot.message .node-dot{fill:#94a3b8}
-.profile-dot:hover .node-dot,.profile-dot:hover .ring{stroke:#f0f6fc;stroke-width:3}.profile-dot:hover .label{fill:#fff}
-.profile-section-label{fill:#8391a5;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
 .profile-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
 .profile-card{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;min-width:0}
 .profile-card-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;min-width:0}.profile-card-head img{width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid #30363d}
@@ -1438,7 +1426,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .instruction-hero{grid-template-columns:1fr}
   .instruction-pillbox{justify-content:flex-start}
   .plane-grid,.layer-grid,.governance-grid,.memory-grid,.learning-loop{grid-template-columns:1fr}
-  .profile-map-top{flex-direction:column}.profile-map-tools{align-items:flex-start}.profile-legend{justify-content:flex-start}.profile-card-grid{grid-template-columns:1fr}.profile-map-canvas{min-height:420px}
+  .profile-map-top{flex-direction:column}.profile-map-tools{align-items:flex-start}.profile-legend{justify-content:flex-start}.profile-card-grid{grid-template-columns:1fr}.profile-map-canvas{height:420px;min-height:360px}
   .issue-list{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
   .metric-table-head,.metric-summary,.metric-stack{grid-template-columns:minmax(150px,1fr) 52px 54px 70px}
   .metric-table-head span:nth-child(5),.metric-summary .home-health,.metric-stack .home-health{display:none}
@@ -3727,38 +3715,6 @@ function profileSkillIds(agent){
 function profileNorm(value){
   return String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
 }
-function profileShort(value,max=24){
-  const text=String(value||'');
-  return text.length>max?text.slice(0,max-1)+'...':text;
-}
-function profileDotTitle(node){
-  return [node.label,node.sub,node.path,node.detail].filter(Boolean).join('\\n');
-}
-function profileDotSvg(node){
-  const cls=['profile-dot',node.type,node.missing?'missing':''].filter(Boolean).join(' ');
-  const title=esc(profileDotTitle(node));
-  if(node.type==='agent'){
-    return `<g class="${cls}">
-      <title>${title}</title>
-      <circle class="ring" cx="${node.x}" cy="${node.y}" r="${node.r}"></circle>
-      <image href="${esc(node.image||'')}" x="${node.x-node.r+3}" y="${node.y-node.r+3}" width="${(node.r-3)*2}" height="${(node.r-3)*2}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${esc(node.clipId)})"></image>
-      <text class="label" x="${node.x}" y="${node.y+node.r+14}">${esc(profileShort(node.label,18))}</text>
-    </g>`;
-  }
-  return `<g class="${cls}">
-    <title>${title}</title>
-    <circle class="node-dot" cx="${node.x}" cy="${node.y}" r="${node.r}"></circle>
-    <text class="label" x="${node.x+12}" y="${node.y+4}">${esc(profileShort(node.label,24))}</text>
-  </g>`;
-}
-function profileClipDef(node){
-  return `<clipPath id="${esc(node.clipId)}" clipPathUnits="userSpaceOnUse"><circle cx="${node.x}" cy="${node.y}" r="${node.r-4}"></circle></clipPath>`;
-}
-function profilePath(from,to){
-  const x1=from.x+(from.type==='agent'?from.r:from.r+3), y1=from.y, x2=to.x-to.r-2, y2=to.y;
-  const mid=Math.max(34,(x2-x1)/2);
-  return `M${x1} ${y1} C${x1+mid} ${y1}, ${x2-mid} ${y2}, ${x2} ${y2}`;
-}
 function syncProfileAgentFilter(agents){
   const el=document.getElementById('profile-agent-filter');
   if(!el)return 'all';
@@ -3819,15 +3775,15 @@ function profileNetworkNode(id,kind,title,rows=[],extra={}){
 }
 function profileAgentNetworkNode(agent,index,total){
   const angle=total<=1?Math.PI:Math.PI*1.5+(index/Math.max(total,1))*Math.PI;
-  const x=total<=1?-260:-250+Math.cos(angle)*95;
-  const y=total<=1?0:Math.sin(angle)*180;
+  const x=total<=1?-220:-220+Math.cos(angle)*78;
+  const y=total<=1?0:Math.sin(angle)*145;
   const profile=agent.profile||{};
   return {
     id:`agent:${agent.id}`,
     shape:'circularImage',
     image:agent.icon||agentArt(agent),
     brokenImage:'/assets/characters/agent-scout.png',
-    size:28,
+    size:24,
     label:'',
     title:profileTitleHtml(agent.name||agent.id,[profile.plane||agent.role||'agent',profile.purpose||'']),
     color:{border:'#58a6ff',background:'#142033',highlight:{border:'#f0f6fc'},hover:{border:'#f0f6fc'}},
@@ -3933,74 +3889,77 @@ function renderInstructionProfiles(){
     ? allResources
     : allResources.filter(item=>visibleSurfaceIds.has(item.surface));
 
-  const width=900;
-  const agentX=78, skillX=290, resourceX=620;
-  const agentStep=selectedAgent==='all'?62:72;
-  const agentStartY=78;
-  const skillStartY=76, resourceStartY=76;
-  const rowGap=30, skillCols=2, resourceCols=2, skillColGap=174, resourceColGap=160;
-  const agentHeight=agentStartY+(agents.length-1)*agentStep+78;
-  const skillHeight=skillStartY+Math.ceil(Math.max(skillNodes.length,1)/skillCols)*rowGap+42;
-  const resourceHeight=resourceStartY+Math.ceil(Math.max(resources.length,1)/resourceCols)*rowGap+42;
-  const height=Math.max(360,agentHeight,skillHeight,resourceHeight);
-  const agentNodes=new Map();
-  agents.forEach((agent,i)=>{
-    const plane=agent.profile?.plane||agent.role||'agent';
-    const y=agentStartY+i*agentStep;
-    agentNodes.set(agent.id,{
-      id:agent.id,
-      label:agent.name||agent.id,
-      sub:plane,
-      detail:agent.profile?.purpose||'',
-      type:'agent',
-      image:agent.icon||agentArt(agent),
-      clipId:`profile-clip-${profileNorm(agent.id)}-${i}`,
-      x:agentX,
-      y,
-      r:24,
-    });
-  });
-  const skillNodeMap=new Map();
-  skillNodes.forEach((skill,i)=>{
-    const col=i%skillCols, row=Math.floor(i/skillCols);
-    skillNodeMap.set(skill.id,{...skill,x:skillX+(col*skillColGap),y:skillStartY+(row*rowGap),r:7});
-  });
-  const resourceNodeMap=new Map();
-  resources.forEach((resource,i)=>{
-    const col=i%resourceCols, row=Math.floor(i/resourceCols);
-    resourceNodeMap.set(resource.id,{...resource,x:resourceX+(col*resourceColGap),y:resourceStartY+(row*rowGap),r:7});
-  });
-
-  const edges=[];
-  agents.forEach(agent=>{
-    const from=agentNodes.get(agent.id);
-    if(!from)return;
-    profileSkillIds(agent).forEach(raw=>{
-      const key=profileNorm(raw);
-      const to=skillNodeMap.get(key);
-      if(to)edges.push({from,to,cls:to.missing?'missing':''});
-    });
-    profileSurfaceIdsForAgent(agent).forEach(surfaceId=>{
-      resourceNodeMap.forEach(to=>{
-        if(to.surface===surfaceId)edges.push({from,to,cls:'resource'});
-      });
-    });
-  });
-
   if(canvas){
-    const svgEdges=edges.map(edge=>`<path class="profile-edge ${edge.cls||''}" d="${profilePath(edge.from,edge.to)}"></path>`).join('');
-    const defs=[...agentNodes.values()].map(profileClipDef).join('');
-    const sectionLabels=[
-      `<text class="profile-section-label" x="42" y="32">Agents</text>`,
-      `<text class="profile-section-label" x="${skillX-8}" y="32">Skills</text>`,
-      `<text class="profile-section-label" x="${resourceX-8}" y="32">Memory / Runbooks / Tools</text>`,
-    ].join('');
-    const svgNodes=[
-      ...[...agentNodes.values()].map(profileDotSvg),
-      ...[...skillNodeMap.values()].map(profileDotSvg),
-      ...[...resourceNodeMap.values()].map(profileDotSvg),
-    ].join('');
-    canvas.innerHTML=`<svg class="profile-map-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Agent profile capability map"><defs>${defs}</defs>${sectionLabels}${svgEdges}${svgNodes}</svg>`;
+    if(!window.vis||!window.vis.Network){
+      canvas.innerHTML='<div class="profile-empty">Interactive map library did not load. Check network access for vis-network.</div>';
+    }else{
+      const categoryDefs=[
+        {id:'skills',label:'Skills',kind:'skills',surface:'skills',x:-60,y:-110},
+        {id:'memory',label:'Memory',kind:'memory',surface:'memory',x:90,y:-110},
+        {id:'runbooks',label:'Runbooks',kind:'runbooks',surface:'runbooks',x:-60,y:18},
+        {id:'tools',label:'Worker Tools',kind:'tools',surface:'tools',x:90,y:18},
+        {id:'approvals',label:'Approvals',kind:'approvals',surface:'approvals',x:-60,y:145},
+        {id:'message-bus',label:'Message Bus',kind:'message',surface:'message-bus',x:90,y:145},
+      ];
+      const activeCategories=categoryDefs.filter(cat=>{
+        if(cat.surface==='skills')return skillNodes.length>0;
+        return resources.some(item=>item.surface===cat.surface);
+      });
+      const nodes=[];
+      const edges=[];
+      agents.forEach((agent,index)=>{
+        nodes.push(profileAgentNetworkNode(agent,index,agents.length));
+      });
+      activeCategories.forEach(cat=>{
+        nodes.push(profileNetworkNode(`cat:${cat.id}`,cat.kind,cat.label,['Category hub'],{size:18,mass:2.6,x:cat.x,y:cat.y,borderWidth:3}));
+      });
+      const itemBuckets={skills:skillNodes};
+      activeCategories.forEach(cat=>{
+        if(cat.surface!=='skills')itemBuckets[cat.id]=resources.filter(item=>item.surface===cat.surface);
+      });
+      activeCategories.forEach(cat=>{
+        const items=itemBuckets[cat.id]||[];
+        const radius=cat.id==='skills'?74:52;
+        items.forEach((item,index)=>{
+          const angle=(Math.PI*2*index/Math.max(items.length,1))-(Math.PI/2);
+          const x=cat.x+Math.cos(angle)*radius;
+          const y=cat.y+Math.sin(angle)*radius;
+          const kind=item.missing?'missing':cat.kind;
+          const itemId=`item:${cat.id}:${item.id}`;
+          nodes.push(profileNetworkNode(itemId,kind,item.label,[item.sub,item.path,item.detail],{size:cat.id==='skills'?8:7,mass:0.65,x,y,borderWidth:2}));
+          edges.push(profileNetworkEdge(`cat:${cat.id}`,itemId,item.missing?'missing':'hub'));
+        });
+      });
+      agents.forEach(agent=>{
+        const agentId=`agent:${agent.id}`;
+        if(skillNodes.length)edges.push(profileNetworkEdge(agentId,'cat:skills','hub'));
+        profileSurfaceIdsForAgent(agent).forEach(surfaceId=>{
+          if(activeCategories.some(cat=>cat.surface===surfaceId))edges.push(profileNetworkEdge(agentId,`cat:${surfaceId}`,'hub'));
+        });
+      });
+      if(_profileNetwork){
+        try{_profileNetwork.destroy();}catch{}
+        _profileNetwork=null;
+      }
+      canvas.innerHTML='';
+      _profileNetwork=new vis.Network(
+        canvas,
+        {nodes:new vis.DataSet(nodes),edges:new vis.DataSet(edges)},
+        {
+          autoResize:true,
+          nodes:{font:{size:0,color:'transparent'},shadow:false},
+          edges:{width:1,color:{color:'#3d4656',opacity:.55},smooth:{type:'dynamic',roundness:.25}},
+          interaction:{hover:true,tooltipDelay:120,dragNodes:true,dragView:true,zoomView:true,multiselect:false,navigationButtons:false},
+          physics:{
+            enabled:true,
+            solver:'forceAtlas2Based',
+            forceAtlas2Based:{gravitationalConstant:-44,centralGravity:.026,springLength:78,springConstant:.09,damping:.36,avoidOverlap:.46},
+            stabilization:{enabled:true,iterations:140,fit:true}
+          }
+        }
+      );
+      _profileNetwork.once('stabilized',()=>_profileNetwork.fit({animation:{duration:420,easingFunction:'easeInOutQuad'}}));
+    }
   }
   if(cards){
     cards.innerHTML=agents.map(agent=>{
