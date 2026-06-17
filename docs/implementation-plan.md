@@ -56,6 +56,8 @@ Exit criteria:
 
 Goal: improve from past cases.
 
+Status: foundation implemented with Markdown search, incident records, episodic memory writeback, and retrospective templates.
+
 Build:
 
 1. Incident repository.
@@ -75,6 +77,8 @@ Exit criteria:
 
 Goal: approved actions can run without redeploying the Stable Core.
 
+Status: foundation implemented with runbook execution records, green runbook execution evidence, red runbook approval gates, and Executioner handoff records.
+
 Build:
 
 1. Docker-based worker pool.
@@ -93,6 +97,8 @@ Exit criteria:
 ## Phase 4: Add Tool Generation
 
 Goal: the platform can extend itself safely.
+
+Status: foundation implemented with builder artifacts, promotion records, approval requests, and approved promotion into the `tools/` registry.
 
 Build:
 

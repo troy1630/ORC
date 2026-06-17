@@ -28,10 +28,13 @@ from .db import (
     Connection,
     FocusedWatch,
     IngestionCheckpoint,
+    IncidentRecord,
     LearningEntry,
     ObservedEvent,
     SessionLocal,
     SystemSetting,
+    RunbookExecution,
+    ToolPromotion,
     UserAccount,
     UserSession,
     init_db,
@@ -150,6 +153,36 @@ class LearningCreateIn(BaseModel):
     incident_ref: str = ""
     outcome: str = "proposed"
     summary: str
+
+
+class IncidentCreateIn(BaseModel):
+    title: str
+    symptom: str
+    context: str = ""
+    root_cause: str = ""
+    action: str = ""
+    outcome: str = "open"
+    confidence: str = "medium"
+    governance: str = "yellow"
+    autonomy_level: int = 1
+
+
+class RunbookExecuteIn(BaseModel):
+    target: str = ""
+    rationale: str = ""
+    requested_by: str = "operator"
+    approval_id: int | None = None
+
+
+class ToolPromotionIn(BaseModel):
+    tool_id: str
+    title: str
+    source_path: str = ""
+    test_summary: str
+    dry_run_summary: str
+    artifact_markdown: str = ""
+    requested_by: str = "operator"
+    approval_id: int | None = None
 
 
 class AgentChatIn(BaseModel):
@@ -334,6 +367,87 @@ def _skill_metadata_from_markdown(raw: str) -> dict[str, str]:
         key, value = stripped.split(":", 1)
         metadata[key.strip().lower()] = value.strip()
     return metadata
+
+
+def _markdown_metadata(raw: str) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            break
+        if not stripped or stripped.startswith("#") or stripped.startswith("<!--") or stripped.startswith("-->"):
+            continue
+        if ":" not in stripped:
+            continue
+        key, value = stripped.split(":", 1)
+        metadata[key.strip().lower()] = value.strip()
+    return metadata
+
+
+def _markdown_sections(raw: str) -> dict[str, str]:
+    sections: dict[str, list[str]] = {}
+    current = ""
+    for line in raw.splitlines():
+        if line.startswith("## "):
+            current = line[3:].strip().lower()
+            sections[current] = []
+            continue
+        if current:
+            sections[current].append(line)
+    return {key: "\n".join(value).strip() for key, value in sections.items()}
+
+
+def _registry_file_for_id(kind: str, item_id: str) -> Path:
+    file_name = {"tools": "tool.md", "runbooks": "runbook.md", "skills": "skills.md", "agents": "agent.md"}.get(kind)
+    if not file_name:
+        raise HTTPException(400, "Unknown registry kind")
+    root = REPO_ROOT / kind
+    requested = item_id.strip()
+    slugged = _slug(requested, kind[:-1] or "item")
+    for item in load_registry(REPO_ROOT, kind):
+        path = Path(item.path)
+        if requested in {item.item_id, item.name, path.parent.name} or slugged in {
+            _slug(item.item_id, "item"),
+            _slug(item.name, "item"),
+            _slug(path.parent.name, "item"),
+        }:
+            target = _safe_markdown_path(REPO_ROOT, item.path)
+            if target.exists():
+                return target
+    target = _safe_markdown_path(root, slugged) / file_name
+    if target.exists():
+        return target
+    raise HTTPException(404, f"{kind[:-1].title()} not found")
+
+
+def _read_registry_definition(kind: str, item_id: str) -> dict:
+    path = _registry_file_for_id(kind, item_id)
+    raw = path.read_text(encoding="utf-8")
+    metadata = _markdown_metadata(raw)
+    sections = _markdown_sections(raw)
+    return {
+        "id": metadata.get("id", path.parent.name),
+        "name": metadata.get("name", path.parent.name),
+        "version": metadata.get("version", "0.0.0"),
+        "category": metadata.get("category", metadata.get("plane", "unknown")),
+        "risk_level": metadata.get("risk_level", "medium"),
+        "autonomy_level": int(metadata.get("autonomy_level", "1") or "1"),
+        "governance": metadata.get("governance", metadata.get("governance_boundary", "yellow")),
+        "approval_required": _markdown_bool(metadata.get("approval_required"), True),
+        "metadata": metadata,
+        "sections": sections,
+        "raw_markdown": raw,
+        "path": str(path.relative_to(REPO_ROOT)),
+    }
+
+
+def _write_markdown_under(root_name: str, *parts: str, content: str) -> Path:
+    root = REPO_ROOT / root_name
+    target_dir = _safe_markdown_path(root, *parts[:-1]) if len(parts) > 1 else root
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_file = _safe_markdown_path(root, *parts)
+    target_file.write_text(content.rstrip() + "\n", encoding="utf-8")
+    return target_file
 
 
 def _skill_file_for_id(skill_id: str) -> tuple[Path, str]:
@@ -647,6 +761,63 @@ def _learning_dict(row: LearningEntry) -> dict:
         "summary": row.summary,
         "markdown_path": row.markdown_path,
         "created_at": row.created_at.isoformat(),
+    }
+
+
+def _incident_dict(row: IncidentRecord) -> dict:
+    return {
+        "id": row.id,
+        "title": row.title,
+        "symptom": row.symptom,
+        "context": row.context,
+        "root_cause": row.root_cause,
+        "action": row.action,
+        "outcome": row.outcome,
+        "confidence": row.confidence,
+        "governance": row.governance,
+        "autonomy_level": row.autonomy_level,
+        "markdown_path": row.markdown_path,
+        "status": row.status,
+        "created_at": row.created_at.isoformat(),
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _runbook_execution_dict(row: RunbookExecution) -> dict:
+    return {
+        "id": row.id,
+        "runbook_id": row.runbook_id,
+        "title": row.title,
+        "requested_by": row.requested_by,
+        "approval_id": row.approval_id,
+        "governance": row.governance,
+        "autonomy_level": row.autonomy_level,
+        "status": row.status,
+        "target": row.target,
+        "rationale": row.rationale,
+        "verification": row.verification,
+        "rollback": row.rollback,
+        "result": row.result,
+        "evidence_path": row.evidence_path,
+        "created_at": row.created_at.isoformat(),
+        "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+    }
+
+
+def _tool_promotion_dict(row: ToolPromotion) -> dict:
+    return {
+        "id": row.id,
+        "tool_id": row.tool_id,
+        "title": row.title,
+        "source_path": row.source_path,
+        "artifact_path": row.artifact_path,
+        "requested_by": row.requested_by,
+        "approval_id": row.approval_id,
+        "status": row.status,
+        "test_summary": row.test_summary,
+        "dry_run_summary": row.dry_run_summary,
+        "created_at": row.created_at.isoformat(),
+        "decided_at": row.decided_at.isoformat() if row.decided_at else None,
     }
 
 
@@ -1225,6 +1396,16 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
       </section>
 
       <section class="instruction-section">
+        <h2>What Is Wired Now</h2>
+        <div class="governance-grid">
+          <div class="instruction-tile"><strong>Sage Retrieval</strong><span>Searches Markdown memory, knowledge, runbooks, tools, and framework docs for similar patterns.</span></div>
+          <div class="instruction-tile"><strong>Incident Memory</strong><span>Creates episodic Markdown records with symptom, context, root cause, action, outcome, and confidence.</span></div>
+          <div class="instruction-tile"><strong>Runbook Execution</strong><span>Green runbooks run immediately and write evidence. Red runbooks create approval-gated Executioner handoffs.</span></div>
+          <div class="instruction-tile"><strong>Tool Promotion</strong><span>Builder artifacts become worker tools only after Gatekeeper plus human approval.</span></div>
+        </div>
+      </section>
+
+      <section class="instruction-section">
         <h2>Six Planes</h2>
         <div class="plane-grid">
           <div class="instruction-tile"><strong>Control: ORC</strong><span>Routes work, owns state, assembles plans, and keeps the workflow moving in order.</span></div>
@@ -1425,6 +1606,8 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
         <button class="orch-tab on" id="orch-tab-chat" onclick="showOrchTab('chat')">Agent Chat</button>
         <button class="orch-tab" id="orch-tab-agents" onclick="showOrchTab('agents')">Agents</button>
         <button class="orch-tab" id="orch-tab-skills" onclick="showOrchTab('skills')">Skills</button>
+        <button class="orch-tab" id="orch-tab-runbooks" onclick="showOrchTab('runbooks')">Runbooks</button>
+        <button class="orch-tab" id="orch-tab-builder" onclick="showOrchTab('builder')">Builder</button>
         <button class="orch-tab" id="orch-tab-approvals" onclick="showOrchTab('approvals')">Approvals</button>
         <button class="orch-tab" id="orch-tab-learning" onclick="showOrchTab('learning')">Learning</button>
         <button class="orch-tab" id="orch-tab-setup" onclick="showOrchTab('setup')">Setup</button>
@@ -1510,6 +1693,50 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
             </div>
             <div class="skill-file-meta" id="skill-file-meta"></div>
             <textarea class="orch-textarea skill-md-editor" id="skill-markdown" spellcheck="false"></textarea>
+          </section>
+        </div>
+      </section>
+
+      <section class="orch-view" id="orch-view-runbooks">
+        <div class="orch-page-grid">
+          <section class="orch-panel">
+            <div class="orch-panel-head">
+              <div class="orch-panel-title">Runbook Registry</div>
+              <div class="orch-count" id="orch-runbook-path"></div>
+            </div>
+            <div class="learning-list" id="orch-runbooks"><div class="empty">Loading runbooks...</div></div>
+          </section>
+          <section class="orch-panel">
+            <div class="orch-panel-head"><div class="orch-panel-title">Execute Runbook</div></div>
+            <div class="orch-form">
+              <div class="orch-field wide"><label>Runbook</label><select class="orch-select" id="runbook-id"></select></div>
+              <div class="orch-field wide"><label>Target</label><input class="orch-input" id="runbook-target" placeholder="container, service, or evidence scope"></div>
+              <div class="orch-field wide"><label>Rationale</label><textarea class="orch-textarea" id="runbook-rationale"></textarea></div>
+              <button class="btnp wide" onclick="executeRunbook()">Execute or Request Approval</button>
+            </div>
+            <div class="orch-panel-head" style="margin-top:14px"><div class="orch-panel-title">Recent Executions</div></div>
+            <div class="learning-list" id="orch-runbook-executions"><div class="empty">No runbook executions yet.</div></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="orch-view" id="orch-view-builder">
+        <div class="orch-page-grid">
+          <section class="orch-panel">
+            <div class="orch-panel-head"><div class="orch-panel-title">Builder Promotion Request</div></div>
+            <div class="orch-form">
+              <div class="orch-field"><label>Tool ID</label><input class="orch-input" id="promotion-tool-id" placeholder="generated-diagnostic-tool"></div>
+              <div class="orch-field"><label>Title</label><input class="orch-input" id="promotion-title" placeholder="Generated Diagnostic Tool"></div>
+              <div class="orch-field wide"><label>Source Path</label><input class="orch-input" id="promotion-source-path" placeholder="builder/workspace/..."></div>
+              <div class="orch-field wide"><label>Test Summary</label><textarea class="orch-textarea" id="promotion-tests"></textarea></div>
+              <div class="orch-field wide"><label>Dry Run Summary</label><textarea class="orch-textarea" id="promotion-dry-run"></textarea></div>
+              <div class="orch-field wide"><label>Artifact Markdown</label><textarea class="orch-textarea" id="promotion-artifact" placeholder="Optional complete tool.md content"></textarea></div>
+              <button class="btnp wide" onclick="createToolPromotion()">Request Tool Promotion</button>
+            </div>
+          </section>
+          <section class="orch-panel">
+            <div class="orch-panel-head"><div class="orch-panel-title">Promotion Queue</div></div>
+            <div class="learning-list" id="orch-tool-promotions"><div class="empty">No promotion requests yet.</div></div>
           </section>
         </div>
       </section>
@@ -3260,6 +3487,11 @@ function fillOrchSelects(){
     const el=document.getElementById(id);
     if(el)el.innerHTML=optionHtml(_orch.agents,el.value);
   });
+  const runbookSelect=document.getElementById('runbook-id');
+  if(runbookSelect){
+    const cur=runbookSelect.value;
+    runbookSelect.innerHTML=(_orch.runbooks||[]).map(r=>`<option value="${esc(r.item_id)}"${r.item_id===cur?' selected':''}>${esc(r.name||r.item_id)}</option>`).join('');
+  }
   const chatTarget=document.getElementById('chat-agent-target');
   if(chatTarget){
     const cur=chatTarget.value||'orc-orchestrator';
@@ -3500,6 +3732,58 @@ function renderLearnings(){
       <div class="learning-copy">${esc(l.summary)}</div>
     </div>`).join('');
 }
+function renderRunbooks(){
+  const list=document.getElementById('orch-runbooks');
+  const executions=document.getElementById('orch-runbook-executions');
+  const path=document.getElementById('orch-runbook-path');
+  if(path)path.textContent=_orch.paths?.runbooks||'runbooks';
+  if(list){
+    const rows=_orch.runbooks||[];
+    if(!rows.length)list.innerHTML='<div class="empty">No runbooks registered.</div>';
+    else list.innerHTML=rows.map(r=>`
+      <div class="learning-row">
+        <div class="learning-head">
+          <div class="learning-title" title="${esc(r.name)}">${esc(r.name)}</div>
+          <span class="status-chip ${r.approval_required?'pending':'approved'}">${r.approval_required?'approval':'ready'}</span>
+        </div>
+        <div class="learning-meta"><span>${esc(r.item_id)}</span><span>${esc(r.role_or_category||'runbook')}</span><span>${esc(r.path||'')}</span></div>
+      </div>`).join('');
+  }
+  if(executions){
+    const rows=_orch.runbook_executions||[];
+    if(!rows.length)executions.innerHTML='<div class="empty">No runbook executions yet.</div>';
+    else executions.innerHTML=rows.map(r=>`
+      <div class="learning-row">
+        <div class="learning-head">
+          <div class="learning-title" title="${esc(r.title)}">${esc(r.title)}</div>
+          <span class="status-chip ${statusChipClass(r.status)}">${esc(r.status)}</span>
+        </div>
+        <div class="learning-meta"><span>${esc(r.runbook_id)}</span><span>${esc(r.governance)}</span><span>${esc(r.evidence_path||'no evidence yet')}</span></div>
+        <div class="learning-copy">${esc(r.result||r.rationale||'No result yet')}</div>
+      </div>`).join('');
+  }
+}
+function renderToolPromotions(){
+  const el=document.getElementById('orch-tool-promotions');
+  if(!el)return;
+  const rows=_orch.tool_promotions||[];
+  if(!rows.length){el.innerHTML='<div class="empty">No promotion requests yet.</div>';return;}
+  el.innerHTML=rows.map(p=>`
+    <div class="learning-row">
+        <div class="learning-head">
+          <div class="learning-title" title="${esc(p.title)}">${esc(p.title)}</div>
+        <span class="status-chip ${statusChipClass(p.status)}">${esc(p.status)}</span>
+      </div>
+      <div class="learning-meta"><span>${esc(p.tool_id)}</span><span>approval ${esc(String(p.approval_id||'none'))}</span><span>${esc(p.artifact_path||'')}</span></div>
+      <div class="learning-copy">${esc(p.test_summary||'No test summary')}</div>
+      ${p.status!=='promoted'?`<div class="approval-actions"><button class="btns" onclick="promoteTool(${p.id})">Promote Approved Tool</button></div>`:''}
+    </div>`).join('');
+}
+function statusChipClass(status){
+  if(['completed','promoted','approved','approved_handoff'].includes(status))return 'approved';
+  if(['pending','pending_approval','running','queued','draft'].includes(status))return 'pending';
+  return 'rejected';
+}
 function renderUsers(){
   const el=document.getElementById('setup-users');
   if(!el)return;
@@ -3542,6 +3826,8 @@ function renderOrchestration(){
   renderChat();
   renderApprovals();
   renderLearnings();
+  renderRunbooks();
+  renderToolPromotions();
   if(_orchTab==='setup')loadUsers();
 }
 async function setAgentTrustFromEl(el){
@@ -3764,6 +4050,39 @@ async function createLearning(){
     ['learning-title','learning-ref','learning-summary'].forEach(id=>document.getElementById(id).value='');
     await loadOrchestration();
   }catch(e){alert('Learning entry failed: '+e.message);}
+}
+async function executeRunbook(){
+  const runbookId=orchVal('runbook-id');
+  if(!runbookId){alert('Select a runbook first.');return;}
+  const body={target:orchVal('runbook-target'),rationale:orchVal('runbook-rationale'),requested_by:'operator'};
+  try{
+    await postJson(`/orchestration/runbooks/${encodeURIComponent(runbookId)}/execute`,body);
+    ['runbook-target','runbook-rationale'].forEach(id=>document.getElementById(id).value='');
+    await loadOrchestration();
+  }catch(e){alert('Runbook execution failed: '+e.message);}
+}
+async function createToolPromotion(){
+  const body={
+    tool_id:orchVal('promotion-tool-id'),
+    title:orchVal('promotion-title'),
+    source_path:orchVal('promotion-source-path'),
+    test_summary:orchVal('promotion-tests'),
+    dry_run_summary:orchVal('promotion-dry-run'),
+    artifact_markdown:document.getElementById('promotion-artifact')?.value||'',
+    requested_by:'operator'
+  };
+  if(!body.tool_id||!body.title||!body.test_summary||!body.dry_run_summary){alert('Tool ID, title, test summary, and dry run summary are required.');return;}
+  try{
+    await postJson('/orchestration/tool-promotions',body);
+    ['promotion-tool-id','promotion-title','promotion-source-path','promotion-tests','promotion-dry-run','promotion-artifact'].forEach(id=>document.getElementById(id).value='');
+    await loadOrchestration();
+  }catch(e){alert('Promotion request failed: '+e.message);}
+}
+async function promoteTool(promotionId){
+  try{
+    await postJson(`/orchestration/tool-promotions/${promotionId}/promote`,{},'POST');
+    await loadOrchestration();
+  }catch(e){alert('Tool promotion failed: '+e.message);}
 }
 async function createUser(){
   const body={username:orchVal('setup-username'),password:orchVal('setup-password'),role:orchVal('setup-role')||'user'};
@@ -4457,6 +4776,18 @@ def orchestration_summary() -> dict:
             _learning_dict(row)
             for row in s.query(LearningEntry).order_by(LearningEntry.created_at.desc(), LearningEntry.id.desc()).limit(30).all()
         ]
+        incidents = [
+            _incident_dict(row)
+            for row in s.query(IncidentRecord).order_by(IncidentRecord.created_at.desc(), IncidentRecord.id.desc()).limit(30).all()
+        ]
+        runbook_executions = [
+            _runbook_execution_dict(row)
+            for row in s.query(RunbookExecution).order_by(RunbookExecution.created_at.desc(), RunbookExecution.id.desc()).limit(30).all()
+        ]
+        tool_promotions = [
+            _tool_promotion_dict(row)
+            for row in s.query(ToolPromotion).order_by(ToolPromotion.created_at.desc(), ToolPromotion.id.desc()).limit(30).all()
+        ]
         focused_watches = [
             _focused_watch_dict(row, conn)
             for row, conn in (
@@ -4478,6 +4809,9 @@ def orchestration_summary() -> dict:
         "messages": messages,
         "approvals": approvals,
         "learnings": learnings,
+        "incidents": incidents,
+        "runbook_executions": runbook_executions,
+        "tool_promotions": tool_promotions,
         "focused_watches": focused_watches,
         "paths": {
             "agents": str((REPO_ROOT / "agents").relative_to(REPO_ROOT)),
@@ -4934,6 +5268,428 @@ def create_learning(body: LearningCreateIn) -> dict:
             {"path": row.markdown_path, "outcome": row.outcome},
         )
         return _learning_dict(row)
+
+
+def _memory_search(query: str, limit: int = 10) -> list[dict]:
+    terms = [t for t in re.findall(r"[a-z0-9]+", query.lower()) if len(t) > 2]
+    roots = ["memory", "knowledge", "runbooks", "tools", "docs"]
+    results: list[dict] = []
+    for root_name in roots:
+        root = REPO_ROOT / root_name
+        if not root.exists():
+            continue
+        for path in root.rglob("*.md"):
+            try:
+                raw = path.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            haystack = raw.lower()
+            if terms:
+                score = sum(haystack.count(term) for term in terms)
+            else:
+                score = 1
+            if score <= 0:
+                continue
+            metadata = _markdown_metadata(raw)
+            sections = _markdown_sections(raw)
+            summary = sections.get("summary") or sections.get("purpose") or sections.get("fact") or raw[:240]
+            results.append(
+                {
+                    "score": score,
+                    "path": str(path.relative_to(REPO_ROOT)),
+                    "title": metadata.get("title") or metadata.get("name") or path.stem,
+                    "kind": root_name,
+                    "summary": re.sub(r"\s+", " ", summary).strip()[:360],
+                }
+            )
+    results.sort(key=lambda item: (-item["score"], item["path"]))
+    return results[: max(1, min(limit, 50))]
+
+
+@app.get("/memory/search")
+def search_memory(q: str = "", limit: int = 10) -> dict:
+    return {"query": q, "items": _memory_search(q, limit)}
+
+
+@app.get("/orchestration/incidents")
+def list_incidents() -> dict:
+    with SessionLocal() as s:
+        rows = s.query(IncidentRecord).order_by(IncidentRecord.created_at.desc(), IncidentRecord.id.desc()).limit(100).all()
+        return {"items": [_incident_dict(row) for row in rows]}
+
+
+@app.post("/orchestration/incidents", status_code=201)
+def create_incident(body: IncidentCreateIn) -> dict:
+    now = datetime.now(timezone.utc)
+    stamp = now.strftime("%Y%m%d-%H%M%S")
+    incident_slug = _slug(body.title, "incident")
+    markdown = "\n".join(
+        [
+            "# Episodic Memory",
+            "",
+            "memory_type: episodic",
+            f"id: {stamp}-{incident_slug}",
+            f"title: {body.title.strip()}",
+            f"created_at: {now.isoformat()}",
+            f"outcome: {body.outcome.strip() or 'open'}",
+            f"confidence: {body.confidence.strip() or 'medium'}",
+            f"governance: {body.governance.strip() or 'yellow'}",
+            f"autonomy_level: {body.autonomy_level}",
+            "",
+            "## Symptom",
+            "",
+            body.symptom.strip(),
+            "",
+            "## Context",
+            "",
+            body.context.strip() or "Not specified.",
+            "",
+            "## Root Cause",
+            "",
+            body.root_cause.strip() or "Unknown.",
+            "",
+            "## Action",
+            "",
+            body.action.strip() or "No action recorded.",
+            "",
+            "## Outcome",
+            "",
+            body.outcome.strip() or "open",
+            "",
+            "## Promotion",
+            "",
+            "- Review for runbook promotion when the same symptom recurs.",
+            "",
+        ]
+    )
+    target_file = _write_markdown_under(
+        "memory",
+        "episodic",
+        f"{stamp}-{incident_slug}.md",
+        content=markdown,
+    )
+    with SessionLocal() as s:
+        row = IncidentRecord(
+            title=body.title.strip(),
+            symptom=body.symptom.strip(),
+            context=body.context.strip(),
+            root_cause=body.root_cause.strip(),
+            action=body.action.strip(),
+            outcome=body.outcome.strip() or "open",
+            confidence=body.confidence.strip() or "medium",
+            governance=body.governance.strip() or "yellow",
+            autonomy_level=body.autonomy_level,
+            markdown_path=str(target_file.relative_to(REPO_ROOT)),
+            status="closed" if body.outcome.strip() and body.outcome.strip() != "open" else "open",
+            created_at=now,
+            updated_at=now,
+        )
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        _record_agent_message(
+            s,
+            "sage",
+            "orc-orchestrator",
+            "incident_memory",
+            f"Sage wrote episodic memory for incident: {row.title}",
+            {"incident_id": row.id, "path": row.markdown_path},
+        )
+        return _incident_dict(row)
+
+
+def _approval_is_approved(session, approval_id: int | None) -> bool:
+    if not approval_id:
+        return False
+    row = session.get(ApprovalRequest, approval_id)
+    return bool(row and row.status == "approved" and row.execution_allowed)
+
+
+def _create_policy_approval(session, *, title: str, action_type: str, target: str, rationale: str, requested_by: str) -> ApprovalRequest:
+    row = ApprovalRequest(
+        title=title,
+        requester_agent=requested_by or "operator",
+        approver_agent="gate-keeper",
+        action_type=action_type,
+        target=target,
+        rationale=rationale,
+        risk_level="high",
+        requested_by=requested_by or "operator",
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    _record_agent_message(
+        session,
+        "orc-orchestrator",
+        "gate-keeper",
+        "approval_request",
+        f"ORC requested Gatekeeper approval: {title}",
+        {"approval_id": row.id, "target": target, "risk_level": row.risk_level},
+    )
+    return row
+
+
+def _execute_green_runbook(runbook: dict, body: RunbookExecuteIn) -> tuple[str, str, str]:
+    now = datetime.now(timezone.utc)
+    if runbook["id"] == "approved-log-review":
+        summary = _oracle_summary(window_hours=1)
+        result = (
+            f"Reviewed the last hour of warnings/errors. "
+            f"Events: {summary.get('total_events', 0)}. "
+            f"Containers: {len(summary.get('containers', []))}. "
+            f"Top issue: {(summary.get('containers') or [{'container': 'none'}])[0].get('container', 'none')}."
+        )
+        evidence = json.dumps(summary, indent=2, default=str)
+    else:
+        result = "Runbook completed as a policy-checked dry run. No mutating action was performed."
+        evidence = f"Runbook: {runbook['id']}\nTarget: {body.target}\nRationale: {body.rationale}\n"
+    stamp = now.strftime("%Y%m%d-%H%M%S")
+    evidence_md = "\n".join(
+        [
+            "# Runbook Execution Evidence",
+            "",
+            f"runbook_id: {runbook['id']}",
+            f"created_at: {now.isoformat()}",
+            f"governance: {runbook['governance']}",
+            f"autonomy_level: {runbook['autonomy_level']}",
+            "",
+            "## Result",
+            "",
+            result,
+            "",
+            "## Evidence",
+            "",
+            "```text",
+            evidence,
+            "```",
+            "",
+        ]
+    )
+    evidence_file = _write_markdown_under(
+        "knowledge",
+        "runbook-executions",
+        f"{stamp}-{_slug(runbook['id'], 'runbook')}.md",
+        content=evidence_md,
+    )
+    return result, str(evidence_file.relative_to(REPO_ROOT)), runbook["sections"].get("verification", "")
+
+
+@app.get("/orchestration/runbooks")
+def list_runbooks() -> dict:
+    return {"items": [asdict(item) for item in load_registry(REPO_ROOT, "runbooks")]}
+
+
+@app.get("/orchestration/runbooks/{runbook_id}")
+def get_runbook(runbook_id: str) -> dict:
+    return _read_registry_definition("runbooks", runbook_id)
+
+
+@app.get("/orchestration/runbook-executions")
+def list_runbook_executions() -> dict:
+    with SessionLocal() as s:
+        rows = s.query(RunbookExecution).order_by(RunbookExecution.created_at.desc(), RunbookExecution.id.desc()).limit(100).all()
+        return {"items": [_runbook_execution_dict(row) for row in rows]}
+
+
+@app.post("/orchestration/runbooks/{runbook_id}/execute", status_code=201)
+def execute_runbook(runbook_id: str, body: RunbookExecuteIn) -> dict:
+    runbook = _read_registry_definition("runbooks", runbook_id)
+    governance = runbook["governance"].lower()
+    requires_human = governance == "red" or runbook["approval_required"]
+    with SessionLocal() as s:
+        approval_id = body.approval_id
+        if requires_human and not _approval_is_approved(s, approval_id):
+            approval = _create_policy_approval(
+                s,
+                title=f"Runbook approval required: {runbook['name']}",
+                action_type=f"runbook:{runbook['id']}",
+                target=body.target or runbook["id"],
+                rationale=body.rationale or f"Execute runbook {runbook['id']}",
+                requested_by=body.requested_by or "operator",
+            )
+            row = RunbookExecution(
+                runbook_id=runbook["id"],
+                title=runbook["name"],
+                requested_by=body.requested_by or "operator",
+                approval_id=approval.id,
+                governance=runbook["governance"],
+                autonomy_level=runbook["autonomy_level"],
+                status="pending_approval",
+                target=body.target.strip(),
+                rationale=body.rationale.strip(),
+                verification=runbook["sections"].get("verification", ""),
+                rollback=runbook["sections"].get("rollback", ""),
+                result="Gatekeeper approval required before this runbook can proceed.",
+            )
+            s.add(row)
+            s.commit()
+            s.refresh(row)
+            return _runbook_execution_dict(row)
+
+        row = RunbookExecution(
+            runbook_id=runbook["id"],
+            title=runbook["name"],
+            requested_by=body.requested_by or "operator",
+            approval_id=approval_id,
+            governance=runbook["governance"],
+            autonomy_level=runbook["autonomy_level"],
+            status="running",
+            target=body.target.strip(),
+            rationale=body.rationale.strip(),
+            verification=runbook["sections"].get("verification", ""),
+            rollback=runbook["sections"].get("rollback", ""),
+        )
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+
+        if governance == "red":
+            row.status = "approved_handoff"
+            row.result = "Human approval confirmed. Executioner handoff recorded; no direct mutation was performed by the runbook API."
+            row.completed_at = datetime.now(timezone.utc)
+            _record_agent_message(
+                s,
+                "gate-keeper",
+                "executioner",
+                "runbook_handoff",
+                f"Approved red runbook ready for Executioner: {runbook['name']}",
+                {"runbook_execution_id": row.id, "approval_id": approval_id, "target": row.target},
+            )
+        else:
+            result, evidence_path, verification = _execute_green_runbook(runbook, body)
+            row.status = "completed"
+            row.result = result
+            row.evidence_path = evidence_path
+            row.verification = verification or row.verification
+            row.completed_at = datetime.now(timezone.utc)
+            _record_agent_message(
+                s,
+                "executioner",
+                "raven",
+                "runbook_result",
+                f"Runbook completed: {runbook['name']}",
+                {"runbook_execution_id": row.id, "evidence_path": row.evidence_path},
+            )
+        s.commit()
+        s.refresh(row)
+        return _runbook_execution_dict(row)
+
+
+@app.get("/orchestration/tool-promotions")
+def list_tool_promotions() -> dict:
+    with SessionLocal() as s:
+        rows = s.query(ToolPromotion).order_by(ToolPromotion.created_at.desc(), ToolPromotion.id.desc()).limit(100).all()
+        return {"items": [_tool_promotion_dict(row) for row in rows]}
+
+
+@app.post("/orchestration/tool-promotions", status_code=201)
+def create_tool_promotion(body: ToolPromotionIn) -> dict:
+    tool_id = _slug(body.tool_id, "tool")
+    now = datetime.now(timezone.utc)
+    artifact = body.artifact_markdown.strip() or "\n".join(
+        [
+            "# Tool Definition",
+            "",
+            f"name: {body.title.strip()}",
+            f"id: {tool_id}",
+            "version: 0.1.0",
+            "category: generated",
+            "risk_level: medium",
+            "autonomy_level: 3",
+            "governance: red",
+            "execution_surface: worker-pool",
+            "approval_required: true",
+            "",
+            "## Purpose",
+            "",
+            "Generated in the builder sandbox and pending promotion.",
+            "",
+            "## Test Summary",
+            "",
+            body.test_summary.strip(),
+            "",
+            "## Dry Run Summary",
+            "",
+            body.dry_run_summary.strip(),
+            "",
+            "## Execution Boundary",
+            "",
+            "- Run only in the worker pool after approval.",
+            "- Do not mutate Stable Core.",
+            "",
+        ]
+    )
+    artifact_file = _write_markdown_under(
+        "builder",
+        "workspace",
+        "proposals",
+        tool_id,
+        "tool.md",
+        content=artifact,
+    )
+    with SessionLocal() as s:
+        approval_id = body.approval_id
+        status = "approved"
+        if not _approval_is_approved(s, approval_id):
+            approval = _create_policy_approval(
+                s,
+                title=f"Promote generated tool: {body.title.strip()}",
+                action_type="tool_promotion",
+                target=tool_id,
+                rationale=f"Tests: {body.test_summary.strip()}\nDry run: {body.dry_run_summary.strip()}",
+                requested_by=body.requested_by or "operator",
+            )
+            approval_id = approval.id
+            status = "pending_approval"
+        row = ToolPromotion(
+            tool_id=tool_id,
+            title=body.title.strip(),
+            source_path=body.source_path.strip(),
+            artifact_path=str(artifact_file.relative_to(REPO_ROOT)),
+            requested_by=body.requested_by or "operator",
+            approval_id=approval_id,
+            status=status,
+            test_summary=body.test_summary.strip(),
+            dry_run_summary=body.dry_run_summary.strip(),
+            created_at=now,
+        )
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        return _tool_promotion_dict(row)
+
+
+@app.post("/orchestration/tool-promotions/{promotion_id}/promote")
+def promote_tool(promotion_id: int) -> dict:
+    with SessionLocal() as s:
+        row = s.get(ToolPromotion, promotion_id)
+        if not row:
+            raise HTTPException(404, "Tool promotion not found")
+        if not _approval_is_approved(s, row.approval_id):
+            raise HTTPException(403, "Human approval is required before tool promotion")
+        artifact_file = _safe_markdown_path(REPO_ROOT, row.artifact_path)
+        if not artifact_file.exists():
+            raise HTTPException(404, "Promotion artifact not found")
+        target_dir = _safe_markdown_path(REPO_ROOT / "tools", row.tool_id)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_file = target_dir / "tool.md"
+        if target_file.exists():
+            raise HTTPException(409, "A promoted tool with this id already exists")
+        target_file.write_text(artifact_file.read_text(encoding="utf-8"), encoding="utf-8")
+        row.status = "promoted"
+        row.decided_at = datetime.now(timezone.utc)
+        s.commit()
+        s.refresh(row)
+        _record_agent_message(
+            s,
+            "gate-keeper",
+            "orc-orchestrator",
+            "tool_promoted",
+            f"Generated tool promoted into worker registry: {row.tool_id}",
+            {"promotion_id": row.id, "path": str(target_file.relative_to(REPO_ROOT))},
+        )
+        return _tool_promotion_dict(row)
 
 
 def _oracle_summary(

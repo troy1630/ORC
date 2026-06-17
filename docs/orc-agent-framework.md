@@ -118,3 +118,24 @@ Every meaningful incident should end with:
 
 That final retrospective is how ORC improves over time.
 
+## Working Surfaces
+
+The current implementation exposes these surfaces:
+
+- Memory search scans Markdown memory, knowledge, runbooks, tools, and framework docs.
+- Incident creation writes episodic memory under `memory/episodic/`.
+- Green runbooks can execute immediately and write evidence under `knowledge/runbook-executions/`.
+- Red runbooks create approval-gated Executioner handoffs.
+- Builder tool proposals write artifacts under `builder/workspace/proposals/`.
+- Tool promotion requires a Gatekeeper approval record with human approval before a new `tools/*/tool.md` is created.
+
+## Promotion Rule
+
+A generated tool is never allowed to promote itself. Promotion requires:
+
+1. Builder artifact.
+2. Test summary.
+3. Dry-run summary.
+4. Gatekeeper approval request.
+5. Human approval.
+6. Copy into the `tools/` registry.

@@ -159,6 +159,71 @@ class LearningEntry(Base):
     )
 
 
+class IncidentRecord(Base):
+    __tablename__ = "incident_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(256))
+    symptom: Mapped[str] = mapped_column(Text, default="")
+    context: Mapped[str] = mapped_column(Text, default="")
+    root_cause: Mapped[str] = mapped_column(Text, default="")
+    action: Mapped[str] = mapped_column(Text, default="")
+    outcome: Mapped[str] = mapped_column(String(64), default="open")
+    confidence: Mapped[str] = mapped_column(String(32), default="medium")
+    governance: Mapped[str] = mapped_column(String(32), default="yellow")
+    autonomy_level: Mapped[int] = mapped_column(Integer, default=1)
+    markdown_path: Mapped[str] = mapped_column(String(512), default="")
+    status: Mapped[str] = mapped_column(String(64), default="open")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class RunbookExecution(Base):
+    __tablename__ = "runbook_executions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    runbook_id: Mapped[str] = mapped_column(String(128))
+    title: Mapped[str] = mapped_column(String(256))
+    requested_by: Mapped[str] = mapped_column(String(128), default="operator")
+    approval_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("approval_requests.id"), nullable=True)
+    governance: Mapped[str] = mapped_column(String(32), default="yellow")
+    autonomy_level: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(64), default="queued")
+    target: Mapped[str] = mapped_column(String(256), default="")
+    rationale: Mapped[str] = mapped_column(Text, default="")
+    verification: Mapped[str] = mapped_column(Text, default="")
+    rollback: Mapped[str] = mapped_column(Text, default="")
+    result: Mapped[str] = mapped_column(Text, default="")
+    evidence_path: Mapped[str] = mapped_column(String(512), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ToolPromotion(Base):
+    __tablename__ = "tool_promotions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_id: Mapped[str] = mapped_column(String(128))
+    title: Mapped[str] = mapped_column(String(256))
+    source_path: Mapped[str] = mapped_column(String(512), default="")
+    artifact_path: Mapped[str] = mapped_column(String(512), default="")
+    requested_by: Mapped[str] = mapped_column(String(128), default="operator")
+    approval_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("approval_requests.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(64), default="draft")
+    test_summary: Mapped[str] = mapped_column(Text, default="")
+    dry_run_summary: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class AIUsageLog(Base):
     __tablename__ = "ai_usage_logs"
 
