@@ -248,6 +248,13 @@ DEFAULT_ORCHESTRATION_AGENTS = [
     },
 ]
 
+CAPABILITY_AGENT_REMAP = {
+    "api-harvester": "orc-orchestrator",
+    "documenter": "sage",
+    "outlook-comms": "orc-orchestrator",
+    "portainer-log-collector": "raven",
+}
+
 
 def _slug(value: str, fallback: str = "item") -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
@@ -640,6 +647,8 @@ def _default_agent_icon(agent_id: str, role: str = "") -> str:
 def _ensure_orchestration_agents(session) -> None:
     desired = {item["agent_id"]: item for item in DEFAULT_ORCHESTRATION_AGENTS}
     for item in load_registry(REPO_ROOT, "agents"):
+        if item.item_id in CAPABILITY_AGENT_REMAP:
+            continue
         desired.setdefault(
             item.item_id,
             {
@@ -718,8 +727,8 @@ def _markdown_list_items(section: str) -> list[str]:
     return items
 
 
-def _agent_profile_metadata(agent_id: str) -> dict:
-    profile = {
+def _empty_agent_profile() -> dict:
+    return {
         "plane": "",
         "risk_level": "",
         "autonomy_level": "",
@@ -731,7 +740,12 @@ def _agent_profile_metadata(agent_id: str) -> dict:
         "allowed_skills": [],
         "rules": [],
         "definition_path": "",
+        "remapped_capabilities": [],
     }
+
+
+def _agent_profile_from_definition(agent_id: str) -> dict:
+    profile = _empty_agent_profile()
     try:
         path = _registry_file_for_id("agents", agent_id)
         raw = path.read_text(encoding="utf-8")
@@ -754,6 +768,47 @@ def _agent_profile_metadata(agent_id: str) -> dict:
         )
     except Exception:
         pass
+    return profile
+
+
+def _merge_unique_list(target: list[str], incoming: list[str]) -> list[str]:
+    seen = {item.lower(): item for item in target}
+    merged = list(target)
+    for item in incoming:
+        key = item.lower()
+        if key not in seen:
+            seen[key] = item
+            merged.append(item)
+    return merged
+
+
+def _agent_profile_metadata(agent_id: str) -> dict:
+    profile = _agent_profile_from_definition(agent_id)
+    remapped: list[dict] = []
+    for source_id, target_id in CAPABILITY_AGENT_REMAP.items():
+        if target_id != agent_id:
+            continue
+        source = _agent_profile_from_definition(source_id)
+        source_name = source_id.replace("-", " ").title()
+        try:
+            source_def = _read_registry_definition("agents", source_id)
+            source_name = source_def.get("name") or source_name
+        except Exception:
+            pass
+        profile["allowed_skills"] = _merge_unique_list(profile["allowed_skills"], source["allowed_skills"])
+        profile["inputs"] = _merge_unique_list(profile["inputs"], source["inputs"])
+        profile["outputs"] = _merge_unique_list(profile["outputs"], source["outputs"])
+        profile["rules"] = _merge_unique_list(profile["rules"], source["rules"])
+        remapped.append(
+            {
+                "id": source_id,
+                "name": source_name,
+                "purpose": source["purpose"],
+                "definition_path": source["definition_path"],
+                "allowed_skills": source["allowed_skills"],
+            }
+        )
+    profile["remapped_capabilities"] = remapped
     return profile
 
 
@@ -1022,8 +1077,12 @@ html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="cha
 .profile-map-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid #21262d}
 .profile-map-title{font-size:.86rem;font-weight:900}
 .profile-map-copy{font-size:.74rem;color:var(--mut);line-height:1.38;margin-top:3px;max-width:760px}
+.profile-map-tools{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
 .profile-legend{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .profile-legend span{border:1px solid #30363d;border-radius:999px;padding:3px 8px;font-size:.66rem;color:#c9d5e2;background:#0d1117}
+.profile-filter{display:flex;align-items:center;gap:7px;font-size:.72rem;color:var(--mut);white-space:nowrap}
+.profile-filter select{background:#0d1117;border:1px solid var(--bdr);border-radius:7px;color:var(--txt);font-size:.76rem;padding:5px 9px;min-width:180px;outline:none}
+.profile-filter select:focus{border-color:var(--pur)}
 .profile-map-canvas{min-height:520px;overflow:auto;background:#0d1117}
 .profile-map-svg{display:block;min-width:960px;width:100%;height:auto}
 .profile-edge{fill:none;stroke:#334154;stroke-width:1.25;opacity:.82}
@@ -1369,7 +1428,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .instruction-hero{grid-template-columns:1fr}
   .instruction-pillbox{justify-content:flex-start}
   .plane-grid,.layer-grid,.governance-grid,.memory-grid,.learning-loop{grid-template-columns:1fr}
-  .profile-map-top{flex-direction:column}.profile-legend{justify-content:flex-start}.profile-card-grid{grid-template-columns:1fr}.profile-map-canvas{min-height:420px}
+  .profile-map-top{flex-direction:column}.profile-map-tools{align-items:flex-start}.profile-legend{justify-content:flex-start}.profile-card-grid{grid-template-columns:1fr}.profile-map-canvas{min-height:420px}
   .issue-list{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
   .metric-table-head,.metric-summary,.metric-stack{grid-template-columns:minmax(150px,1fr) 52px 54px 70px}
   .metric-table-head span:nth-child(5),.metric-summary .home-health,.metric-stack .home-health{display:none}
@@ -1582,11 +1641,14 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
               <div class="profile-map-title">Agent Capability Profiles</div>
               <div class="profile-map-copy">A live registry map showing which agents declare access to skills, and how the core surfaces are governed through memory, runbooks, approvals, and worker tools.</div>
             </div>
-            <div class="profile-legend">
-              <span>Agent</span>
-              <span>Skill</span>
-              <span>Governed Surface</span>
-              <span>Declared Only</span>
+            <div class="profile-map-tools">
+              <label class="profile-filter">Agent <select id="profile-agent-filter" onchange="renderInstructionProfiles()"><option value="all">All agents</option></select></label>
+              <div class="profile-legend">
+                <span>Agent</span>
+                <span>Skill</span>
+                <span>Governed Surface</span>
+                <span>Declared Only</span>
+              </div>
             </div>
           </div>
           <div class="profile-map-canvas" id="profile-map-canvas"><div class="profile-empty">Loading profiles...</div></div>
@@ -2037,6 +2099,7 @@ let _viewMode='corporate';
 let _orch={agents:[],skills:[],tools:[],runbooks:[],messages:[],approvals:[],learnings:[],paths:{}};
 let _orchTab='chat', _adminTab='connections', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null, _skillEditId='', _agentEditId='';
 let _instructionTab='framework';
+let _profileAgentFilter='all';
 let _agentDraftIcon='/assets/characters/agent-scout.png', _agentLogoDraft='';
 let _hbData=new Array(60).fill(0), _hbBucket=0, _hbAlerts=[], _hbAlertBuf=[], _hbAlertPoints=[];
 let _ravenFilter='', _issuePills=[], _issueKeys=new Set();
@@ -3671,16 +3734,45 @@ function profilePath(from,to){
   const mid=Math.max(40,(x2-x1)/2);
   return `M${x1} ${y1} C${x1+mid} ${y1}, ${x2-mid} ${y2}, ${x2} ${y2}`;
 }
+function syncProfileAgentFilter(agents){
+  const el=document.getElementById('profile-agent-filter');
+  if(!el)return 'all';
+  const current=el.value||_profileAgentFilter||'all';
+  const options=['<option value="all">All agents</option>'].concat(
+    agents.map(agent=>`<option value="${esc(agent.id)}">${esc(agent.name||agent.id)}</option>`)
+  ).join('');
+  if(el.dataset.options!==options){
+    el.innerHTML=options;
+    el.dataset.options=options;
+  }
+  const valid=current==='all'||agents.some(agent=>agent.id===current);
+  el.value=valid?current:'all';
+  _profileAgentFilter=el.value||'all';
+  return _profileAgentFilter;
+}
+function profileSurfaceIdsForAgent(agent){
+  const plane=String(agent.profile?.plane||agent.role||'').toLowerCase();
+  const id=agent.id;
+  const surfaceIds=[];
+  if(id==='raven'||id==='orc-orchestrator')surfaceIds.push('message-bus');
+  if(id==='sage'||id==='oracle'||id==='orc-orchestrator'||plane.includes('memory'))surfaceIds.push('memory');
+  if(['orc-orchestrator','oracle','raven','gate-keeper','executioner'].includes(id))surfaceIds.push('runbooks');
+  if(['orc-orchestrator','oracle','gate-keeper','executioner'].includes(id))surfaceIds.push('approvals');
+  if(['orc-orchestrator','sage','executioner'].includes(id))surfaceIds.push('tools');
+  return [...new Set(surfaceIds)];
+}
 function renderInstructionProfiles(){
   const canvas=document.getElementById('profile-map-canvas');
   const cards=document.getElementById('profile-card-grid');
   if(!canvas&&!cards)return;
   const coreOrder=['orc-orchestrator','raven','oracle','sage','gate-keeper','executioner'];
-  const agents=[...(_orch.agents||[])].sort((a,b)=>{
+  const allAgents=[...(_orch.agents||[])].sort((a,b)=>{
     const ai=coreOrder.indexOf(a.id), bi=coreOrder.indexOf(b.id);
     if(ai!==-1||bi!==-1)return (ai===-1?99:ai)-(bi===-1?99:bi);
     return String(a.name||a.id).localeCompare(String(b.name||b.id));
   });
+  const selectedAgent=syncProfileAgentFilter(allAgents);
+  const agents=selectedAgent==='all'?allAgents:allAgents.filter(agent=>agent.id===selectedAgent);
   if(!agents.length){
     if(canvas)canvas.innerHTML='<div class="profile-empty">No agent profiles found.</div>';
     if(cards)cards.innerHTML='<div class="profile-empty">No agent profiles found.</div>';
@@ -3722,13 +3814,16 @@ function renderInstructionProfiles(){
   }
 
   const skillNodes=[...declared.values()].sort((a,b)=>a.label.localeCompare(b.label));
-  const surfaces=[
+  const visibleSurfaceIds=new Set();
+  agents.forEach(agent=>profileSurfaceIdsForAgent(agent).forEach(id=>visibleSurfaceIds.add(id)));
+  const allSurfaces=[
     {id:'message-bus',label:'Message Bus',sub:'agent messages'},
     {id:'memory',label:'Sage Memory',sub:'memory + knowledge'},
     {id:'runbooks',label:'Runbook Registry',sub:`${(_orch.runbooks||[]).length} runbooks`},
     {id:'approvals',label:'Approval Matrix',sub:'Gatekeeper policy'},
     {id:'tools',label:'Worker Tools',sub:`${(_orch.tools||[]).length} tools`},
   ];
+  const surfaces=selectedAgent==='all'?allSurfaces:allSurfaces.filter(surface=>visibleSurfaceIds.has(surface.id));
   const leftX=44, midX=372, rightX=720;
   const agentH=48, skillH=42, surfaceH=52;
   const height=Math.max(560, 96+Math.max(agents.length*70, skillNodes.length*48, surfaces.length*82));
@@ -3759,15 +3854,7 @@ function renderInstructionProfiles(){
       const to=skillNodeMap.get(key);
       if(to)edges.push({from,to,cls:to.missing?'missing':''});
     });
-    const plane=String(agent.profile?.plane||agent.role||'').toLowerCase();
-    const id=agent.id;
-    const surfaceIds=[];
-    if(id==='raven'||id==='orc-orchestrator')surfaceIds.push('message-bus');
-    if(id==='sage'||id==='oracle'||id==='orc-orchestrator'||plane.includes('memory'))surfaceIds.push('memory');
-    if(['orc-orchestrator','oracle','raven','gate-keeper','executioner'].includes(id))surfaceIds.push('runbooks');
-    if(['orc-orchestrator','oracle','gate-keeper','executioner'].includes(id))surfaceIds.push('approvals');
-    if(['orc-orchestrator','sage','executioner'].includes(id))surfaceIds.push('tools');
-    surfaceIds.forEach(surfaceId=>{
+    profileSurfaceIdsForAgent(agent).forEach(surfaceId=>{
       const to=surfaceNodeMap.get(surfaceId);
       if(to)edges.push({from,to,cls:'surface'});
     });
@@ -3788,6 +3875,8 @@ function renderInstructionProfiles(){
       const skills=profileSkillIds(agent);
       const chips=skills.length?skills.map(skill=>`<span class="profile-skill-chip">${esc(skill)}</span>`).join(''):'<span class="profile-skill-chip">No declared skills</span>';
       const meta=[profile.plane||agent.role||'agent', profile.governance_boundary||agent.trust_mode||'', profile.autonomy_level?`L${profile.autonomy_level}`:''].filter(Boolean).join(' / ');
+      const remapped=Array.isArray(profile.remapped_capabilities)?profile.remapped_capabilities:[];
+      const remapHtml=remapped.length?`<div class="profile-card-purpose">Includes capability profiles: ${remapped.map(item=>esc(item.name||item.id)).join(', ')}.</div>`:'';
       return `<div class="profile-card">
         <div class="profile-card-head">
           <img src="${esc(agentArt(agent))}" alt="">
@@ -3797,6 +3886,7 @@ function renderInstructionProfiles(){
           </div>
         </div>
         <div class="profile-card-purpose">${esc(profile.purpose||'No purpose statement declared.')}</div>
+        ${remapHtml}
         <div class="profile-chip-row">${chips}</div>
       </div>`;
     }).join('');
@@ -5067,7 +5157,11 @@ def orchestration_summary() -> dict:
     with SessionLocal() as s:
         _ensure_orchestration_agents(s)
         _ensure_seed_messages(s)
-        agents = [_agent_dict(row) for row in s.query(AgentRuntimeState).order_by(AgentRuntimeState.name).all()]
+        agents = [
+            _agent_dict(row)
+            for row in s.query(AgentRuntimeState).order_by(AgentRuntimeState.name).all()
+            if row.agent_id not in CAPABILITY_AGENT_REMAP
+        ]
         messages = [
             _message_dict(row)
             for row in s.query(AgentMessage).order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc()).limit(80).all()
