@@ -1,46 +1,52 @@
 # Skill Definition
 
-name: Hourly Critical Error Review
+name: Critical Error Review
 id: hourly-critical-error-review
-version: 0.1.0
+version: 0.2.0
 category: observability
 risk_level: low
-autonomy_level: 1
+autonomy_level: 0
 governance: green
 allowed_plane: reasoning
 approval_required: false
 agent: oracle
+canonical_intent: critical-error-review
 
 ## Purpose
 
-Review recent critical and error-level operational events on a recurring hourly cadence, identify repeated patterns, and produce an operator-ready summary for ORC and The Oracle.
+Review critical and error-level operational events over an operator-requested time window, identify repeated patterns, and produce an operator-ready summary with likely root cause and countermeasure for the top issues.
 
 ## Inputs
 
-- Last-hour `error` and `critical` observed events
-- Connection, stack, and container metadata
-- Prior Oracle review summaries when available
-- Known issue patterns and incident-learning entries
+- `time_window`: requested review window such as 1 hour, 6 hours, or 24 hours.
+- If no time window is provided, ask once when the situation is ambiguous; otherwise default to 1 hour for routine reviews.
+- `severity`: defaults to critical and error.
+- Connection, stack, container, and friendly-name metadata.
+- Prior Oracle review summaries and Sage memory when available.
 
 ## Outputs
 
-- Hourly critical error review summary
-- Top recurring error patterns with counts and affected services
-- Evidence references to source events
-- Severity assessment and confidence
-- Recommended next steps
-- Notification recommendation such as `notify_operator: true` or `false`
+- Critical error review summary.
+- Top recurring error patterns with counts and affected services.
+- Evidence references to source events.
+- Severity assessment and confidence.
+- Likely root cause for the top issue.
+- Countermeasure recommendation.
+- Sage learning or runbook-promotion recommendation when the pattern is reusable.
 
 ## Procedure
 
-1. Select observed events from the last complete review window, normally 60 minutes.
-2. Filter to critical and error-level events before considering lower-severity context.
-3. Group events by connection, stack, container, and recurring message pattern.
-4. Identify repeated failures, newly appearing critical errors, and errors affecting ORC itself.
-5. Separate confirmed facts from hypotheses.
-6. Produce a concise review with the top issues, evidence counts, affected services, and recommended next steps.
-7. Recommend operator notification only for critical issues, repeated failures, ORC self-health issues, or unusual error spikes.
-8. Do not execute remediation or change polling cadence from this skill.
+1. Classify read-only review requests as Level 0 / Green and say so before proceeding.
+2. Parse the operator-requested `time_window`; do not silently downgrade a six-hour request to one hour.
+3. If the time window is missing and no safe default is obvious, ask the operator for the intended window.
+4. Select observed events inside the requested window.
+5. Filter to critical and error-level events before considering lower-severity context.
+6. Group events by connection, stack, container, and recurring message pattern.
+7. Identify repeated failures, newly appearing critical errors, and errors affecting ORC itself.
+8. Separate confirmed facts from hypotheses.
+9. Produce a concise review with the top issues, evidence counts, affected services, likely root cause, and countermeasure.
+10. Stop before any remediation; route mutating recommendations to Gatekeeper for human approval.
+11. Ask Sage to write a learning when the request exposes a skill gap, reusable pattern, or countermeasure worth retaining.
 
 ## Safety Rules
 
@@ -48,11 +54,14 @@ Review recent critical and error-level operational events on a recurring hourly 
 2. Do not send external notifications directly; return a recommendation for ORC's notification layer.
 3. Do not include secrets, tokens, credentials, or full sensitive log lines in the review.
 4. Link recommendations to evidence and mark uncertainty clearly.
+5. Treat remediation, redeploy, restart, credential, and configuration changes as approval-gated follow-ups.
 
 ## Audit Requirements
 
-- Record review window start and end.
+- Record autonomy level and governance color.
+- Record requested review window, start time, and end time.
 - Record event counts by severity.
 - Record grouped pattern counts and affected services.
 - Record whether operator notification was recommended and why.
+- Record Sage learning path when a learning is written.
 - Record the source agent and generated review timestamp.

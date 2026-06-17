@@ -21,6 +21,8 @@ Agent Chat is the primary operator surface. The operator should be able to talk 
 
 ORC turns those instructions into governed work:
 
+- ORC should classify the autonomy level early. For read-only observation and analysis it should say that the request is Level 0 / Green and proceed without approval.
+- ORC should check skill fit before execution. If a registered skill is too narrow for the requested inputs, ORC should solve the safe read-only portion first and ask Sage to preserve the improvement as a learning or skill proposal.
 - Green requests, such as read-only log review and memory search, can run immediately.
 - Red requests, such as redeploy, restart, destructive change, credential change, or tool promotion, create Gatekeeper approval requests first.
 - Chat messages carry runbook, evidence, and approval metadata so the conversation remains the operational record.
@@ -137,7 +139,8 @@ That final retrospective is how ORC improves over time.
 
 The current implementation exposes these surfaces:
 
-- Agent Chat can search memory, execute green runbooks, and prepare red approval-gated work from natural operator commands.
+- Agent Chat can search memory, execute green runbooks, run configurable Oracle critical/error reviews, and prepare red approval-gated work from natural operator commands.
+- ORC announces Level 0 / Green for read-only Oracle reviews, runs the requested time window, and records Sage learning when a non-default window exposes a skill-fit improvement.
 - Memory search scans Markdown memory, knowledge, runbooks, tools, and framework docs.
 - Incident creation writes episodic memory under `memory/episodic/`.
 - Green runbooks can execute immediately and write evidence under `knowledge/runbook-executions/`.

@@ -71,6 +71,7 @@ class ConnectionTestIn(BaseModel):
 
 class OracleReviewIn(BaseModel):
     friendly_names: dict[str, str] = Field(default_factory=dict)
+    window_hours: int = 1
 
 
 class LoginIn(BaseModel):
@@ -1542,7 +1543,8 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
         <h2>Chat-First Operation</h2>
         <div class="governance-grid">
           <div class="instruction-tile"><strong>Start With ORC</strong><span>Use Agent Chat as the command surface. ORC routes the request across Raven, Oracle, Sage, Gatekeeper, and Executioner.</span></div>
-          <div class="instruction-tile"><strong>Green Commands Run</strong><span>Ask for log review or memory retrieval and ORC will run the bounded workflow immediately.</span></div>
+          <div class="instruction-tile"><strong>Green Commands Run</strong><span>ORC announces Level 0 / Green for read-only observation and analysis, then proceeds without approval.</span></div>
+          <div class="instruction-tile"><strong>Skill Fit First</strong><span>ORC checks whether the registered skill matches requested inputs such as time window, then asks Sage to preserve useful improvements.</span></div>
           <div class="instruction-tile"><strong>Red Commands Wait</strong><span>Ask for redeploy, restart, or tool promotion and ORC prepares a Gatekeeper approval instead of mutating anything silently.</span></div>
           <div class="instruction-tile"><strong>Watch The Thread</strong><span>Approvals, runbook evidence, and memory results are attached to chat messages so the conversation stays the source of truth.</span></div>
         </div>
@@ -1551,8 +1553,9 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
       <section class="instruction-section">
         <h2>What Is Wired Now</h2>
         <div class="governance-grid">
-          <div class="instruction-tile"><strong>Agent Chat Autonomy</strong><span>Natural chat commands can search memory, execute green runbooks, and prepare red approval requests.</span></div>
+          <div class="instruction-tile"><strong>Agent Chat Autonomy</strong><span>Natural chat commands can search memory, execute green runbooks, run configurable Oracle reviews, and prepare red approval requests.</span></div>
           <div class="instruction-tile"><strong>Sage Retrieval</strong><span>Searches Markdown memory, knowledge, runbooks, tools, and framework docs for similar patterns.</span></div>
+          <div class="instruction-tile"><strong>Sage Adaptation</strong><span>Non-default review windows and skill gaps leave learning breadcrumbs so future requests improve.</span></div>
           <div class="instruction-tile"><strong>Incident Memory</strong><span>Creates episodic Markdown records with symptom, context, root cause, action, outcome, and confidence.</span></div>
           <div class="instruction-tile"><strong>Runbook Execution</strong><span>Green runbooks run immediately and write evidence. Red runbooks create approval-gated Executioner handoffs.</span></div>
           <div class="instruction-tile"><strong>Tool Promotion</strong><span>Builder artifacts become worker tools only after Gatekeeper plus human approval.</span></div>
@@ -2022,9 +2025,9 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
       <span class="oracle-title"><img class="oracle-mark" src="/assets/kingdoms/oracle.png" alt="">THE ORACLE</span>
       <button class="btns" id="oracle-btn" onclick="runOracle()">Activate</button>
     </div>
-    <div class="oracle-meta">Review the last hour of warnings and errors on demand, then get the top three problems worth researching and fixing first.</div>
+    <div class="oracle-meta">Review recent warnings and errors on demand, then get the top three problems worth researching and fixing first.</div>
     <div class="oracle-summary" id="oracle-summary"></div>
-    <div class="oracle-box empty" id="oracle-box">Ready to review the last hour of events.</div>
+    <div class="oracle-box empty" id="oracle-box">Ready to review recent events.</div>
   </div>
 </aside>
 </div><!-- /layout -->
@@ -2700,7 +2703,7 @@ function oracleNamesPayload(){
       if(app.name)friendly_names[app.name]=friendly;
     });
   });
-  return {friendly_names};
+  return {friendly_names,window_hours:_windowHours||1};
 }
 function oracleAnalysisHtml(text){
   const parts=esc(text||'').split('**');
@@ -2714,16 +2717,17 @@ function renderOracle(){
   btn.textContent=_oracleState.busy?'Consulting...':'Activate';
   if(_oracleState.summary){
     const s=_oracleState.summary;
+    const wh=s.window_hours||1;
     summary.innerHTML=`
       <span class="sp"><span class="se2">${s.errors||0}</span><span class="muted"> err</span></span>
       <span class="sp"><span class="sw2">${s.warnings||0}</span><span class="muted"> warn</span></span>
-      <span class="sp"><span>${s.total_events||0}</span><span class="muted"> events / 1h</span></span>`;
+      <span class="sp"><span>${s.total_events||0}</span><span class="muted"> events / ${wh}h</span></span>`;
   }else{
     summary.innerHTML='';
   }
   if(_oracleState.busy){
     box.className='oracle-box busy';
-    box.textContent='Gathering the last hour of events and asking the Oracle for a recommendation...';
+    box.textContent='Gathering recent events and asking the Oracle for a recommendation...';
     return;
   }
   if(_oracleState.error){
@@ -2737,7 +2741,7 @@ function renderOracle(){
     return;
   }
   box.className='oracle-box empty';
-  box.textContent='Ready to review the last hour of events.';
+  box.textContent='Ready to review recent events.';
 }
 async function runOracle(){
   _oracleState={busy:true,summary:_oracleState.summary,analysis:'',error:''};
@@ -5568,10 +5572,17 @@ def agent_chat(agent_id: str, body: AgentChatIn, request: Request) -> dict:
         elif agent_id == "orc-orchestrator":
             # Full multi-agent routing loop
             reply = _run_orc_loop(user_message, s, thread_id=thread_id)
-        elif agent_id == "oracle" and _is_hourly_critical_error_review_request(user_message):
+        elif agent_id == "oracle" and _is_critical_error_review_request(user_message):
             # This skill has a real backend implementation; run it instead of letting
             # the Oracle merely promise to do it.
-            reply = _run_hourly_critical_error_review(s)["message"]
+            result = _run_critical_error_review(
+                s,
+                user_message=user_message,
+                window_hours=_extract_review_window_hours(user_message, default=1),
+                thread_id=thread_id,
+            )
+            reply = result["message"]
+            reply_payload = result["payload"]
         else:
             # Direct single-agent call with agent-filtered skill context
             reply = _agent_chat_internal(agent_id, user_message, s, thread_id=thread_id)
@@ -5973,15 +5984,100 @@ def _create_policy_approval(session, *, title: str, action_type: str, target: st
     return row
 
 
+_REVIEW_NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "twelve": 12,
+    "twenty-four": 24,
+    "twenty four": 24,
+}
+
+
+def _normalize_review_window_hours(value: int | str | None, default: int = 1) -> int:
+    try:
+        hours = int(value) if value is not None else default
+    except Exception:
+        hours = default
+    return max(1, min(hours, 168))
+
+
+def _review_number(value: str) -> int:
+    raw = value.strip().lower()
+    if raw.isdigit():
+        return int(raw)
+    return _REVIEW_NUMBER_WORDS.get(raw, 1)
+
+
+def _extract_review_window_hours(text: str, default: int = 1) -> int:
+    value = (text or "").lower()
+    number = r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|twenty[- ]four)"
+    pattern = rf"\b(?:last|past|previous|prior|for|over|within)\s+{number}\s*(hour|hours|hr|hrs|day|days)\b"
+    match = re.search(pattern, value, flags=re.I)
+    if not match:
+        match = re.search(rf"\b{number}\s*(hour|hours|hr|hrs|day|days)\b", value, flags=re.I)
+    if not match:
+        if "hourly" in value or "last hour" in value:
+            return 1
+        return _normalize_review_window_hours(default, default)
+    amount = _review_number(match.group(1))
+    unit = match.group(2).lower()
+    if unit.startswith("day"):
+        amount *= 24
+    return _normalize_review_window_hours(amount, default)
+
+
+def _review_window_label(hours: int) -> str:
+    hours = _normalize_review_window_hours(hours)
+    return "last hour" if hours == 1 else f"last {hours} hours"
+
+
+def _critical_review_skill_fit(window_hours: int) -> dict:
+    try:
+        skill = _read_registry_definition("skills", "hourly-critical-error-review")
+    except Exception:
+        return {
+            "status": "missing",
+            "skill_id": "hourly-critical-error-review",
+            "message": "No registered critical error review skill was found.",
+        }
+    raw = skill.get("raw_markdown", "").lower()
+    supports_window = any(term in raw for term in ("time_window", "window_hours", "configurable time", "operator-requested time"))
+    if window_hours != 1 and not supports_window:
+        return {
+            "status": "partial_match",
+            "skill_id": skill["id"],
+            "path": skill.get("path", ""),
+            "message": (
+                f"Registered skill '{skill['name']}' is still framed around a 1-hour review; "
+                f"the operator asked for {_review_window_label(window_hours)}."
+            ),
+        }
+    return {
+        "status": "matched",
+        "skill_id": skill["id"],
+        "path": skill.get("path", ""),
+        "message": f"Registered skill '{skill['name']}' supports this read-only review window.",
+    }
+
+
 def _execute_green_runbook(runbook: dict, body: RunbookExecuteIn) -> tuple[str, str, str]:
     now = datetime.now(timezone.utc)
     if runbook["id"] == "approved-log-review":
-        summary = _oracle_summary(window_hours=1)
+        window_hours = _extract_review_window_hours(body.rationale, default=1)
+        summary = _oracle_summary(window_hours=window_hours)
         result = (
-            f"Reviewed the last hour of warnings/errors. "
+            f"Reviewed the {_review_window_label(window_hours)} of warnings/errors. "
             f"Events: {summary.get('total_events', 0)}. "
-            f"Containers: {len(summary.get('containers', []))}. "
-            f"Top issue: {(summary.get('containers') or [{'container': 'none'}])[0].get('container', 'none')}."
+            f"Containers: {summary.get('unique_containers', 0)}. "
+            f"Top issue: {(summary.get('top_containers') or [{'container': 'none'}])[0].get('container', 'none')}."
         )
         evidence = json.dumps(summary, indent=2, default=str)
     else:
@@ -6227,6 +6323,8 @@ def _chat_memory_query(message: str) -> str:
 
 
 def _chat_is_log_review_request(text: str) -> bool:
+    if _is_critical_error_review_request(text):
+        return False
     if "approved-log-review" in text:
         return True
     has_review_verb = _chat_has_any(text, ("review", "check", "analyze", "analyse", "inspect", "run"))
@@ -6299,6 +6397,23 @@ def _chat_autonomy_action(
     text = user_message.lower()
     actor = agent_id or "orc-orchestrator"
 
+    if actor in {"orc-orchestrator", "oracle"} and _is_critical_error_review_request(text):
+        window_hours = _extract_review_window_hours(user_message, default=1)
+        _record_agent_message(
+            session,
+            "orc-orchestrator",
+            "gate-keeper",
+            "policy_check",
+            (
+                "Gatekeeper classified this as Level 0 / Green: read-only observation, "
+                "analysis, and memory lookup. No approval is required unless remediation is requested."
+            ),
+            {"autonomy_level": 0, "governance": "green", "window_hours": window_hours},
+            thread_id=thread_id,
+        )
+        result = _run_critical_error_review(session, user_message=user_message, window_hours=window_hours, thread_id=thread_id)
+        return result["message"], result["payload"]
+
     if actor in {"orc-orchestrator", "sage"} and _chat_is_memory_request(text):
         query = _chat_memory_query(user_message)
         _record_agent_message(
@@ -6330,8 +6445,8 @@ def _chat_autonomy_action(
             "orc-orchestrator",
             "gate-keeper",
             "policy_check",
-            "Gatekeeper classified the requested log review as green: read-only evidence gathering.",
-            {"runbook_id": "approved-log-review", "governance": "green"},
+            "Gatekeeper classified the requested log review as Level 0 / Green: read-only evidence gathering.",
+            {"runbook_id": "approved-log-review", "autonomy_level": 0, "governance": "green"},
             thread_id=thread_id,
         )
         result = execute_runbook(
@@ -7192,10 +7307,14 @@ def _run_orc_loop(user_message: str, session, thread_id: str = "operations") -> 
     if not orc:
         return "*(ORC Orchestrator agent not found)*"
 
-    if _is_hourly_critical_error_review_request(user_message):
-        instruction = "Run the Hourly Critical Error Review and report the results back to ORC."
+    if _is_critical_error_review_request(user_message):
+        window_hours = _extract_review_window_hours(user_message, default=1)
+        instruction = (
+            f"Run the Critical Error Review for the {_review_window_label(window_hours)} "
+            "and report the results back to ORC."
+        )
         _record_agent_message(session, "orc-orchestrator", "oracle", "routing", instruction, thread_id=thread_id)
-        result = _run_hourly_critical_error_review(session)
+        result = _run_critical_error_review(session, user_message=user_message, window_hours=window_hours, thread_id=thread_id)
         _record_agent_message(
             session,
             "oracle",
@@ -7205,7 +7324,7 @@ def _run_orc_loop(user_message: str, session, thread_id: str = "operations") -> 
             result["payload"],
             thread_id=thread_id,
         )
-        return "The Oracle completed the Hourly Critical Error Review and posted the results here."
+        return "The Oracle completed the Critical Error Review and posted the results here."
 
     orc_context = _build_orc_context(session, "orc-orchestrator")
     recent = _recent_thread_context(session, thread_id)
@@ -7248,8 +7367,13 @@ def _run_orc_loop(user_message: str, session, thread_id: str = "operations") -> 
             _record_agent_message(session, "orc-orchestrator", target_id, "routing", instruction, thread_id=thread_id)
             approval_row = None
             agent_payload = None
-            if target_id == "oracle" and _is_hourly_critical_error_review_request(instruction):
-                result = _run_hourly_critical_error_review(session)
+            if target_id == "oracle" and _is_critical_error_review_request(instruction):
+                result = _run_critical_error_review(
+                    session,
+                    user_message=instruction,
+                    window_hours=_extract_review_window_hours(instruction, default=1),
+                    thread_id=thread_id,
+                )
                 agent_reply = result["message"]
                 agent_payload = result["payload"]
             else:
@@ -7298,6 +7422,7 @@ def _run_orc_loop(user_message: str, session, thread_id: str = "operations") -> 
 
 
 def _oracle_prompt(summary: dict) -> list[dict[str, str]]:
+    window_label = _review_window_label(summary.get("window_hours", 1))
     system_prompt = (
         "You are The Oracle inside ORC, an operations advisor reviewing recent "
         "container operational events collected from Portainer-managed applications. "
@@ -7307,7 +7432,7 @@ def _oracle_prompt(summary: dict) -> list[dict[str, str]]:
         "Use exactly this compact format for each issue:\n"
         "1. **<friendly_name>** (`<container>`) - **Issue:** <brief issue summary and frequency>.\n"
         "   **Possible root cause:** <most likely cause>.\n"
-        "   **What I should do:** <specific fix action>.\n"
+        "   **Countermeasure:** <specific read-only next check or approval-gated fix action>.\n"
         "Do not add sections, preambles, or extra issues. Keep each issue brief and specific."
     )
     return [
@@ -7315,7 +7440,7 @@ def _oracle_prompt(summary: dict) -> list[dict[str, str]]:
         {
             "role": "user",
             "content": (
-                "Review this one-hour event summary and recommend the best next fixes.\n\n"
+                f"Review this {window_label} event summary and recommend the best next fixes.\n\n"
                 + json.dumps(summary, indent=2)
             ),
         },
@@ -7474,13 +7599,13 @@ def _run_executioner(approval_id: int, instruction: str, rationale: str, session
 def _oracle_review(summary: dict, session) -> str:
     if not summary["total_events"]:
         return (
-            "**No issues found in the last hour.**\n\n"
-            "**What I should do:** Keep monitoring and re-run the Oracle when Raven captures fresh critical or error events."
+            f"**No issues found in the {_review_window_label(summary.get('window_hours', 1))}.**\n\n"
+            "**Countermeasure:** Keep monitoring and re-run the Oracle when Raven captures fresh critical or error events."
         )
     return _llm_call(_oracle_prompt(summary), "oracle", "oracle_review", session)
 
 
-def _is_hourly_critical_error_review_request(text: str) -> bool:
+def _is_critical_error_review_request(text: str) -> bool:
     value = (text or "").lower()
     if "why" in value and any(phrase in value for phrase in ("not post", "not posted", "didn't post", "did not post", "not respond", "didn't respond", "did not respond")):
         return False
@@ -7490,7 +7615,17 @@ def _is_hourly_critical_error_review_request(text: str) -> bool:
         or ("hourly" in value and "critical" in value and "error" in value and "review" in value)
     )
     if not mentions_review:
-        return False
+        has_review_verb = any(word in value for word in ("review", "analyze", "analyse", "summarize", "summarise", "inspect", "investigate", "check", "run"))
+        has_error_logs = (
+            "error logs" in value
+            or "critical logs" in value
+            or "critical events" in value
+            or ("error" in value and "log" in value)
+            or ("error" in value and "events" in value)
+        )
+        has_oracle_reasoning = any(word in value for word in ("oracle", "root cause", "countermeasure", "top issue", "most frequent", "frequently occurring"))
+        if not (has_review_verb and has_error_logs and has_oracle_reasoning):
+            return False
     return any(
         word in value
         for word in (
@@ -7505,25 +7640,212 @@ def _is_hourly_critical_error_review_request(text: str) -> bool:
             "post",
             "report",
             "results",
+            "summarize",
+            "summarise",
+            "root cause",
+            "countermeasure",
         )
     )
 
 
-def _format_hourly_critical_error_review(summary: dict, analysis: str) -> str:
-    return (
-        "**Hourly Critical Error Review completed.**\n\n"
-        f"Window: {summary['window_start']} to {summary['window_end']}\n"
-        f"Critical/error events: {summary['errors']}; affected containers: {summary['unique_containers']}.\n\n"
-        f"{analysis}"
+def _is_hourly_critical_error_review_request(text: str) -> bool:
+    return _is_critical_error_review_request(text)
+
+
+def _critical_review_skill_proposal_markdown() -> str:
+    return """# Skill Definition
+
+name: Critical Error Review
+id: critical-error-review
+version: 0.2.0
+category: observability
+risk_level: low
+autonomy_level: 0
+governance: green
+allowed_plane: reasoning
+approval_required: false
+agent: oracle
+replaces: hourly-critical-error-review
+
+## Purpose
+
+Review critical and error-level operational events over an operator-requested time window, identify repeated patterns, and produce an operator-ready summary with likely root cause and countermeasure.
+
+## Inputs
+
+- `time_window`: operator-requested window such as 1 hour, 6 hours, or 24 hours. If missing, ask once or default to 1 hour for routine review.
+- `severity`: defaults to critical and error.
+- Connection, stack, container, and friendly-name metadata.
+- Prior Oracle review summaries and Sage memory when available.
+
+## Outputs
+
+- Critical error review summary.
+- Top recurring error patterns with counts and affected services.
+- Evidence references to source events.
+- Likely root cause and confidence.
+- Countermeasure recommendation.
+- Follow-up learning or runbook-promotion recommendation.
+
+## Procedure
+
+1. Classify the request as Level 0 / Green when it is read-only observation and analysis.
+2. Use the provided `time_window`; if absent, ask the operator for one or default to 1 hour for routine reviews.
+3. Filter observed events to critical and error-level records inside the selected window.
+4. Group events by connection, stack, container, and recurring message pattern.
+5. Rank the most frequently occurring issues and identify the top issue.
+6. Separate facts from hypotheses before naming likely root cause.
+7. Recommend a countermeasure; stop before any mutation and request approval for remediation.
+8. Ask Sage to record a learning when the review reveals a reusable pattern or skill gap.
+
+## Safety Rules
+
+1. Do not mutate infrastructure.
+2. Do not send external notifications directly.
+3. Do not include secrets, tokens, credentials, or full sensitive log lines.
+4. Link recommendations to evidence and mark uncertainty clearly.
+
+## Audit Requirements
+
+- Record autonomy level and governance color.
+- Record review window start and end.
+- Record event counts by severity.
+- Record grouped pattern counts and affected services.
+- Record evidence path, learning path, and whether runbook promotion is recommended.
+"""
+
+
+def _write_critical_review_skill_proposal(session, window_hours: int, thread_id: str = "operations") -> str:
+    target_file = _write_markdown_under(
+        "builder",
+        "workspace",
+        "proposals",
+        "critical-error-review-skill",
+        "skills.md",
+        content=_critical_review_skill_proposal_markdown(),
     )
+    path = str(target_file.relative_to(REPO_ROOT))
+    _record_agent_message(
+        session,
+        "sage",
+        "gate-keeper",
+        "skill_proposal",
+        (
+            "Sage drafted a generalized Critical Error Review skill because the operator requested "
+            f"{_review_window_label(window_hours)} and the registered skill was too narrow."
+        ),
+        {"path": path, "requested_window_hours": window_hours, "governance": "yellow"},
+        thread_id=thread_id,
+    )
+    return path
 
 
-def _run_hourly_critical_error_review(session) -> dict:
-    summary = _oracle_summary(window_hours=1, severities=("error", "critical"))
+def _ensure_critical_review_learning(session, window_hours: int, thread_id: str = "operations") -> str:
+    title = "Critical Error Review supports configurable time windows"
+    existing = session.query(LearningEntry).filter_by(title=title).first()
+    if existing:
+        return existing.markdown_path
+    summary = (
+        "An operator asked Oracle to review a non-default error-log window. ORC should treat the analysis "
+        "as Level 0 / Green, run the requested read-only window immediately, and keep the skill parameterized "
+        "instead of hard-coding hourly behavior."
+    )
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    target_file = _write_markdown_under(
+        "knowledge",
+        "lessons",
+        f"{stamp}-critical-error-review-window-generalization.md",
+        content="\n".join(
+            [
+                "# Lesson Learned",
+                "",
+                f"title: {title}",
+                "source_agent: sage",
+                "incident_ref: critical-error-review-skill-fit",
+                "outcome: proposed",
+                f"created_at: {datetime.now(timezone.utc).isoformat()}",
+                "",
+                "## Summary",
+                "",
+                summary,
+                "",
+                "## Skill Fit",
+                "",
+                f"- Requested window: {_review_window_label(window_hours)}",
+                "- Previous assumption: critical error review meant a fixed hourly review.",
+                "- Improved behavior: parse the operator's requested window and ask only when no useful default exists.",
+                "",
+                "## Reuse Notes",
+                "",
+                "- For read-only analysis, announce Level 0 / Green and proceed.",
+                "- For future skill gaps, solve the read-only portion first, then ask Sage to propose a skill update.",
+                "- Replacing a live skill remains Yellow and should be human approved.",
+                "",
+            ]
+        ),
+    )
+    row = LearningEntry(
+        title=title,
+        source_agent="sage",
+        incident_ref="critical-error-review-skill-fit",
+        outcome="proposed",
+        summary=summary,
+        markdown_path=str(target_file.relative_to(REPO_ROOT)),
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    _record_agent_message(
+        session,
+        "sage",
+        "orc-orchestrator",
+        "lesson_learned",
+        f"Sage recorded a learning note: {title}",
+        {"path": row.markdown_path, "requested_window_hours": window_hours},
+        thread_id=thread_id,
+    )
+    return row.markdown_path
+
+
+def _format_critical_error_review(summary: dict, analysis: str, skill_fit: dict, learning_path: str = "", proposal_path: str = "") -> str:
+    window_label = _review_window_label(summary.get("window_hours", 1))
+    lines = [
+        "**Critical Error Review completed.**",
+        "",
+        "Autonomy: Level 0 / Green. This was read-only observation and analysis, so ORC completed it without approval. If remediation is needed, ORC will stop and ask first.",
+        f"Skill fit: {skill_fit.get('message', 'Critical Error Review skill matched the request')}",
+    ]
+    if proposal_path:
+        lines.append(f"Sage proposal: drafted a generalized skill update at `{proposal_path}` for approval before live replacement.")
+    if learning_path:
+        lines.append(f"Sage learning: `{learning_path}`")
+    lines.extend(
+        [
+            "",
+            f"Window: {window_label} ({summary['window_start']} to {summary['window_end']})",
+            f"Critical/error events: {summary['errors']}; affected containers: {summary['unique_containers']}.",
+            "",
+            analysis,
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _run_critical_error_review(session, user_message: str = "", window_hours: int | None = None, thread_id: str = "operations") -> dict:
+    requested_hours = _normalize_review_window_hours(window_hours or _extract_review_window_hours(user_message, default=1), 1)
+    skill_fit = _critical_review_skill_fit(requested_hours)
+    proposal_path = ""
+    if skill_fit.get("status") in {"missing", "partial_match"}:
+        proposal_path = _write_critical_review_skill_proposal(session, requested_hours, thread_id=thread_id)
+    learning_path = _ensure_critical_review_learning(session, requested_hours, thread_id=thread_id) if requested_hours != 1 or proposal_path else ""
+    summary = _oracle_summary(window_hours=requested_hours, severities=("error", "critical"))
     analysis = _oracle_review(summary, session)
-    message = _format_hourly_critical_error_review(summary, analysis)
+    message = _format_critical_error_review(summary, analysis, skill_fit, learning_path, proposal_path)
     payload = {
-        "skill_id": "hourly-critical-error-review",
+        "skill_id": skill_fit.get("skill_id") or "hourly-critical-error-review",
+        "autonomy_level": 0,
+        "governance": "green",
+        "window_hours": requested_hours,
         "window_start": summary["window_start"],
         "window_end": summary["window_end"],
         "total_events": summary["total_events"],
@@ -7531,12 +7853,19 @@ def _run_hourly_critical_error_review(session) -> dict:
         "warnings": summary["warnings"],
         "unique_containers": summary["unique_containers"],
         "top_issues": summary["top_issues"],
+        "skill_fit": skill_fit,
+        "learning_path": learning_path,
+        "proposal_path": proposal_path,
     }
     return {"message": message, "payload": payload, "summary": summary, "analysis": analysis}
 
 
+def _run_hourly_critical_error_review(session) -> dict:
+    return _run_critical_error_review(session, window_hours=1)
+
+
 def _hours_window(hours: int) -> int:
-    return hours if hours in (1, 6, 24) else 24
+    return _normalize_review_window_hours(hours, 24)
 
 
 # ---------------------------------------------------------------------------
@@ -7860,7 +8189,8 @@ def get_events(
 @app.post("/oracle/review")
 def review_with_oracle(body: OracleReviewIn | None = None) -> dict:
     friendly_names = body.friendly_names if body else {}
-    summary = _oracle_summary(window_hours=1, friendly_names=friendly_names)
+    window_hours = _normalize_review_window_hours(body.window_hours if body else 1, 1)
+    summary = _oracle_summary(window_hours=window_hours, friendly_names=friendly_names)
     with SessionLocal() as s:
         analysis = _oracle_review(summary, s)
     return {
@@ -7871,6 +8201,7 @@ def review_with_oracle(body: OracleReviewIn | None = None) -> dict:
             "unique_containers": summary["unique_containers"],
             "window_start": summary["window_start"],
             "window_end": summary["window_end"],
+            "window_hours": summary["window_hours"],
         },
         "analysis": analysis,
         "model": os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL,
