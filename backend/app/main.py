@@ -1088,6 +1088,7 @@ html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="cha
 .profile-map-canvas canvas{outline:none}
 .profile-map-canvas .vis-network{background:#0d1117}
 .vis-tooltip{position:absolute;background:#111820!important;border:1px solid #30363d!important;border-radius:7px!important;color:#e6edf3!important;font-size:12px!important;line-height:1.35!important;padding:8px 10px!important;max-width:300px!important;white-space:normal!important;box-shadow:0 16px 30px rgba(0,0,0,.35)!important}
+.vis-tooltip .profile-tooltip-body{margin-top:4px;color:#c9d5e2}
 .profile-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
 .profile-card{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;min-width:0}
 .profile-card-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;min-width:0}.profile-card-head img{width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid #30363d}
@@ -3742,9 +3743,23 @@ function profileSurfaceIdsForAgent(agent){
   if(['orc-orchestrator','sage','executioner'].includes(id))surfaceIds.push('tools');
   return [...new Set(surfaceIds)];
 }
-function profileTitleHtml(title,rows=[]){
-  const body=rows.filter(Boolean).map(row=>`<div>${esc(row)}</div>`).join('');
-  return `<div><strong>${esc(title)}</strong>${body?`<div style="margin-top:4px;color:#c9d5e2">${body}</div>`:''}</div>`;
+function profileTooltip(title,rows=[]){
+  const root=document.createElement('div');
+  const name=document.createElement('strong');
+  name.textContent=title||'Profile item';
+  root.appendChild(name);
+  const cleanRows=rows.map(row=>String(row||'').trim()).filter(Boolean);
+  if(cleanRows.length){
+    const body=document.createElement('div');
+    body.className='profile-tooltip-body';
+    cleanRows.forEach(row=>{
+      const line=document.createElement('div');
+      line.textContent=row;
+      body.appendChild(line);
+    });
+    root.appendChild(body);
+  }
+  return root;
 }
 function profileColor(kind){
   return {
@@ -3758,14 +3773,27 @@ function profileColor(kind){
     missing:{background:'#8b949e',border:'#30363d'},
   }[kind]||{background:'#8b949e',border:'#30363d'};
 }
+function profileLabelColor(kind){
+  return {
+    skills:'#07130d',
+    memory:'#06111a',
+    runbooks:'#f0f6fc',
+    tools:'#f8f2ff',
+    approvals:'#111827',
+    message:'#0f172a',
+    missing:'#f0f6fc',
+  }[kind]||'#f0f6fc';
+}
 function profileNetworkNode(id,kind,title,rows=[],extra={}){
   const color=profileColor(kind);
+  const label=extra.label||'';
   return {
     id,
-    shape:'dot',
+    shape:extra.shape||'dot',
     size:extra.size||8,
-    label:'',
-    title:profileTitleHtml(title,rows),
+    label,
+    title:profileTooltip(title,rows),
+    font:label?{size:extra.fontSize||10,color:extra.fontColor||profileLabelColor(kind),face:'Segoe UI, sans-serif',bold:{color:extra.fontColor||profileLabelColor(kind)},strokeWidth:0,multi:false}:{size:0,color:'transparent'},
     color:{background:color.background,border:color.border,highlight:{background:color.background,border:'#f0f6fc'},hover:{background:color.background,border:'#f0f6fc'}},
     borderWidth:extra.borderWidth||2,
     mass:extra.mass||1,
@@ -3785,7 +3813,8 @@ function profileAgentNetworkNode(agent,index,total){
     brokenImage:'/assets/characters/agent-scout.png',
     size:24,
     label:'',
-    title:profileTitleHtml(agent.name||agent.id,[profile.plane||agent.role||'agent',profile.purpose||'']),
+    title:profileTooltip(agent.name||agent.id,[profile.plane||agent.role||'agent',profile.purpose||'']),
+    font:{size:0,color:'transparent'},
     color:{border:'#58a6ff',background:'#142033',highlight:{border:'#f0f6fc'},hover:{border:'#f0f6fc'}},
     borderWidth:3,
     mass:3,
@@ -3894,12 +3923,12 @@ function renderInstructionProfiles(){
       canvas.innerHTML='<div class="profile-empty">Interactive map library did not load. Check network access for vis-network.</div>';
     }else{
       const categoryDefs=[
-        {id:'skills',label:'Skills',kind:'skills',surface:'skills',x:-60,y:-110},
-        {id:'memory',label:'Memory',kind:'memory',surface:'memory',x:90,y:-110},
-        {id:'runbooks',label:'Runbooks',kind:'runbooks',surface:'runbooks',x:-60,y:18},
-        {id:'tools',label:'Worker Tools',kind:'tools',surface:'tools',x:90,y:18},
-        {id:'approvals',label:'Approvals',kind:'approvals',surface:'approvals',x:-60,y:145},
-        {id:'message-bus',label:'Message Bus',kind:'message',surface:'message-bus',x:90,y:145},
+        {id:'skills',label:'Skills',nodeLabel:'Skills',kind:'skills',surface:'skills',description:'Skills this agent can use',x:-60,y:-110},
+        {id:'memory',label:'Memory',nodeLabel:'Memory',kind:'memory',surface:'memory',description:'Sage memory classes and knowledge stores',x:90,y:-110},
+        {id:'runbooks',label:'Runbooks',nodeLabel:'Runbooks',kind:'runbooks',surface:'runbooks',description:'Repeatable operating procedures',x:-60,y:18},
+        {id:'tools',label:'Worker Tools',nodeLabel:'Tools',kind:'tools',surface:'tools',description:'Disposable worker-pool tools',x:90,y:18},
+        {id:'approvals',label:'Policy and Approvals',nodeLabel:'Policy',kind:'approvals',surface:'approvals',description:'Gatekeeper policy and approval checks',x:-60,y:145},
+        {id:'message-bus',label:'Message Bus',nodeLabel:'Bus',kind:'message',surface:'message-bus',description:'Agent message routing',x:90,y:145},
       ];
       const activeCategories=categoryDefs.filter(cat=>{
         if(cat.surface==='skills')return skillNodes.length>0;
@@ -3910,12 +3939,19 @@ function renderInstructionProfiles(){
       agents.forEach((agent,index)=>{
         nodes.push(profileAgentNetworkNode(agent,index,agents.length));
       });
-      activeCategories.forEach(cat=>{
-        nodes.push(profileNetworkNode(`cat:${cat.id}`,cat.kind,cat.label,['Category hub'],{size:18,mass:2.6,x:cat.x,y:cat.y,borderWidth:3}));
-      });
       const itemBuckets={skills:skillNodes};
       activeCategories.forEach(cat=>{
         if(cat.surface!=='skills')itemBuckets[cat.id]=resources.filter(item=>item.surface===cat.surface);
+      });
+      activeCategories.forEach(cat=>{
+        const itemCount=(itemBuckets[cat.id]||[]).length;
+        nodes.push(profileNetworkNode(
+          `cat:${cat.id}`,
+          cat.kind,
+          cat.label,
+          [cat.description, `${itemCount} ${itemCount===1?'item':'items'}`],
+          {shape:'circle',label:cat.nodeLabel,size:22,mass:2.6,x:cat.x,y:cat.y,borderWidth:3,fontSize:10}
+        ));
       });
       activeCategories.forEach(cat=>{
         const items=itemBuckets[cat.id]||[];
