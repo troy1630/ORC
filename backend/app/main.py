@@ -1649,6 +1649,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
                 <span>Agent</span>
                 <span>Skill</span>
                 <span>Memory</span>
+                <span>Learning</span>
                 <span>Runbook</span>
                 <span>Worker Tool</span>
                 <span>Policy/Bus</span>
@@ -3742,6 +3743,7 @@ function profileSurfaceIdsForAgent(agent){
   const surfaceIds=[];
   if(id==='raven'||id==='orc-orchestrator')surfaceIds.push('message-bus');
   if(id==='sage'||id==='oracle'||id==='orc-orchestrator'||plane.includes('memory'))surfaceIds.push('memory');
+  if(id==='sage'||id==='oracle'||id==='orc-orchestrator'||plane.includes('memory'))surfaceIds.push('learnings');
   if(['orc-orchestrator','oracle','raven','gate-keeper','executioner'].includes(id))surfaceIds.push('runbooks');
   if(['orc-orchestrator','oracle','gate-keeper','executioner'].includes(id))surfaceIds.push('approvals');
   if(['orc-orchestrator','sage','executioner'].includes(id))surfaceIds.push('tools');
@@ -3770,6 +3772,7 @@ function profileColor(kind){
     agent:{background:'#142033',border:'#58a6ff'},
     skills:{background:'#56d364',border:'#173b25'},
     memory:{background:'#38bdf8',border:'#164e63'},
+    learnings:{background:'#f472b6',border:'#9d174d'},
     runbooks:{background:'#3b82f6',border:'#1d4ed8'},
     tools:{background:'#a371f7',border:'#5b21b6'},
     approvals:{background:'#f59e0b',border:'#92400e'},
@@ -3781,6 +3784,7 @@ function profileLabelColor(kind){
   return {
     skills:'#07130d',
     memory:'#06111a',
+    learnings:'#190713',
     runbooks:'#f0f6fc',
     tools:'#f8f2ff',
     approvals:'#111827',
@@ -3895,6 +3899,15 @@ function renderInstructionProfiles(){
     {id:'memory-procedural',label:'Procedural',sub:'runbooks, escalation, rollback',path:'memory/procedural/',surface:'memory',type:'memory'},
     {id:'memory-evaluative',label:'Evaluative',sub:'success rates and improvements',path:'memory/evaluative/',surface:'memory',type:'memory'},
   ];
+  const learningItems=(_orch.learnings||[]).map(item=>({
+    id:`learning-${profileNorm(item.id||item.title||item.markdown_path)}`,
+    label:item.title||item.markdown_path||'Learning entry',
+    sub:`${item.outcome||'proposed'} learning from ${item.source_agent||'sage'}`,
+    path:item.markdown_path||'knowledge/lessons/',
+    detail:item.summary||item.incident_ref||'Sage learning breadcrumb',
+    surface:'learnings',
+    type:'learning',
+  }));
   const runbookItems=(_orch.runbooks||[]).map(item=>({
     id:`runbook-${profileNorm(item.item_id)}`,
     label:item.name||item.item_id,
@@ -3917,7 +3930,7 @@ function renderInstructionProfiles(){
     {id:'message-bus',label:'Message Bus',sub:'agent messages and routing',path:'agent_messages',surface:'message-bus',type:'message'},
     {id:'approval-matrix',label:'Approval Matrix',sub:'Gatekeeper policy checks',path:'docs/approval-matrix.md',surface:'approvals',type:'approval'},
   ];
-  const allResources=[...memoryItems,...runbookItems,...toolItems,...policyItems];
+  const allResources=[...memoryItems,...learningItems,...runbookItems,...toolItems,...policyItems];
   const resources=selectedAgent==='all'
     ? allResources
     : allResources.filter(item=>visibleSurfaceIds.has(item.surface));
@@ -3929,10 +3942,11 @@ function renderInstructionProfiles(){
       const categoryDefs=[
         {id:'skills',label:'Skills',nodeLabel:'Skills',kind:'skills',surface:'skills',description:'Skills this agent can use',x:-60,y:-110},
         {id:'memory',label:'Memory',nodeLabel:'Memory',kind:'memory',surface:'memory',description:'Sage memory classes and knowledge stores',x:90,y:-110},
-        {id:'runbooks',label:'Runbooks',nodeLabel:'Runbooks',kind:'runbooks',surface:'runbooks',description:'Repeatable operating procedures',x:-60,y:18},
-        {id:'tools',label:'Worker Tools',nodeLabel:'Tools',kind:'tools',surface:'tools',description:'Disposable worker-pool tools',x:90,y:18},
-        {id:'approvals',label:'Policy and Approvals',nodeLabel:'Policy',kind:'approvals',surface:'approvals',description:'Gatekeeper policy and approval checks',x:-60,y:145},
-        {id:'message-bus',label:'Message Bus',nodeLabel:'Bus',kind:'message',surface:'message-bus',description:'Agent message routing',x:90,y:145},
+        {id:'learnings',label:'Learnings',nodeLabel:'Learnings',kind:'learnings',surface:'learnings',description:'Sage lessons and reusable breadcrumbs',x:-60,y:18},
+        {id:'runbooks',label:'Runbooks',nodeLabel:'Runbooks',kind:'runbooks',surface:'runbooks',description:'Repeatable operating procedures',x:90,y:18},
+        {id:'tools',label:'Worker Tools',nodeLabel:'Tools',kind:'tools',surface:'tools',description:'Disposable worker-pool tools',x:-60,y:145},
+        {id:'approvals',label:'Policy and Approvals',nodeLabel:'Policy',kind:'approvals',surface:'approvals',description:'Gatekeeper policy and approval checks',x:90,y:145},
+        {id:'message-bus',label:'Message Bus',nodeLabel:'Bus',kind:'message',surface:'message-bus',description:'Agent message routing',x:15,y:255},
       ];
       const activeCategories=categoryDefs.filter(cat=>{
         if(cat.surface==='skills')return skillNodes.length>0;
