@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from sqlalchemy import func, text as _sa_text
+from sqlalchemy import func, or_, text as _sa_text
 
 from .config import REDIS_URL, REPO_ROOT
 from .db import (
@@ -6794,20 +6794,29 @@ def _oracle_summary(
     window_hours: int = 1,
     friendly_names: dict[str, str] | None = None,
     severities: tuple[str, ...] = ("warning", "error", "critical"),
+    container_filter: str = "",
 ) -> dict:
     friendly_names = friendly_names or {}
+    container_filter = (container_filter or "").strip()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
     with SessionLocal() as s:
-        rows = (
+        query = (
             s.query(ObservedEvent, Connection)
             .outerjoin(Connection, ObservedEvent.connection_id == Connection.id)
             .filter(
                 ObservedEvent.occurred_at >= cutoff,
                 ObservedEvent.severity.in_(list(severities)),
             )
-            .order_by(ObservedEvent.occurred_at.desc())
-            .all()
         )
+        if container_filter:
+            like = f"%{container_filter}%"
+            query = query.filter(
+                or_(
+                    ObservedEvent.container_name.ilike(like),
+                    ObservedEvent.stack_name.ilike(like),
+                )
+            )
+        rows = query.order_by(ObservedEvent.occurred_at.desc()).all()
 
     container_rollup: dict[tuple[str, str, str], dict] = {}
     stack_rollup: dict[tuple[str, str], dict] = {}
@@ -6816,7 +6825,7 @@ def _oracle_summary(
 
     for event, conn in rows:
         server = conn.name if conn else "Unknown server"
-        server_name = conn.server_name or conn.name if conn else "Unknown server"
+        server_name = (conn.server_name or conn.name) if conn else "Unknown server"
         stack = event.stack_name or _infer_stack(event.container_name)
         friendly_name = friendly_names.get(event.container_name) or event.container_name
         stack_key = (server, stack)
@@ -6961,6 +6970,7 @@ def _oracle_summary(
         "window_hours": window_hours,
         "window_start": cutoff.isoformat(),
         "window_end": datetime.now(timezone.utc).isoformat(),
+        "container_filter": container_filter,
         "total_events": totals["total_events"],
         "errors": totals["errors"],
         "warnings": totals["warnings"],
@@ -7316,6 +7326,21 @@ def _extract_container_target_phrase(user_message: str) -> str:
         if m:
             candidate = m.group(1).strip(" \"'`.,;:()[]{}")
             if candidate:
+                return candidate
+    return ""
+
+
+def _extract_review_container_filter(user_message: str) -> str:
+    text = (user_message or "").strip()
+    patterns = [
+        r"\b(?:server\s+logs|container\s+logs|logs|errors|error\s+logs|critical\s+errors?)\s+(?:for|from|in|on)\s+(.+?)(?:\s+(?:and|to|so|because|with|using|during|over|for)\b|[?.!,]|$)",
+        r"\b(?:container|service|app|workload)\s+(?:named|called)?\s+([a-zA-Z0-9][a-zA-Z0-9_.-]*)(?:\s|[?.!,]|$)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.I)
+        if match:
+            candidate = match.group(1).strip(" \"'`.,;:()[]{}")
+            if candidate and candidate.lower() not in {"logs", "server logs", "container logs", "errors", "error logs"}:
                 return candidate
     return ""
 
@@ -8112,6 +8137,7 @@ def _ensure_critical_review_learning(session, window_hours: int, thread_id: str 
 
 def _format_critical_error_review(summary: dict, analysis: str, skill_fit: dict, learning_path: str = "", proposal_path: str = "") -> str:
     window_label = _review_window_label(summary.get("window_hours", 1))
+    target = summary.get("container_filter") or "all containers"
     lines = [
         "**Critical Error Review completed.**",
         "",
@@ -8126,6 +8152,7 @@ def _format_critical_error_review(summary: dict, analysis: str, skill_fit: dict,
         [
             "",
             f"Window: {window_label} ({summary['window_start']} to {summary['window_end']})",
+            f"Target: {target}",
             f"Critical/error events: {summary['errors']}; affected containers: {summary['unique_containers']}.",
             "",
             analysis,
@@ -8136,12 +8163,17 @@ def _format_critical_error_review(summary: dict, analysis: str, skill_fit: dict,
 
 def _run_critical_error_review(session, user_message: str = "", window_hours: int | None = None, thread_id: str = "operations") -> dict:
     requested_hours = _normalize_review_window_hours(window_hours or _extract_review_window_hours(user_message, default=1), 1)
+    container_filter = _extract_review_container_filter(user_message)
     skill_fit = _critical_review_skill_fit(requested_hours)
     proposal_path = ""
     if skill_fit.get("status") in {"missing", "partial_match"}:
         proposal_path = _write_critical_review_skill_proposal(session, requested_hours, thread_id=thread_id)
     learning_path = _ensure_critical_review_learning(session, requested_hours, thread_id=thread_id) if requested_hours != 1 or proposal_path else ""
-    summary = _oracle_summary(window_hours=requested_hours, severities=("error", "critical"))
+    summary = _oracle_summary(
+        window_hours=requested_hours,
+        severities=("error", "critical"),
+        container_filter=container_filter,
+    )
     analysis = _oracle_review(summary, session)
     message = _format_critical_error_review(summary, analysis, skill_fit, learning_path, proposal_path)
     payload = {
@@ -8149,6 +8181,7 @@ def _run_critical_error_review(session, user_message: str = "", window_hours: in
         "autonomy_level": 0,
         "governance": "green",
         "window_hours": requested_hours,
+        "container_filter": container_filter,
         "window_start": summary["window_start"],
         "window_end": summary["window_end"],
         "total_events": summary["total_events"],
