@@ -1361,6 +1361,15 @@ canvas{display:block;width:100%;height:58px}
 .oracle-box.busy{color:var(--mut)}
 .oracle-box.error{border-color:rgba(248,81,73,.4);color:var(--red)}
 .oracle-box.empty{color:var(--mut)}
+.oracle-box.structured{display:flex;flex-direction:column;gap:8px;white-space:normal}
+.oracle-issue{border:1px solid #263241;border-radius:8px;background:#101720;padding:9px;display:flex;flex-direction:column;gap:7px}
+.oracle-target-pill{display:flex;align-items:center;gap:5px;align-self:flex-start;max-width:100%;border:1px solid rgba(163,113,247,.36);border-radius:999px;background:rgba(163,113,247,.1);color:#d9c7ff;font-size:.64rem;font-weight:800;padding:3px 8px}
+.oracle-target-pill span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.oracle-target-pill .oracle-container{font-family:monospace;color:#9ecbff}
+.oracle-field{display:grid;grid-template-columns:82px minmax(0,1fr);gap:7px;align-items:start}
+.oracle-field-label{color:var(--mut);font-size:.62rem;font-weight:850;text-transform:uppercase;letter-spacing:.04em;padding-top:1px}
+.oracle-field-value{color:#d8e1ec;min-width:0}
+.oracle-field-value strong{color:var(--txt)}
 .oracle-summary{display:flex;gap:6px;flex-wrap:wrap}
 .oracle-summary .sp{font-size:.7rem}
 /* ORCHESTRATION */
@@ -2766,6 +2775,43 @@ function oracleAnalysisHtml(text){
   const parts=esc(text||'').split('**');
   return parts.map((part,i)=>i%2&&i<parts.length-1?`<strong>${part}</strong>`:part).join('');
 }
+function oracleAnalysisItems(text){
+  const raw=(text||'').trim();
+  if(!raw)return [];
+  const blocks=raw.split(/\\n(?=\\s*\\d+\\.\\s+\\*\\*)/).map(x=>x.trim()).filter(Boolean);
+  return blocks.map(block=>{
+    const titleMatch=block.match(/^\\s*\\d+\\.\\s+\\*\\*(.*?)\\*\\*\\s*(?:\\(`([^`]+)`\\))?\\s*-\\s*/s);
+    const issueMatch=block.match(/\\*\\*Issue:\\*\\*\\s*([\\s\\S]*?)(?=\\n\\s*\\*\\*Possible root cause:\\*\\*|\\n\\s*\\*\\*Countermeasure:\\*\\*|$)/i);
+    const rootMatch=block.match(/\\*\\*Possible root cause:\\*\\*\\s*([\\s\\S]*?)(?=\\n\\s*\\*\\*Countermeasure:\\*\\*|$)/i);
+    const counterMatch=block.match(/\\*\\*Countermeasure:\\*\\*\\s*([\\s\\S]*)$/i);
+    if(!titleMatch||!issueMatch||!rootMatch||!counterMatch)return null;
+    return {
+      title:(titleMatch[1]||'').trim(),
+      container:(titleMatch[2]||'').trim(),
+      issue:issueMatch[1].trim(),
+      rootCause:rootMatch[1].trim(),
+      countermeasure:counterMatch[1].trim()
+    };
+  }).filter(Boolean);
+}
+function oracleStructuredHtml(analysis,summary){
+  const items=oracleAnalysisItems(analysis);
+  const issueMeta=summary?.top_issues||[];
+  if(!items.length||!issueMeta.length)return '';
+  return items.map((item,i)=>{
+    const meta=issueMeta[i]||{};
+    const server=meta.server_name||evServerDisplay(meta.server)||meta.server||'Unknown server';
+    const container=meta.container||item.container||'unknown container';
+    return `<div class="oracle-issue">
+      <div class="oracle-target-pill" title="${esc(server)} / ${esc(container)}">
+        <span>${esc(server)}</span><span class="muted">/</span><span class="oracle-container">${esc(containerDisplayName(container))}</span>
+      </div>
+      <div class="oracle-field"><div class="oracle-field-label">Issue</div><div class="oracle-field-value">${oracleAnalysisHtml(item.issue)}</div></div>
+      <div class="oracle-field"><div class="oracle-field-label">Root Cause</div><div class="oracle-field-value">${oracleAnalysisHtml(item.rootCause)}</div></div>
+      <div class="oracle-field"><div class="oracle-field-label">Countermeasure</div><div class="oracle-field-value">${oracleAnalysisHtml(item.countermeasure)}</div></div>
+    </div>`;
+  }).join('');
+}
 function renderOracle(){
   const box=document.getElementById('oracle-box');
   const summary=document.getElementById('oracle-summary');
@@ -2793,8 +2839,9 @@ function renderOracle(){
     return;
   }
   if(_oracleState.analysis){
-    box.className='oracle-box';
-    box.innerHTML=oracleAnalysisHtml(_oracleState.analysis);
+    const structured=oracleStructuredHtml(_oracleState.analysis,_oracleState.summary);
+    box.className=structured?'oracle-box structured':'oracle-box';
+    box.innerHTML=structured||oracleAnalysisHtml(_oracleState.analysis);
     return;
   }
   box.className='oracle-box empty';
@@ -6769,6 +6816,7 @@ def _oracle_summary(
 
     for event, conn in rows:
         server = conn.name if conn else "Unknown server"
+        server_name = conn.server_name or conn.name if conn else "Unknown server"
         stack = event.stack_name or _infer_stack(event.container_name)
         friendly_name = friendly_names.get(event.container_name) or event.container_name
         stack_key = (server, stack)
@@ -6777,6 +6825,7 @@ def _oracle_summary(
             key,
             {
                 "server": server,
+                "server_name": server_name,
                 "stack": stack,
                 "container": event.container_name,
                 "friendly_name": friendly_name,
@@ -6790,6 +6839,7 @@ def _oracle_summary(
             stack_key,
             {
                 "server": server,
+                "server_name": server_name,
                 "stack": stack,
                 "errors": 0,
                 "warnings": 0,
@@ -6814,6 +6864,7 @@ def _oracle_summary(
             pattern_key,
             {
                 "server": server,
+                "server_name": server_name,
                 "stack": stack,
                 "container": event.container_name,
                 "friendly_name": friendly_name,
@@ -6839,6 +6890,7 @@ def _oracle_summary(
         top_containers.append(
             {
                 "server": item["server"],
+                "server_name": item["server_name"],
                 "stack": item["stack"],
                 "container": item["container"],
                 "friendly_name": item["friendly_name"],
@@ -6855,6 +6907,7 @@ def _oracle_summary(
     stacks = [
         {
             "server": item["server"],
+            "server_name": item["server_name"],
             "stack": item["stack"],
             "errors": item["errors"],
             "warnings": item["warnings"],
@@ -6874,6 +6927,7 @@ def _oracle_summary(
     top_patterns = [
         {
             "server": item["server"],
+            "server_name": item["server_name"],
             "stack": item["stack"],
             "container": item["container"],
             "friendly_name": item["friendly_name"],
@@ -6890,6 +6944,7 @@ def _oracle_summary(
         {
             "rank": idx,
             "server": item["server"],
+            "server_name": item["server_name"],
             "stack": item["stack"],
             "container": item["container"],
             "friendly_name": item["friendly_name"],
@@ -8450,6 +8505,7 @@ def review_with_oracle(body: OracleReviewIn | None = None) -> dict:
             "window_start": summary["window_start"],
             "window_end": summary["window_end"],
             "window_hours": summary["window_hours"],
+            "top_issues": summary["top_issues"],
         },
         "analysis": analysis,
         "model": os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL,

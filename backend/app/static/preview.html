@@ -176,9 +176,19 @@ canvas{display:block;width:100%;height:58px}
 .oracle-mark{width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid rgba(163,113,247,.35);box-shadow:0 4px 10px rgba(0,0,0,.28);flex-shrink:0}
 .oracle-meta{font-size:.72rem;color:var(--mut);line-height:1.45}
 .oracle-box{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;min-height:108px;flex:1;overflow:auto;font-size:.77rem;line-height:1.45;white-space:pre-wrap}
+.oracle-box strong{color:var(--txt);font-weight:850}
 .oracle-box.busy{color:var(--mut)}
 .oracle-box.error{border-color:rgba(248,81,73,.4);color:var(--red)}
 .oracle-box.empty{color:var(--mut)}
+.oracle-box.structured{display:flex;flex-direction:column;gap:8px;white-space:normal}
+.oracle-issue{border:1px solid #263241;border-radius:8px;background:#101720;padding:9px;display:flex;flex-direction:column;gap:7px}
+.oracle-target-pill{display:flex;align-items:center;gap:5px;align-self:flex-start;max-width:100%;border:1px solid rgba(163,113,247,.36);border-radius:999px;background:rgba(163,113,247,.1);color:#d9c7ff;font-size:.64rem;font-weight:800;padding:3px 8px}
+.oracle-target-pill span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.oracle-target-pill .oracle-container{font-family:monospace;color:#9ecbff}
+.oracle-field{display:grid;grid-template-columns:82px minmax(0,1fr);gap:7px;align-items:start}
+.oracle-field-label{color:var(--mut);font-size:.62rem;font-weight:850;text-transform:uppercase;letter-spacing:.04em;padding-top:1px}
+.oracle-field-value{color:#d8e1ec;min-width:0}
+.oracle-field-value strong{color:var(--txt)}
 .oracle-summary{display:flex;gap:6px;flex-wrap:wrap}
 .oracle-summary .sp{font-size:.7rem}
 /* CONNECTIONS */
@@ -421,7 +431,10 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     if(url.includes('/events'))return json({err_count:33,warn_count:11,items:[]});
     if(url.includes('/connections'))return json(servers.map(([name,server_name],id)=>({id,name,server_name,logo_data:'',last_status:'ok'})));
     if(url.includes('/raven/backlog'))return json([]);
-    if(url.includes('/oracle'))return json({summary:null,analysis:'Preview only'});
+    if(url.includes('/oracle'))return json({
+      summary:{errors:3,warnings:1,total_events:4,top_issues:[{server:'dev',server_name:'Kingdom of Dev',container:'dev_api_web_0'}]},
+      analysis:'1. **API Web** (`dev_api_web_0`) - **Issue:** timeout exceeded observed **3 times**.\n   **Possible root cause:** The service is waiting too long for a dependency to respond.\n   **Countermeasure:** Check dependency health and recent deploys; request approval before restart or redeploy.'
+    });
     return json({});
   };
   window.EventSource=class{constructor(){setTimeout(()=>this.onopen&&this.onopen({}),10)}close(){}};
@@ -629,6 +642,46 @@ function renderVisualViews(){
 function jumpToEventsFromEl(el){
   jumpToEvents(el.dataset.server||'',el.dataset.container||'',el.dataset.severity||'');
 }
+function oracleAnalysisHtml(text){
+  const parts=esc(text||'').split('**');
+  return parts.map((part,i)=>i%2&&i<parts.length-1?`<strong>${part}</strong>`:part).join('');
+}
+function oracleAnalysisItems(text){
+  const raw=(text||'').trim();
+  if(!raw)return [];
+  const blocks=raw.split(/\n(?=\s*\d+\.\s+\*\*)/).map(x=>x.trim()).filter(Boolean);
+  return blocks.map(block=>{
+    const titleMatch=block.match(/^\s*\d+\.\s+\*\*(.*?)\*\*\s*(?:\(`([^`]+)`\))?\s*-\s*/s);
+    const issueMatch=block.match(/\*\*Issue:\*\*\s*([\s\S]*?)(?=\n\s*\*\*Possible root cause:\*\*|\n\s*\*\*Countermeasure:\*\*|$)/i);
+    const rootMatch=block.match(/\*\*Possible root cause:\*\*\s*([\s\S]*?)(?=\n\s*\*\*Countermeasure:\*\*|$)/i);
+    const counterMatch=block.match(/\*\*Countermeasure:\*\*\s*([\s\S]*)$/i);
+    if(!titleMatch||!issueMatch||!rootMatch||!counterMatch)return null;
+    return {
+      container:(titleMatch[2]||'').trim(),
+      issue:issueMatch[1].trim(),
+      rootCause:rootMatch[1].trim(),
+      countermeasure:counterMatch[1].trim()
+    };
+  }).filter(Boolean);
+}
+function oracleStructuredHtml(analysis,summary){
+  const items=oracleAnalysisItems(analysis);
+  const issueMeta=summary?.top_issues||[];
+  if(!items.length||!issueMeta.length)return '';
+  return items.map((item,i)=>{
+    const meta=issueMeta[i]||{};
+    const server=meta.server_name||meta.server||'Unknown server';
+    const container=meta.container||item.container||'unknown container';
+    return `<div class="oracle-issue">
+      <div class="oracle-target-pill" title="${esc(server)} / ${esc(container)}">
+        <span>${esc(server)}</span><span class="muted">/</span><span class="oracle-container">${esc(container)}</span>
+      </div>
+      <div class="oracle-field"><div class="oracle-field-label">Issue</div><div class="oracle-field-value">${oracleAnalysisHtml(item.issue)}</div></div>
+      <div class="oracle-field"><div class="oracle-field-label">Root Cause</div><div class="oracle-field-value">${oracleAnalysisHtml(item.rootCause)}</div></div>
+      <div class="oracle-field"><div class="oracle-field-label">Countermeasure</div><div class="oracle-field-value">${oracleAnalysisHtml(item.countermeasure)}</div></div>
+    </div>`;
+  }).join('');
+}
 function renderOracle(){
   const box=document.getElementById('oracle-box');
   const summary=document.getElementById('oracle-summary');
@@ -655,8 +708,9 @@ function renderOracle(){
     return;
   }
   if(_oracleState.analysis){
-    box.className='oracle-box';
-    box.textContent=_oracleState.analysis;
+    const structured=oracleStructuredHtml(_oracleState.analysis,_oracleState.summary);
+    box.className=structured?'oracle-box structured':'oracle-box';
+    box.innerHTML=structured||oracleAnalysisHtml(_oracleState.analysis);
     return;
   }
   box.className='oracle-box empty';
