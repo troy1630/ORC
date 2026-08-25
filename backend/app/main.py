@@ -1427,6 +1427,20 @@ canvas{display:block;width:100%;height:58px}
 .chat-channel{color:#f2f7ff;font-weight:850}
 .chat-arrow{color:#9fb3c8;font-weight:850}
 .chat-text{font-size:.85rem;line-height:1.4;overflow-wrap:anywhere;white-space:pre-wrap}
+.chat-diagnostic{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.diag-target{display:flex;align-items:center;gap:5px;align-self:flex-start;max-width:100%;border:1px solid rgba(88,166,255,.42);border-radius:999px;background:rgba(88,166,255,.12);color:#c9e2ff;font-size:.68rem;font-weight:850;padding:4px 9px}
+.diag-target span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.diag-target .mono{color:#9ecbff}
+.diag-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.diag-stat{border:1px solid rgba(230,237,243,.12);border-radius:7px;background:rgba(13,17,23,.42);padding:6px 7px;min-width:0}
+.diag-stat strong{display:block;font-size:.86rem}.diag-stat span{display:block;color:var(--mut);font-size:.62rem;text-transform:uppercase;font-weight:800}
+.diag-card{border:1px solid rgba(230,237,243,.14);border-radius:8px;background:rgba(13,17,23,.36);padding:8px;display:flex;flex-direction:column;gap:6px}
+.diag-field{display:grid;grid-template-columns:92px minmax(0,1fr);gap:7px;align-items:start}
+.diag-label{font-size:.62rem;text-transform:uppercase;font-weight:850;color:var(--mut);letter-spacing:.04em}
+.diag-value{font-size:.78rem;line-height:1.36;color:#e1e9f2;min-width:0;overflow-wrap:anywhere}
+.diag-patterns{display:flex;flex-direction:column;gap:4px}
+.diag-pattern{font-size:.7rem;color:#d8e1ec;border-top:1px solid rgba(230,237,243,.09);padding-top:4px}
+.diag-related{font-size:.68rem;color:var(--mut);display:flex;gap:5px;flex-wrap:wrap}
 .chat-approval-pill{display:inline-flex;align-items:center;gap:8px;margin:0 0 7px;padding:7px 10px;border-radius:999px;border:1px solid rgba(245,194,66,.58);background:rgba(245,194,66,.24);color:#fff1b3;font-size:.79rem;font-weight:800}
 .chat-approval-pill a,.chat-approval-pill button{font-size:.76rem}
 .chat-approval-actions{display:inline-flex;gap:6px;align-items:center}
@@ -4334,6 +4348,47 @@ function chatBubbleSummaryDetail(id,short,detail){
   if(!safeDetail||safeDetail===safeShort)return `<div class="chat-text">${esc(safeShort)}</div>`;
   return `<div class="chat-text" id="ct-${id}"><span class="chat-short">${esc(safeShort)}<span class="muted">…</span></span><span class="chat-full" style="display:none">${esc(safeDetail)}</span><br><button class="chat-expand-btn btns" style="margin-top:4px;font-size:0.75rem" onclick="toggleChatExpand(${id})">▸ Show more</button></div>`;
 }
+function diagnosticField(text,label){
+  const match=String(text||'').match(new RegExp(`\\\\*\\\\*${label}:\\\\*\\\\*\\\\s*([\\\\s\\\\S]*?)(?=\\\\n\\\\*\\\\*|$)`,'i'));
+  return match?match[1].trim():'';
+}
+function diagnosticChatHtml(m){
+  const payload=m?.payload||{};
+  if(payload.autonomy_action!=='container_diagnostic_review')return '';
+  const diag=payload.diagnostic||{};
+  const meta=diag.metadata||{};
+  const sum=diag.summary||{};
+  const related=diag.related_containers||[];
+  const text=String(payload.detail||m.summary||'');
+  const issue=diagnosticField(text,'Issue');
+  const evidence=diagnosticField(text,'Evidence');
+  const root=diagnosticField(text,'Possible root cause');
+  const counter=diagnosticField(text,'Countermeasure');
+  const next=diagnosticField(text,'Next read-only check');
+  const patterns=(sum.top_patterns||[]).slice(0,3).map(p=>
+    `<div class="diag-pattern"><strong>${Number(p.count||0)}</strong> ${esc(p.pattern||'')}</div>`
+  ).join('');
+  const relatedHtml=related.length?`<div class="diag-related">Related checked: ${related.map(r=>esc(r.metadata?.container_name||'unknown')).join(', ')}</div>`:'';
+  const target=[meta.server_name,meta.stack_name,meta.container_name||payload.container_filter].filter(Boolean).join(' / ')||payload.container_filter||'No target';
+  return `<div class="chat-diagnostic">
+    <div class="diag-target" title="${esc(target)}"><span>${esc(meta.server_name||'Unknown server')}</span><span>/</span><span>${esc(meta.stack_name||'unknown stack')}</span><span>/</span><span class="mono">${esc(meta.container_name||payload.container_filter||'unknown')}</span></div>
+    <div class="diag-stats">
+      <div class="diag-stat"><strong>${Number(sum.total_lines||payload.total_events||0).toLocaleString()}</strong><span>lines</span></div>
+      <div class="diag-stat"><strong>${Number(sum.issue_lines||0).toLocaleString()}</strong><span>issues</span></div>
+      <div class="diag-stat"><strong>${Number(sum.error_lines||payload.errors||0).toLocaleString()}</strong><span>errors</span></div>
+      <div class="diag-stat"><strong>${Number(sum.success_lines||0).toLocaleString()}</strong><span>success</span></div>
+    </div>
+    <div class="diag-card">
+      ${issue?`<div class="diag-field"><div class="diag-label">Issue</div><div class="diag-value">${esc(issue)}</div></div>`:''}
+      ${evidence?`<div class="diag-field"><div class="diag-label">Evidence</div><div class="diag-value">${esc(evidence)}</div></div>`:''}
+      ${root?`<div class="diag-field"><div class="diag-label">Root Cause</div><div class="diag-value">${esc(root)}</div></div>`:''}
+      ${counter?`<div class="diag-field"><div class="diag-label">Countermeasure</div><div class="diag-value">${esc(counter)}</div></div>`:''}
+      ${next?`<div class="diag-field"><div class="diag-label">Next Check</div><div class="diag-value">${esc(next)}</div></div>`:''}
+      ${patterns?`<div class="diag-patterns">${patterns}</div>`:''}
+      ${relatedHtml}
+    </div>
+  </div>`;
+}
 function pendingApprovalForMessage(m){
   const approvalId=Number(m?.payload?.approval_id||0);
   if(!approvalId)return null;
@@ -4409,7 +4464,8 @@ function renderChat(){
     const avatarSrc=isOperator?'/assets/characters/orc.png':agentArt(src);
     const chat=splitAgentChatText(m);
     const approvalRow=pendingApprovalForMessage(m);
-    const bodyHtml=chatBubbleSummaryDetail(m.id,chat.short,chat.detail);
+    const diagnosticHtml=diagnosticChatHtml(m);
+    const bodyHtml=diagnosticHtml||chatBubbleSummaryDetail(m.id,chat.short,chat.detail);
     const approvalHtml=approvalBubbleHtml(m);
     return `<div class="chat-row ${cls}">
       <img class="chat-avatar ${_viewMode==='corporate'&&!isOperator?'corp':''}" src="${esc(avatarSrc)}" alt="">
@@ -6536,6 +6592,36 @@ def _chat_is_log_review_request(text: str) -> bool:
     return has_review_verb and has_log_subject and not _chat_is_red_action_request(text)
 
 
+def _chat_is_container_diagnostic_request(text: str) -> bool:
+    if _chat_is_red_action_request(text):
+        return False
+    has_named_log_review = (
+        _chat_has_any(text, ("review", "check", "analyze", "analyse", "inspect"))
+        and _chat_has_any(text, ("logs", "errors", "warnings", "critical"))
+        and bool(_extract_review_container_filter(text))
+    )
+    has_diagnostic_intent = _chat_has_any(
+        text,
+        (
+            "root cause",
+            "countermeasure",
+            "reduce errors",
+            "reducing errors",
+            "why is",
+            "why are",
+            "why does",
+            "why did",
+            "diagnose",
+            "investigate",
+            "help me understand",
+            "what is causing",
+            "what caused",
+        ),
+    )
+    has_error_context = _chat_has_any(text, ("error", "errors", "failing", "failure", "failed", "logs", "warnings", "critical"))
+    return has_named_log_review or (has_diagnostic_intent and has_error_context)
+
+
 def _chat_is_red_action_request(text: str) -> bool:
     return _chat_has_any(
         text,
@@ -6600,6 +6686,29 @@ def _chat_autonomy_action(
 ) -> tuple[str, dict] | None:
     text = user_message.lower()
     actor = agent_id or "orc-orchestrator"
+
+    if actor in {"orc-orchestrator", "oracle"} and _chat_is_container_diagnostic_request(text):
+        window_hours = _extract_review_window_hours(user_message, default=24)
+        _record_agent_message(
+            session,
+            "orc-orchestrator",
+            "oracle",
+            "routing",
+            (
+                f"Oracle, diagnose container log errors for the {_review_window_label(window_hours)}. "
+                "Develop likely root cause and countermeasure from Portainer logs and observed events. "
+                "Keep remediation approval-gated."
+            ),
+            {
+                "autonomy_level": 0,
+                "governance": "green",
+                "window_hours": window_hours,
+                "container_filter": _extract_review_container_filter(user_message),
+            },
+            thread_id=thread_id,
+        )
+        result = _run_container_diagnostic_review(session, user_message=user_message, window_hours=window_hours, thread_id=thread_id)
+        return result["message"], result["payload"]
 
     if actor in {"orc-orchestrator", "oracle"} and _is_critical_error_review_request(text):
         window_hours = _extract_review_window_hours(user_message, default=1)
@@ -7414,7 +7523,7 @@ def _target_inventory_context(session, user_message: str) -> str:
 
 
 def _clarify_ambiguous_target(user_message: str, session) -> str | None:
-    phrase = _extract_container_target_phrase(user_message)
+    phrase = _extract_review_container_filter(user_message) or _extract_container_target_phrase(user_message)
     if not phrase:
         return None
 
@@ -7563,6 +7672,10 @@ def _run_orc_loop(user_message: str, session, thread_id: str = "operations") -> 
     orc = session.query(AgentRuntimeState).filter_by(agent_id="orc-orchestrator").first()
     if not orc:
         return "*(ORC Orchestrator agent not found)*"
+
+    if _chat_is_container_diagnostic_request(user_message.lower()):
+        result = _run_container_diagnostic_review(session, user_message=user_message, thread_id=thread_id)
+        return result["message"]
 
     if _is_critical_error_review_request(user_message):
         window_hours = _extract_review_window_hours(user_message, default=1)
@@ -7919,6 +8032,226 @@ def _oracle_local_review(summary: dict, reason: str = "") -> str:
     return "\n".join(lines)
 
 
+_DIAGNOSTIC_ISSUE_TERMS = (
+    "error",
+    "exception",
+    "failed",
+    "failure",
+    "traceback",
+    "critical",
+    "fatal",
+    "timeout",
+    "refused",
+    "denied",
+    "warning",
+    "warn",
+    "unhandledrejection",
+    "out of memory",
+)
+
+
+def _docker_container_name(container: dict) -> str:
+    cid = container.get("Id", "")
+    return (container.get("Names") or [f"/{cid[:12]}"])[0].lstrip("/")
+
+
+def _log_timestamp(line: str) -> str:
+    match = re.match(r"^(\d{4}-\d{2}-\d{2}T\S+)\s+", line)
+    return match.group(1) if match else ""
+
+
+def _strip_log_timestamp(line: str) -> str:
+    return re.sub(r"^\d{4}-\d{2}-\d{2}T\S+\s*", "", line).strip()
+
+
+def _redact_log_text(text: str) -> str:
+    value = text or ""
+    value = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1[REDACTED]", value)
+    value = re.sub(r"(?i)(authorization['\"\s:=]+)[^,}\s]+", r"\1[REDACTED]", value)
+    value = re.sub(r"(?i)((?:password|passwd|secret|token|api[_-]?key)['\"\s:=]+)[^,}\s]+", r"\1[REDACTED]", value)
+    return value
+
+
+def _diagnostic_pattern(line: str) -> str:
+    text = _redact_log_text(_strip_log_timestamp(line))
+    text = re.sub(r"\b[0-9a-f]{8,}\b", "<hex>", text, flags=re.I)
+    text = re.sub(r"\b\d{4}-\d{2}-\d{2}T[\d:.]+Z\b", "<timestamp>", text)
+    text = re.sub(r"\b\d+\b", "<n>", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:260]
+
+
+def _diagnostic_duration_stats(lines: list[str]) -> dict:
+    durations: list[int] = []
+    rows_loaded: list[int] = []
+    for line in lines:
+        duration = re.search(r'"durationMs"\s*:\s*(\d+)', line)
+        rows = re.search(r'"rowsLoaded"\s*:\s*(\d+)', line)
+        if duration:
+            durations.append(int(duration.group(1)))
+        if rows:
+            rows_loaded.append(int(rows.group(1)))
+
+    def stats(values: list[int]) -> dict:
+        if not values:
+            return {}
+        return {
+            "count": len(values),
+            "min": min(values),
+            "max": max(values),
+            "avg": round(sum(values) / len(values)),
+        }
+
+    return {"duration_ms": stats(durations), "rows_loaded": stats(rows_loaded)}
+
+
+def _summarize_log_text(raw: str, tail: int = 2000) -> dict:
+    lines = [line for line in (raw or "").splitlines() if line.strip()]
+    issue_lines = [line for line in lines if any(term in line.lower() for term in _DIAGNOSTIC_ISSUE_TERMS)]
+    success_lines = [line for line in lines if any(term in line.lower() for term in ("succeeded", "success", "completed"))]
+    error_lines = [line for line in issue_lines if any(term in line.lower() for term in ("error", "exception", "failed", "failure", "critical", "fatal", "timeout", "denied"))]
+    warning_lines = [line for line in issue_lines if any(term in line.lower() for term in ("warning", "warn"))]
+    patterns = Counter(_diagnostic_pattern(line) for line in issue_lines)
+    timestamps = [_log_timestamp(line) for line in lines if _log_timestamp(line)]
+    return {
+        "tail": tail,
+        "total_lines": len(lines),
+        "issue_lines": len(issue_lines),
+        "error_lines": len(error_lines),
+        "warning_lines": len(warning_lines),
+        "success_lines": len(success_lines),
+        "first_timestamp": timestamps[0] if timestamps else "",
+        "last_timestamp": timestamps[-1] if timestamps else "",
+        "top_patterns": [
+            {"pattern": pattern, "count": count}
+            for pattern, count in patterns.most_common(12)
+        ],
+        "recent_issue_lines": [_redact_log_text(_strip_log_timestamp(line))[:700] for line in issue_lines[-25:]],
+        "recent_events": [_redact_log_text(_strip_log_timestamp(line))[:700] for line in lines[-25:]],
+        **_diagnostic_duration_stats(lines),
+    }
+
+
+def _container_meta(conn: Connection, endpoint: dict, container: dict) -> dict:
+    labels = container.get("Labels") or {}
+    cid = container.get("Id", "")
+    cname = _docker_container_name(container)
+    stack_name = labels.get("com.docker.compose.project") or _infer_stack(cname)
+    service_name = labels.get("com.docker.compose.service") or cname
+    return {
+        "connection_id": conn.id,
+        "server": conn.name,
+        "server_name": conn.server_name or conn.name,
+        "endpoint_id": endpoint.get("Id"),
+        "endpoint_name": endpoint.get("Name", ""),
+        "container_id": cid,
+        "container_short_id": cid[:12],
+        "container_name": cname,
+        "stack_name": stack_name,
+        "service_name": service_name,
+        "state": container.get("State", ""),
+        "status": container.get("Status", ""),
+        "image": container.get("Image", ""),
+        "command": container.get("Command", ""),
+    }
+
+
+def _related_service_names(target_meta: dict, target_logs: str) -> set[str]:
+    names: set[str] = set()
+    service = (target_meta.get("service_name") or target_meta.get("container_name") or "").lower()
+    container = (target_meta.get("container_name") or "").lower()
+    if "cron" in service or "cron" in container or "worker" in service:
+        names.update({"app", "api", "web", "server"})
+    for match in re.finditer(r"https?://([a-zA-Z0-9_.-]+)(?::\d+)?", target_logs or ""):
+        host = match.group(1).lower()
+        if host not in {"localhost", "127.0.0.1"}:
+            names.add(host)
+    return names
+
+
+def _find_related_containers(target_meta: dict, target_logs: str, containers: list[dict]) -> list[dict]:
+    stack = target_meta.get("stack_name") or ""
+    target_id = target_meta.get("container_id") or ""
+    wanted = _related_service_names(target_meta, target_logs)
+    related: list[dict] = []
+    for container in containers:
+        labels = container.get("Labels") or {}
+        cid = container.get("Id", "")
+        if cid == target_id:
+            continue
+        cname = _docker_container_name(container)
+        cstack = labels.get("com.docker.compose.project") or _infer_stack(cname)
+        service = labels.get("com.docker.compose.service") or cname
+        if cstack != stack:
+            continue
+        haystack = {cname.lower(), service.lower()}
+        if haystack & wanted or any(name in value for name in wanted for value in haystack):
+            related.append(container)
+    return related[:3]
+
+
+def _build_live_container_evidence(session, target: str, tail: int = 2000) -> dict:
+    target = (target or "").strip()
+    if not target:
+        return {"ok": False, "error": "No target container was identified.", "target": target}
+
+    matches = _find_container_candidates(session, target)
+    if not matches:
+        return {"ok": False, "error": f"No live Portainer container matched `{target}`.", "target": target}
+    if len(matches) > 1:
+        return {
+            "ok": False,
+            "error": f"More than one live Portainer container matched `{target}`.",
+            "target": target,
+            "matches": matches[:10],
+        }
+
+    match = matches[0]
+    conn = session.get(Connection, int(match["connection_id"]))
+    if not conn:
+        return {"ok": False, "error": "Matched container connection no longer exists.", "target": target}
+
+    client = PortainerClient(conn.base_url, conn.api_token)
+    endpoint_id = int(match["endpoint_id"])
+    endpoints = client.get_endpoints()
+    endpoint = next((ep for ep in endpoints if int(ep.get("Id", -1)) == endpoint_id), {"Id": endpoint_id})
+    containers = client.get_containers(endpoint_id)
+    target_container = next((c for c in containers if c.get("Id") == match["container_id"]), None)
+    if not target_container:
+        return {"ok": False, "error": f"Matched container `{target}` was not found when logs were requested.", "target": target}
+
+    target_logs = client.get_container_logs(endpoint_id, match["container_id"], tail=tail)
+    target_meta = _container_meta(conn, endpoint, target_container)
+    target_summary = _summarize_log_text(target_logs, tail=tail)
+    related = []
+    for container in _find_related_containers(target_meta, target_logs, containers):
+        cid = container.get("Id", "")
+        try:
+            raw = client.get_container_logs(endpoint_id, cid, tail=tail)
+            related.append(
+                {
+                    "metadata": _container_meta(conn, endpoint, container),
+                    "summary": _summarize_log_text(raw, tail=tail),
+                }
+            )
+        except Exception as exc:
+            related.append(
+                {
+                    "metadata": _container_meta(conn, endpoint, container),
+                    "summary": {"error": str(exc)},
+                }
+            )
+
+    return {
+        "ok": True,
+        "target": target,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "metadata": target_meta,
+        "summary": target_summary,
+        "related_containers": related,
+    }
+
+
 def _oracle_review(summary: dict, session) -> str:
     if not summary["total_events"]:
         return (
@@ -7931,6 +8264,104 @@ def _oracle_review(summary: dict, session) -> str:
         return _llm_call(_oracle_prompt(summary), "oracle", "oracle_review", session)
     except HTTPException as exc:
         return _oracle_local_review(summary, exc.detail or "the LLM request failed")
+
+
+def _diagnostic_prompt(evidence: dict, user_message: str) -> list[dict[str, str]]:
+    system_prompt = (
+        "You are The Oracle inside ORC, diagnosing a container from read-only Portainer evidence. "
+        "Use the supplied evidence only. Separate direct evidence from hypotheses. "
+        "Prefer practical operational interpretation over exact wording. "
+        "Return concise Markdown with exactly these fields:\n"
+        "**Issue:** <dominant failure pattern and impact>.\n"
+        "**Evidence:** <counts, timing, related-service clues>.\n"
+        "**Possible root cause:** <most likely cause, with uncertainty if needed>.\n"
+        "**Countermeasure:** <specific changes or checks to reduce errors; mark mutating work approval-gated>.\n"
+        "**Next read-only check:** <one concrete inspection that would improve confidence>."
+    )
+    return [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": (
+                f"Operator request:\n{user_message}\n\n"
+                "Read-only diagnostic evidence:\n"
+                + json.dumps(evidence, indent=2, default=str)
+            ),
+        },
+    ]
+
+
+def _diagnostic_local_review(evidence: dict, reason: str = "") -> str:
+    if not evidence.get("ok"):
+        return (
+            f"**Issue:** I could not collect live Portainer evidence for `{evidence.get('target') or 'the target'}`.\n"
+            f"**Evidence:** {evidence.get('error') or 'No matching evidence was found.'}\n"
+            "**Possible root cause:** The target name may be missing, ambiguous, or absent from the configured Portainer inventory.\n"
+            "**Countermeasure:** Confirm the exact container name/server, then rerun the diagnostic. No infrastructure change is needed for this check.\n"
+            "**Next read-only check:** List matching containers in Portainer and select the exact target."
+        )
+
+    meta = evidence.get("metadata") or {}
+    summary = evidence.get("summary") or {}
+    related = evidence.get("related_containers") or []
+    top = summary.get("top_patterns") or []
+    issue = top[0] if top else {}
+    duration = summary.get("duration_ms") or {}
+    rows = summary.get("rows_loaded") or {}
+    dominant = issue.get("pattern") or "No repeated error pattern was found in the bounded log tail"
+    count = issue.get("count", 0)
+    evidence_bits = [
+        f"Reviewed {summary.get('total_lines', 0)} log lines for `{meta.get('container_name', 'target')}`.",
+        f"Found {summary.get('issue_lines', 0)} issue lines, {summary.get('error_lines', 0)} error-like lines, and {summary.get('success_lines', 0)} success-like lines.",
+    ]
+    if count:
+        evidence_bits.append(f"Top repeated pattern occurred {count} time(s): {dominant}.")
+    if duration:
+        evidence_bits.append(
+            f"Successful durations ms: avg {duration.get('avg')}, max {duration.get('max')}."
+        )
+    if rows:
+        evidence_bits.append(f"Rows loaded: avg {rows.get('avg')}, max {rows.get('max')}.")
+    if related:
+        names = ", ".join((item.get("metadata") or {}).get("container_name", "") for item in related)
+        evidence_bits.append(f"Related same-stack containers checked: {names}.")
+
+    lower = dominant.lower()
+    if "timed out" in lower or "timeout" in lower:
+        cause = "The container is likely waiting on a downstream endpoint or long-running data refresh that regularly exceeds its request timeout."
+        countermeasure = "Increase observability by timing each refresh phase, reduce refresh work, or move the refresh to an asynchronous job; any deploy/config change remains approval-gated."
+        next_check = "Inspect the paired app/API logs around the timeout window to see which refresh phase consumed the time."
+    elif "access denied" in lower or "permission" in lower or "unauthorized" in lower:
+        cause = "The workload likely lacks permission to read an upstream resource or the configured credential no longer has the needed grant."
+        countermeasure = "Verify the runtime identity and upstream grants; credential or IAM changes are approval-gated."
+        next_check = "Compare the failing table/resource in the log to the service account or token mounted in the app container."
+    elif "out of memory" in lower or "heap" in lower:
+        cause = "The process likely exceeds available Node heap or container memory during a high-volume refresh."
+        countermeasure = "Reduce in-memory batch size, stream results, or adjust memory limits through approval."
+        next_check = "Check container memory limits and OOM/restart history for the same timestamps."
+    else:
+        cause = "The repeated message points to a service-level failure, but the exact dependency is not certain from the log tail alone."
+        countermeasure = "Group the repeated pattern by timestamp, compare recent deploy/config changes, and inspect the related service logs before taking action."
+        next_check = "Pull the upstream or paired service logs for the same window."
+
+    prefix = f"Using local diagnostic analysis because {reason}.\n\n" if reason else ""
+    return (
+        prefix
+        + f"**Issue:** {dominant}{f' observed {count} time(s)' if count else ''}.\n"
+        + f"**Evidence:** {' '.join(evidence_bits)}\n"
+        + f"**Possible root cause:** {cause}\n"
+        + f"**Countermeasure:** {countermeasure}\n"
+        + f"**Next read-only check:** {next_check}"
+    )
+
+
+def _oracle_diagnostic_review(evidence: dict, user_message: str, session) -> str:
+    if not os.getenv("OPENAI_API_KEY", "").strip():
+        return _diagnostic_local_review(evidence, "the LLM is not configured")
+    try:
+        return _llm_call(_diagnostic_prompt(evidence, user_message), "oracle", "container_diagnostic", session)
+    except HTTPException as exc:
+        return _diagnostic_local_review(evidence, exc.detail or "the LLM request failed")
 
 
 def _is_critical_error_review_request(text: str) -> bool:
@@ -8159,6 +8590,86 @@ def _format_critical_error_review(summary: dict, analysis: str, skill_fit: dict,
         ]
     )
     return "\n".join(lines)
+
+
+def _format_container_diagnostic_review(summary: dict, analysis: str) -> str:
+    window_label = _review_window_label(summary.get("window_hours", 24))
+    target = summary.get("container_filter") or "all containers"
+    return "\n".join(
+        [
+            "**Container Diagnostic Review completed.**",
+            "",
+            "Autonomy: Level 0 / Green. This was read-only log analysis; any restart, redeploy, or configuration change still needs approval.",
+            "",
+            f"Window: {window_label} ({summary['window_start']} to {summary['window_end']})",
+            f"Target: {target}",
+            f"Events reviewed: {summary['total_events']} ({summary['errors']} critical/error, {summary['warnings']} warning); affected containers: {summary['unique_containers']}.",
+            "",
+            analysis,
+        ]
+    )
+
+
+def _run_container_diagnostic_review(session, user_message: str = "", window_hours: int | None = None, thread_id: str = "operations") -> dict:
+    requested_hours = _normalize_review_window_hours(window_hours or _extract_review_window_hours(user_message, default=24), 24)
+    container_filter = _extract_review_container_filter(user_message)
+    evidence = _build_live_container_evidence(session, container_filter, tail=2000) if container_filter else {
+        "ok": False,
+        "target": container_filter,
+        "error": "No target container was identified in the request.",
+    }
+    if evidence.get("ok"):
+        analysis = _oracle_diagnostic_review(evidence, user_message, session)
+        meta = evidence.get("metadata") or {}
+        summary = evidence.get("summary") or {}
+        message = "\n".join(
+            [
+                "**Container Diagnostic Review completed.**",
+                "",
+                "Autonomy: Level 0 / Green. This was read-only Portainer log analysis; any restart, redeploy, or configuration change still needs approval.",
+                "",
+                f"Target: {meta.get('server_name', 'Unknown server')} / {meta.get('stack_name', 'unknown stack')} / {meta.get('container_name', container_filter)}",
+                f"Container: {meta.get('state', 'unknown')} - {meta.get('status', 'status unknown')}",
+                f"Log window: last {summary.get('tail', 0)} lines ({summary.get('first_timestamp') or 'unknown'} to {summary.get('last_timestamp') or 'unknown'})",
+                f"Events reviewed: {summary.get('total_lines', 0)} lines; issue lines: {summary.get('issue_lines', 0)}.",
+                "",
+                analysis,
+            ]
+        )
+    else:
+        summary = _oracle_summary(
+            window_hours=requested_hours,
+            severities=("warning", "error", "critical"),
+            container_filter=container_filter,
+        )
+        analysis = _diagnostic_local_review(evidence)
+        message = _format_container_diagnostic_review(summary, analysis)
+    payload = {
+        "autonomy_action": "container_diagnostic_review",
+        "autonomy_level": 0,
+        "governance": "green",
+        "window_hours": requested_hours,
+        "container_filter": container_filter,
+        "diagnostic": evidence,
+        "window_start": summary.get("window_start", ""),
+        "window_end": summary.get("window_end", ""),
+        "total_events": summary.get("total_events", summary.get("total_lines", 0)),
+        "errors": summary.get("errors", summary.get("error_lines", 0)),
+        "warnings": summary.get("warnings", summary.get("warning_lines", 0)),
+        "unique_containers": summary.get("unique_containers", 1 if evidence.get("ok") else 0),
+        "top_issues": summary.get("top_issues", []),
+        "detail": message,
+    }
+    _record_agent_message(
+        session,
+        "oracle",
+        "orc-orchestrator",
+        "analysis_result",
+        message,
+        payload,
+        thread_id=thread_id,
+    )
+    return {"message": message, "payload": payload, "summary": summary, "analysis": analysis}
 
 
 def _run_critical_error_review(session, user_message: str = "", window_hours: int | None = None, thread_id: str = "operations") -> dict:

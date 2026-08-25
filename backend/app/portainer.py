@@ -71,8 +71,8 @@ class PortainerClient:
             if c.get("State", "running") == "running"
         ]
 
-    def get_container_logs(self, endpoint_id: int, container_id: str, since: int = 0) -> str:
-        params: dict = {"stdout": True, "stderr": True, "timestamps": True, "tail": 200}
+    def get_container_logs(self, endpoint_id: int, container_id: str, since: int = 0, tail: int = 200) -> str:
+        params: dict = {"stdout": True, "stderr": True, "timestamps": True, "tail": tail}
         if since:
             params["since"] = since + 1
         r = httpx.get(

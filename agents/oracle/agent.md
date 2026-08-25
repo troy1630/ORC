@@ -30,6 +30,7 @@ Investigate recent operational changes, explain likely causes, and recommend nex
 ## Allowed Skills
 
 - hourly-critical-error-review
+- container-diagnostic-review
 - portainer-log-review
 - incident-learning-writeback
 
