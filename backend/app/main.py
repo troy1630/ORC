@@ -1472,8 +1472,9 @@ canvas{display:block;width:100%;height:58px}
 .heatmap-set{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px}
 .heatmap-panel{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;min-width:0;overflow:auto}
 .heatmap-title{font-size:.75rem;font-weight:850;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
-.heatmap-grid{display:grid;gap:3px;align-items:center;width:max-content;min-width:100%}
-.heatmap-head,.heatmap-label{color:var(--mut);font-size:.64rem;white-space:nowrap}
+.heatmap-grid{display:grid;gap:3px;align-items:center;width:max-content;min-width:100%;padding-top:42px}
+.heatmap-head{color:var(--mut);font-size:.64rem;white-space:nowrap;writing-mode:vertical-rl;transform:rotate(180deg);align-self:end;justify-self:center;height:42px}
+.heatmap-label{color:var(--mut);font-size:.64rem;white-space:nowrap}
 .heatmap-label{max-width:180px;overflow:hidden;text-overflow:ellipsis;padding-right:6px}
 .heatmap-cell{width:13px;height:13px;border-radius:2px;border:1px solid rgba(230,237,243,.08);background:#161b22}
 .heatmap-legend{display:flex;align-items:center;gap:5px;color:var(--mut);font-size:.64rem;margin-top:8px}
@@ -3985,18 +3986,14 @@ function reportTableHtml(rows){
 }
 function heatmapColor(value,max,kind){
   const n=Number(value||0);
-  if(!n||!max)return '#161b22';
+  if(!n||!max)return '#05080d';
   const level=Math.min(1,n/Math.max(Number(max)||1,1));
+  const floor=.18;
+  const alpha=(floor+(1-floor)*level).toFixed(2);
   if(kind==='warning'){
-    if(level>.75)return '#f2cc60';
-    if(level>.5)return '#d29922';
-    if(level>.25)return '#8a6d1d';
-    return '#4d3a12';
+    return `rgba(242,204,96,${alpha})`;
   }
-  if(level>.75)return '#7f1d1d';
-  if(level>.5)return '#b91c1c';
-  if(level>.25)return '#ef4444';
-  return '#4b1115';
+  return `rgba(248,81,73,${alpha})`;
 }
 function heatmapHtml(title,rows,dates,max,kind){
   if(!dates?.length||!rows?.length)return `<div class="heatmap-panel"><div class="heatmap-title">${esc(title)}</div><div class="empty">No dated ${esc(kind)} activity found.</div></div>`;
