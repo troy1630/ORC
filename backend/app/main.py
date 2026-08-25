@@ -4360,6 +4360,15 @@ function diagnosticChatHtml(m){
   const sum=diag.summary||{};
   const related=diag.related_containers||[];
   const text=String(payload.detail||m.summary||'');
+  if(diag.ok===false){
+    return `<div class="chat-diagnostic">
+      <div class="diag-card">
+        <div class="diag-field"><div class="diag-label">Issue</div><div class="diag-value">${esc(diagnosticField(text,'Issue')||diag.error||'No live evidence was collected.')}</div></div>
+        <div class="diag-field"><div class="diag-label">Target</div><div class="diag-value">${esc(payload.container_filter||diag.target||'No target identified')}</div></div>
+        <div class="diag-field"><div class="diag-label">Next Check</div><div class="diag-value">${esc(diagnosticField(text,'Next read-only check')||'Confirm the container name and rerun the diagnostic.')}</div></div>
+      </div>
+    </div>`;
+  }
   const issue=diagnosticField(text,'Issue');
   const evidence=diagnosticField(text,'Evidence');
   const root=diagnosticField(text,'Possible root cause');
@@ -7442,14 +7451,17 @@ def _extract_container_target_phrase(user_message: str) -> str:
 def _extract_review_container_filter(user_message: str) -> str:
     text = (user_message or "").strip()
     patterns = [
-        r"\b(?:server\s+logs|container\s+logs|logs|errors|error\s+logs|critical\s+errors?)\s+(?:for|from|in|on)\s+(.+?)(?:\s+(?:and|to|so|because|with|using|during|over|for)\b|[?.!,]|$)",
+        r"\b(?:errors?\s+(?:and|or)\s+warnings?|warnings?\s+(?:and|or)\s+errors?|server\s+logs|container\s+logs|logs|errors?|warnings?|error\s+logs|critical\s+errors?)\s+(?:for|from|in|on)\s+(?:the\s+)?(.+?)(?:\s+(?:container|service|app|workload)\b|\s+(?:and|to|so|because|with|using|during|over|for)\b|[?.!,]|$)",
+        r"\b(?:in|on|for|from)\s+(?:the\s+)?([a-zA-Z0-9][a-zA-Z0-9_.-]*)(?:\s+(?:container|service|app|workload)\b)",
         r"\b(?:container|service|app|workload)\s+(?:named|called)?\s+([a-zA-Z0-9][a-zA-Z0-9_.-]*)(?:\s|[?.!,]|$)",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.I)
         if match:
             candidate = match.group(1).strip(" \"'`.,;:()[]{}")
-            if candidate and candidate.lower() not in {"logs", "server logs", "container logs", "errors", "error logs"}:
+            candidate = re.sub(r"^(?:the|a|an)\s+", "", candidate, flags=re.I).strip()
+            candidate = re.sub(r"\s+(?:container|service|app|workload)$", "", candidate, flags=re.I).strip()
+            if candidate and candidate.lower() not in {"logs", "server logs", "container logs", "errors", "warnings", "error logs"}:
                 return candidate
     return ""
 
