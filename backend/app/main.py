@@ -1469,6 +1469,15 @@ canvas{display:block;width:100%;height:58px}
 .report-card-row span:first-child{color:var(--mut);font-weight:850;text-transform:uppercase;font-size:.61rem;letter-spacing:.04em}
 .report-patterns{display:flex;flex-direction:column;gap:4px}
 .report-pattern{font-family:Consolas,"Cascadia Mono","SFMono-Regular",monospace;font-size:.7rem;color:#d8e1ec;overflow-wrap:anywhere;border-top:1px solid rgba(230,237,243,.08);padding-top:4px}
+.heatmap-set{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px}
+.heatmap-panel{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;min-width:0;overflow:auto}
+.heatmap-title{font-size:.75rem;font-weight:850;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+.heatmap-grid{display:grid;gap:3px;align-items:center;width:max-content;min-width:100%}
+.heatmap-head,.heatmap-label{color:var(--mut);font-size:.64rem;white-space:nowrap}
+.heatmap-label{max-width:180px;overflow:hidden;text-overflow:ellipsis;padding-right:6px}
+.heatmap-cell{width:13px;height:13px;border-radius:2px;border:1px solid rgba(230,237,243,.08);background:#161b22}
+.heatmap-legend{display:flex;align-items:center;gap:5px;color:var(--mut);font-size:.64rem;margin-top:8px}
+.heatmap-legend .heatmap-cell{width:11px;height:11px}
 .chat-approval-pill{display:inline-flex;align-items:center;gap:8px;margin:0 0 7px;padding:7px 10px;border-radius:999px;border:1px solid rgba(245,194,66,.58);background:rgba(245,194,66,.24);color:#fff1b3;font-size:.79rem;font-weight:800}
 .chat-approval-pill a,.chat-approval-pill button{font-size:.76rem}
 .chat-approval-actions{display:inline-flex;gap:6px;align-items:center}
@@ -3974,6 +3983,48 @@ function reportTableHtml(rows){
     <tbody>${rows.map(r=>`<tr><td>${esc(r.stack||'unknown')}</td><td>${esc(r.container||'unknown')}</td><td>${esc(r.error||'No pattern')}</td></tr>`).join('')}</tbody>
   </table></div>`;
 }
+function heatmapColor(value,max,kind){
+  const n=Number(value||0);
+  if(!n||!max)return '#161b22';
+  const level=Math.min(1,n/Math.max(Number(max)||1,1));
+  if(kind==='warning'){
+    if(level>.75)return '#f2cc60';
+    if(level>.5)return '#d29922';
+    if(level>.25)return '#8a6d1d';
+    return '#4d3a12';
+  }
+  if(level>.75)return '#7f1d1d';
+  if(level>.5)return '#b91c1c';
+  if(level>.25)return '#ef4444';
+  return '#4b1115';
+}
+function heatmapHtml(title,rows,dates,max,kind){
+  if(!dates?.length||!rows?.length)return `<div class="heatmap-panel"><div class="heatmap-title">${esc(title)}</div><div class="empty">No dated ${esc(kind)} activity found.</div></div>`;
+  const columns=`180px repeat(${dates.length},13px)`;
+  return `<div class="heatmap-panel">
+    <div class="heatmap-title">${esc(title)}</div>
+    <div class="heatmap-grid" style="grid-template-columns:${columns}">
+      <div></div>
+      ${dates.map(d=>`<div class="heatmap-head" title="${esc(d)}">${esc(d.slice(5))}</div>`).join('')}
+      ${rows.map(row=>`
+        <div class="heatmap-label" title="${esc(row.container||'unknown')}">${esc(row.container||'unknown')}</div>
+        ${dates.map(day=>{
+          const count=Number(row.counts?.[day]||0);
+          return `<div class="heatmap-cell" title="${esc(row.container||'unknown')} / ${esc(day)}: ${count}" style="background:${heatmapColor(count,max,kind)}"></div>`;
+        }).join('')}
+      `).join('')}
+    </div>
+    <div class="heatmap-legend"><span>Less</span><span class="heatmap-cell"></span><span class="heatmap-cell" style="background:${heatmapColor(Math.max(1,max*.25),max,kind)}"></span><span class="heatmap-cell" style="background:${heatmapColor(Math.max(1,max*.55),max,kind)}"></span><span class="heatmap-cell" style="background:${heatmapColor(max,max,kind)}"></span><span>More</span></div>
+  </div>`;
+}
+function reportHeatmapsHtml(report){
+  const heatmaps=report.heatmaps||{};
+  const dates=heatmaps.dates||[];
+  return `<div class="heatmap-set">
+    ${heatmapHtml('Errors by Container and Date',heatmaps.errors||[],dates,heatmaps.max_errors||0,'error')}
+    ${heatmapHtml('Warnings by Container and Date',heatmaps.warnings||[],dates,heatmaps.max_warnings||0,'warning')}
+  </div>`;
+}
 function renderReport(report){
   const output=document.getElementById('report-output');
   const download=document.getElementById('report-download-btn');
@@ -3986,6 +4037,7 @@ function renderReport(report){
   const groups=report.groups||[];
   output.innerHTML=`
     ${reportTableHtml(report.top_table||[])}
+    ${reportHeatmapsHtml(report)}
     <div class="report-grid">
       ${groups.length?groups.map(g=>`<article class="report-card">
         <div class="report-card-head">
@@ -8344,6 +8396,18 @@ def _summarize_log_text(raw: str, tail: int = 2000) -> dict:
     warning_lines = [line for line in issue_lines if any(term in line.lower() for term in ("warning", "warn"))]
     patterns = Counter(_diagnostic_pattern(line) for line in issue_lines)
     timestamps = [_log_timestamp(line) for line in lines if _log_timestamp(line)]
+    daily_errors: Counter[str] = Counter()
+    daily_warnings: Counter[str] = Counter()
+    for line in lines:
+        ts = _log_timestamp(line)
+        if not ts:
+            continue
+        day = ts[:10]
+        lower = line.lower()
+        if any(term in lower for term in ("warning", "warn")):
+            daily_warnings[day] += 1
+        if any(term in lower for term in ("error", "exception", "failed", "failure", "critical", "fatal", "timeout", "denied")):
+            daily_errors[day] += 1
     return {
         "tail": tail,
         "total_lines": len(lines),
@@ -8357,6 +8421,8 @@ def _summarize_log_text(raw: str, tail: int = 2000) -> dict:
             {"pattern": pattern, "count": count}
             for pattern, count in patterns.most_common(12)
         ],
+        "daily_errors": dict(sorted(daily_errors.items())),
+        "daily_warnings": dict(sorted(daily_warnings.items())),
         "recent_issue_lines": [_redact_log_text(_strip_log_timestamp(line))[:700] for line in issue_lines[-25:]],
         "recent_events": [_redact_log_text(_strip_log_timestamp(line))[:700] for line in lines[-25:]],
         **_diagnostic_duration_stats(lines),
@@ -8616,6 +8682,26 @@ def _build_report_markdown(report: dict) -> str:
         "",
         _markdown_table(["Stack Group", "Container", "Error"], table_rows),
         "",
+        "## Error Heat Map",
+        "",
+        _markdown_table(
+            ["Container", *report.get("heatmaps", {}).get("dates", [])],
+            [
+                [row["container"], *[str(row.get("counts", {}).get(day, 0)) for day in report.get("heatmaps", {}).get("dates", [])]]
+                for row in report.get("heatmaps", {}).get("errors", [])
+            ] or [["No containers", *["0" for _ in report.get("heatmaps", {}).get("dates", [])]]],
+        ),
+        "",
+        "## Warning Heat Map",
+        "",
+        _markdown_table(
+            ["Container", *report.get("heatmaps", {}).get("dates", [])],
+            [
+                [row["container"], *[str(row.get("counts", {}).get(day, 0)) for day in report.get("heatmaps", {}).get("dates", [])]]
+                for row in report.get("heatmaps", {}).get("warnings", [])
+            ] or [["No containers", *["0" for _ in report.get("heatmaps", {}).get("dates", [])]]],
+        ),
+        "",
         "## Top 5 Impactful Error Groups",
         "",
     ]
@@ -8662,6 +8748,34 @@ def _build_report_markdown(report: dict) -> str:
             ]
         )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _report_heatmaps(containers: list[dict]) -> dict:
+    dates: set[str] = set()
+    error_rows = []
+    warning_rows = []
+    max_errors = 0
+    max_warnings = 0
+    for item in containers:
+        meta = item.get("metadata") or {}
+        summary = item.get("summary") or {}
+        name = meta.get("container_name", "unknown")
+        errors = summary.get("daily_errors") or {}
+        warnings = summary.get("daily_warnings") or {}
+        dates.update(errors.keys())
+        dates.update(warnings.keys())
+        max_errors = max(max_errors, *[int(v or 0) for v in errors.values()], 0)
+        max_warnings = max(max_warnings, *[int(v or 0) for v in warnings.values()], 0)
+        error_rows.append({"container": name, "counts": errors})
+        warning_rows.append({"container": name, "counts": warnings})
+    ordered_dates = sorted(dates)
+    return {
+        "dates": ordered_dates,
+        "errors": error_rows,
+        "warnings": warning_rows,
+        "max_errors": max_errors,
+        "max_warnings": max_warnings,
+    }
 
 
 def _orchestration_report_inventory(session) -> dict:
@@ -8769,6 +8883,7 @@ def _generate_orchestration_report(session, body: OrchestrationReportIn) -> dict
         "groups": _merge_report_groups(raw_groups),
         "containers": containers,
     }
+    report["heatmaps"] = _report_heatmaps(containers)
     report["markdown"] = _build_report_markdown(report)
     return report
 
