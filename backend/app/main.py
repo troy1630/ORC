@@ -74,6 +74,14 @@ class OracleReviewIn(BaseModel):
     window_hours: int = 1
 
 
+class OrchestrationReportIn(BaseModel):
+    server: str
+    stack: str = ""
+    container: str = ""
+    scope: str = "container"
+    tail: int = 2000
+
+
 class LoginIn(BaseModel):
     username: str
     password: str
@@ -1441,6 +1449,26 @@ canvas{display:block;width:100%;height:58px}
 .diag-patterns{display:flex;flex-direction:column;gap:4px}
 .diag-pattern{font-size:.7rem;color:#d8e1ec;border-top:1px solid rgba(230,237,243,.09);padding-top:4px}
 .diag-related{font-size:.68rem;color:var(--mut);display:flex;gap:5px;flex-wrap:wrap}
+.report-toolbar{display:grid;grid-template-columns:repeat(5,minmax(130px,1fr)) auto;gap:8px;align-items:end;margin-bottom:12px}
+.report-scope{display:flex;align-items:center;gap:10px;border:1px solid var(--bdr);border-radius:6px;background:#0d1117;padding:6px 8px;min-height:32px}
+.report-scope label{display:flex;align-items:center;gap:5px;color:var(--mut);font-size:.72rem;font-weight:750;white-space:nowrap}
+.report-actions{display:flex;gap:6px;align-items:center;justify-content:flex-end}
+.report-status{font-size:.72rem;color:var(--mut);min-height:18px;margin:-4px 0 8px}
+.report-output{display:flex;flex-direction:column;gap:12px;min-height:260px}
+.report-table-wrap{overflow:auto;border:1px solid #21262d;border-radius:8px;background:#0d1117}
+.report-table{width:100%;border-collapse:collapse;font-size:.76rem}
+.report-table th,.report-table td{padding:8px 9px;border-bottom:1px solid #21262d;text-align:left;vertical-align:top}
+.report-table th{color:var(--mut);font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;background:#111821}
+.report-table tr:last-child td{border-bottom:0}
+.report-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:9px}
+.report-card{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;display:flex;flex-direction:column;gap:7px;min-width:0}
+.report-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.report-card-title{font-size:.84rem;font-weight:850;color:#f0f6fc}
+.report-card-count{border:1px solid rgba(248,81,73,.34);border-radius:999px;background:rgba(248,81,73,.12);color:#ffb3ad;font-size:.66rem;font-weight:850;padding:2px 7px;white-space:nowrap}
+.report-card-row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;font-size:.74rem;line-height:1.35}
+.report-card-row span:first-child{color:var(--mut);font-weight:850;text-transform:uppercase;font-size:.61rem;letter-spacing:.04em}
+.report-patterns{display:flex;flex-direction:column;gap:4px}
+.report-pattern{font-family:Consolas,"Cascadia Mono","SFMono-Regular",monospace;font-size:.7rem;color:#d8e1ec;overflow-wrap:anywhere;border-top:1px solid rgba(230,237,243,.08);padding-top:4px}
 .chat-approval-pill{display:inline-flex;align-items:center;gap:8px;margin:0 0 7px;padding:7px 10px;border-radius:999px;border:1px solid rgba(245,194,66,.58);background:rgba(245,194,66,.24);color:#fff1b3;font-size:.79rem;font-weight:800}
 .chat-approval-pill a,.chat-approval-pill button{font-size:.76rem}
 .chat-approval-actions{display:inline-flex;gap:6px;align-items:center}
@@ -1517,6 +1545,8 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .orch-grid{grid-template-columns:1fr}
   .orch-page-grid{grid-template-columns:1fr}
   .orch-form{grid-template-columns:1fr}
+  .report-toolbar{grid-template-columns:1fr}
+  .report-actions{justify-content:flex-start}
   .orch-chat{height:520px}
   .chat-compose{flex-direction:column}
 }
@@ -1870,6 +1900,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
 
       <div class="orch-subtabs">
         <button class="orch-tab on" id="orch-tab-chat" onclick="showOrchTab('chat')">Agent Chat</button>
+        <button class="orch-tab" id="orch-tab-report" onclick="showOrchTab('report')">Report</button>
         <button class="orch-tab" id="orch-tab-agents" onclick="showOrchTab('agents')">Agents</button>
         <button class="orch-tab" id="orch-tab-skills" onclick="showOrchTab('skills')">Skills</button>
         <button class="orch-tab" id="orch-tab-runbooks" onclick="showOrchTab('runbooks')">Runbooks</button>
@@ -1892,6 +1923,57 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
               <select id="chat-agent-target" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border,#333);background:var(--card,#1e1e1e);color:inherit;font-size:0.85rem;min-width:160px;"></select>
               <input class="orch-input" id="msg-summary" placeholder="Tell ORC: review logs, search memory, or prepare a redeploy approval..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAgentMessage();}">
               <button class="btnp" id="chat-send-btn" onclick="sendAgentMessage()">Send</button>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="orch-view" id="orch-view-report">
+        <div class="orch-page-grid single">
+          <section class="orch-panel">
+            <div class="orch-panel-head">
+              <div>
+                <div class="orch-panel-title">Root Cause Report</div>
+                <div class="orch-count">Developer-ready Oracle report from Portainer logs</div>
+              </div>
+              <button class="btns" type="button" onclick="loadReportInventory()">Refresh Inventory</button>
+            </div>
+            <div class="report-toolbar">
+              <div class="orch-field">
+                <label>Server</label>
+                <select class="orch-select" id="report-server" onchange="renderReportFilters()"></select>
+              </div>
+              <div class="orch-field">
+                <label>Stack</label>
+                <select class="orch-select" id="report-stack" onchange="renderReportFilters()"></select>
+              </div>
+              <div class="orch-field">
+                <label>Container</label>
+                <select class="orch-select" id="report-container"></select>
+              </div>
+              <div class="orch-field">
+                <label>Scope</label>
+                <div class="report-scope">
+                  <label><input type="radio" name="report-scope" value="container" checked onchange="renderReportFilters()"> Container</label>
+                  <label><input type="radio" name="report-scope" value="stack" onchange="renderReportFilters()"> Stack</label>
+                </div>
+              </div>
+              <div class="orch-field">
+                <label>Log Tail</label>
+                <select class="orch-select" id="report-tail">
+                  <option value="1000">1,000 lines</option>
+                  <option value="2000" selected>2,000 lines</option>
+                  <option value="5000">5,000 lines</option>
+                </select>
+              </div>
+              <div class="report-actions">
+                <button class="btnp" type="button" id="report-run-btn" onclick="runReport()">Run Oracle Check</button>
+                <button class="btns" type="button" id="report-download-btn" onclick="downloadReportMarkdown()" disabled>Download Markdown</button>
+              </div>
+            </div>
+            <div class="report-status" id="report-status"></div>
+            <div class="report-output" id="report-output">
+              <div class="empty">Choose a server, stack, and scope to generate a root cause report.</div>
             </div>
           </section>
         </div>
@@ -2182,6 +2264,7 @@ let _networkChecking={server:'',container:''};
 let _focusedNetworkChecking={};
 let _viewMode='corporate';
 let _orch={agents:[],skills:[],tools:[],runbooks:[],memory_entries:[],messages:[],approvals:[],learnings:[],paths:{}};
+let _reportInventory={servers:[]}, _reportCurrent=null;
 let _orchTab='chat', _adminTab='connections', _currentUser=null, _users=[], _ravenConnected=false, _loadAllTimer=null, _skillEditId='', _agentEditId='';
 let _instructionTab='framework';
 let _profileAgentFilter='all', _profileCategoryFilter='all', _profileNetwork=null;
@@ -2316,6 +2399,7 @@ function showOrchTab(id){
   if(tab)tab.classList.add('on');
   if(view)view.classList.add('on');
   if(_orchTab==='setup')loadUsers();
+  if(_orchTab==='report')loadReportInventory();
 }
 function showInstructionSubpage(id){
   _instructionTab=id==='profiles'?'profiles':'framework';
@@ -3830,6 +3914,141 @@ function fillOrchSelects(){
     const cur=chatTarget.value||'orc-orchestrator';
     chatTarget.innerHTML=(_orch.agents||[]).filter(a=>a.enabled).map(a=>`<option value="${esc(a.id)}"${a.id===cur?' selected':''}>${esc(a.name||a.id)}</option>`).join('');
   }
+}
+function reportScope(){
+  return document.querySelector('input[name="report-scope"]:checked')?.value==='stack'?'stack':'container';
+}
+function selectedReportServer(){
+  const id=document.getElementById('report-server')?.value||'';
+  return (_reportInventory.servers||[]).find(s=>s.id===id)||null;
+}
+function selectedReportStack(server){
+  const name=document.getElementById('report-stack')?.value||'';
+  return (server?.stacks||[]).find(s=>s.name===name)||null;
+}
+function renderReportFilters(){
+  const serverEl=document.getElementById('report-server');
+  const stackEl=document.getElementById('report-stack');
+  const containerEl=document.getElementById('report-container');
+  if(!serverEl||!stackEl||!containerEl)return;
+  const prevServer=serverEl.value;
+  const prevStack=stackEl.value;
+  const prevContainer=containerEl.value;
+  const servers=_reportInventory.servers||[];
+  serverEl.innerHTML=servers.map(s=>`<option value="${esc(s.id)}">${esc(s.name||s.id)}</option>`).join('');
+  if(prevServer&&servers.some(s=>s.id===prevServer))serverEl.value=prevServer;
+  const server=selectedReportServer()||servers[0]||null;
+  if(server)serverEl.value=server.id;
+  stackEl.innerHTML=(server?.stacks||[]).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+  if(prevStack&&(server?.stacks||[]).some(s=>s.name===prevStack))stackEl.value=prevStack;
+  const stack=selectedReportStack(server)||(server?.stacks||[])[0]||null;
+  if(stack)stackEl.value=stack.name;
+  containerEl.innerHTML=(stack?.containers||[]).map(c=>`<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+  if(prevContainer&&(stack?.containers||[]).some(c=>c.name===prevContainer))containerEl.value=prevContainer;
+  const scope=reportScope();
+  containerEl.disabled=scope==='stack';
+  const status=document.getElementById('report-status');
+  if(status&&server?.error)status.textContent=`Inventory warning for ${server.name||server.id}: ${server.error}`;
+  else if(status&&!servers.length)status.textContent='No enabled Portainer servers are configured.';
+  else if(status&&!stack)status.textContent='No stacks were found for the selected server.';
+  else if(status)status.textContent='';
+}
+async function loadReportInventory(){
+  const output=document.getElementById('report-output');
+  const status=document.getElementById('report-status');
+  try{
+    if(status)status.textContent='Loading Portainer inventory...';
+    _reportInventory=await fetch('/orchestration/reports/inventory').then(r=>r.json());
+    renderReportFilters();
+    if(status&&!status.textContent)status.textContent='Inventory loaded.';
+    if(output&&!_reportCurrent)output.innerHTML='<div class="empty">Choose a server, stack, and scope to generate a root cause report.</div>';
+  }catch(e){
+    if(status)status.textContent=`Could not load report inventory: ${e.message||'request failed'}`;
+    if(output)output.innerHTML='<div class="empty">Report inventory is unavailable.</div>';
+  }
+}
+function reportTableHtml(rows){
+  if(!rows||!rows.length)return '<div class="empty">No error patterns were found in the selected logs.</div>';
+  return `<div class="report-table-wrap"><table class="report-table">
+    <thead><tr><th>Stack Group</th><th>Container</th><th>Error</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr><td>${esc(r.stack||'unknown')}</td><td>${esc(r.container||'unknown')}</td><td>${esc(r.error||'No pattern')}</td></tr>`).join('')}</tbody>
+  </table></div>`;
+}
+function renderReport(report){
+  const output=document.getElementById('report-output');
+  const download=document.getElementById('report-download-btn');
+  if(download)download.disabled=!report?.markdown;
+  if(!output)return;
+  if(!report){
+    output.innerHTML='<div class="empty">No report has been generated yet.</div>';
+    return;
+  }
+  const groups=report.groups||[];
+  output.innerHTML=`
+    ${reportTableHtml(report.top_table||[])}
+    <div class="report-grid">
+      ${groups.length?groups.map(g=>`<article class="report-card">
+        <div class="report-card-head">
+          <div class="report-card-title">${esc(g.label)}</div>
+          <div class="report-card-count">${esc(g.count)} events</div>
+        </div>
+        <div class="report-card-row"><span>Containers</span><div>${esc((g.containers||[]).join(', ')||'unknown')}</div></div>
+        <div class="report-card-row"><span>Root Cause</span><div>${esc(g.possible_root_cause||'Needs review')}</div></div>
+        <div class="report-card-row"><span>Countermeasure</span><div>${esc(g.countermeasure||'Review with developer')}</div></div>
+        <div class="report-patterns">${(g.top_patterns||[]).map(p=>`<div class="report-pattern">${esc(p.count)}x ${esc(p.pattern||'pattern')}</div>`).join('')}</div>
+      </article>`).join(''):'<div class="empty">No recurring issue groups were found in the selected log window.</div>'}
+    </div>`;
+}
+async function runReport(){
+  const server=selectedReportServer();
+  const stack=selectedReportStack(server);
+  const scope=reportScope();
+  const container=document.getElementById('report-container')?.value||'';
+  const status=document.getElementById('report-status');
+  const runBtn=document.getElementById('report-run-btn');
+  const download=document.getElementById('report-download-btn');
+  if(!server||!stack){
+    if(status)status.textContent='Select a server and stack before running the report.';
+    return;
+  }
+  if(scope==='container'&&!container){
+    if(status)status.textContent='Select a container or switch scope to Stack.';
+    return;
+  }
+  try{
+    if(runBtn)runBtn.disabled=true;
+    if(download)download.disabled=true;
+    if(status)status.textContent='Collecting logs and building Oracle report...';
+    _reportCurrent=await postJson('/orchestration/reports/generate',{
+      server:server.id,
+      stack:stack.name,
+      container:scope==='container'?container:'',
+      scope,
+      tail:Number(document.getElementById('report-tail')?.value||2000)
+    });
+    renderReport(_reportCurrent);
+    if(status)status.textContent=`Report generated for ${_reportCurrent.server_name} / ${_reportCurrent.stack||'all stacks'} / ${_reportCurrent.container||scope}.`;
+  }catch(e){
+    _reportCurrent=null;
+    renderReport(null);
+    if(status)status.textContent=`Could not generate report: ${e.message||'request failed'}`;
+  }finally{
+    if(runBtn)runBtn.disabled=false;
+  }
+}
+function downloadReportMarkdown(){
+  if(!_reportCurrent?.markdown)return;
+  const blob=new Blob([_reportCurrent.markdown],{type:'text/markdown;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const nameParts=['orc-root-cause',_reportCurrent.server,_reportCurrent.stack,_reportCurrent.container||_reportCurrent.scope].filter(Boolean);
+  const safeName=nameParts.join('-').toLowerCase().replace(/[^a-z0-9._-]+/g,'-').replace(/-+/g,'-');
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=`${safeName||'orc-root-cause-report'}.md`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 function profileSkillIds(agent){
   const skills=agent?.profile?.allowed_skills||[];
@@ -8264,6 +8483,296 @@ def _build_live_container_evidence(session, target: str, tail: int = 2000) -> di
     }
 
 
+def _report_issue_label(pattern: str) -> str:
+    text = (pattern or "").lower()
+    if "timeout" in text or "timed out" in text or "socket hang up" in text:
+        return "High frequency timeout errors"
+    if "access denied" in text or "permission" in text or "unauthorized" in text or "forbidden" in text:
+        return "Login or permission failure"
+    if "password authentication failed" in text or "authentication failed" in text:
+        return "Login failure"
+    if "out of memory" in text or "heap" in text or "oom" in text:
+        return "Memory pressure failure"
+    if "connection refused" in text or "econnrefused" in text:
+        return "Dependency connection refused"
+    if "dns" in text or "getaddrinfo" in text or "enotfound" in text or "eai_again" in text:
+        return "DNS or service discovery failure"
+    if "http <n>" in text or "http 500" in text or "status <n>" in text:
+        return "Upstream HTTP failure"
+    return "Recurring application error"
+
+
+def _report_root_countermeasure(label: str, pattern: str) -> tuple[str, str]:
+    text = f"{label} {pattern}".lower()
+    if "timeout" in text:
+        return (
+            "The workload is waiting on a downstream endpoint or long-running operation that exceeds the caller timeout.",
+            "Instrument each phase, reduce synchronous work, increase timeout only as a short-term noise reduction, and move long jobs async where possible.",
+        )
+    if "permission" in text or "login" in text or "authentication" in text or "access denied" in text:
+        return (
+            "The runtime identity, token, password, or upstream grant is not accepted by the dependency.",
+            "Verify the mounted credential and dependency grants; credential/IAM changes should go through approval.",
+        )
+    if "memory" in text or "heap" in text or "oom" in text:
+        return (
+            "The process is likely exceeding available heap/container memory while processing a large workload.",
+            "Reduce batch size or stream data, inspect memory limits, and request approval for resource/config changes.",
+        )
+    if "connection refused" in text:
+        return (
+            "The dependency host is reachable but the target process or port is not accepting connections.",
+            "Check the dependency container health/listener and recent deploys before requesting a restart or redeploy.",
+        )
+    if "dns" in text or "service discovery" in text:
+        return (
+            "The container cannot resolve the dependency name through Docker/network DNS.",
+            "Verify service name, network membership, and stack DNS; redeploy/network changes require approval.",
+        )
+    return (
+        "The same error is recurring, but the precise dependency is not proven from the log tail alone.",
+        "Compare timestamps with deploys, inspect related same-stack service logs, and add targeted logging around the failing operation.",
+    )
+
+
+def _report_group_from_pattern(container_name: str, pattern: dict) -> dict:
+    text = pattern.get("pattern", "")
+    label = _report_issue_label(text)
+    root, countermeasure = _report_root_countermeasure(label, text)
+    return {
+        "label": label,
+        "container": container_name,
+        "pattern": text,
+        "count": int(pattern.get("count") or 0),
+        "possible_root_cause": root,
+        "countermeasure": countermeasure,
+    }
+
+
+def _merge_report_groups(groups: list[dict]) -> list[dict]:
+    merged: dict[str, dict] = {}
+    for group in groups:
+        key = group["label"]
+        bucket = merged.setdefault(
+            key,
+            {
+                "label": group["label"],
+                "count": 0,
+                "containers": set(),
+                "patterns": Counter(),
+                "possible_root_cause": group["possible_root_cause"],
+                "countermeasure": group["countermeasure"],
+            },
+        )
+        bucket["count"] += group["count"]
+        bucket["containers"].add(group["container"])
+        if group["pattern"]:
+            bucket["patterns"][group["pattern"]] += group["count"]
+    out = []
+    for item in merged.values():
+        out.append(
+            {
+                "label": item["label"],
+                "count": item["count"],
+                "containers": sorted(item["containers"]),
+                "top_patterns": [
+                    {"pattern": pattern, "count": count}
+                    for pattern, count in item["patterns"].most_common(3)
+                ],
+                "possible_root_cause": item["possible_root_cause"],
+                "countermeasure": item["countermeasure"],
+            }
+        )
+    return sorted(out, key=lambda x: (-x["count"], x["label"]))[:5]
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    def clean(value: str) -> str:
+        return str(value or "").replace("|", "\\|").replace("\n", " ")
+
+    lines = ["| " + " | ".join(clean(h) for h in headers) + " |"]
+    lines.append("| " + " | ".join("---" for _ in headers) + " |")
+    for row in rows:
+        lines.append("| " + " | ".join(clean(v) for v in row) + " |")
+    return "\n".join(lines)
+
+
+def _build_report_markdown(report: dict) -> str:
+    table_rows = [
+        [row["stack"], row["container"], row["error"]]
+        for row in report.get("top_table", [])
+    ] or [[report.get("stack", ""), report.get("container", "all containers"), "No error patterns found"]]
+    lines = [
+        f"# Container Root Cause Report - {report.get('title', '')}",
+        "",
+        f"- Generated: {report.get('generated_at', '')}",
+        f"- Server: {report.get('server_name', report.get('server', ''))}",
+        f"- Stack group: {report.get('stack', '') or 'all stacks'}",
+        f"- Scope: {report.get('scope', '')}",
+        f"- Container: {report.get('container', '') or 'all containers in stack'}",
+        f"- Log tail: {report.get('tail', 0)} lines per container",
+        "",
+        "## Error Summary",
+        "",
+        _markdown_table(["Stack Group", "Container", "Error"], table_rows),
+        "",
+        "## Top 5 Impactful Error Groups",
+        "",
+    ]
+    groups = report.get("groups", [])
+    if not groups:
+        lines.append("No recurring error groups were found in the selected log window.")
+    for index, group in enumerate(groups, start=1):
+        lines.extend(
+            [
+                f"### {index}. {group['label']}",
+                "",
+                f"- Count: {group['count']}",
+                f"- Containers: {', '.join(group['containers'])}",
+                f"- Possible root cause: {group['possible_root_cause']}",
+                f"- Countermeasure: {group['countermeasure']}",
+                "- Top patterns:",
+            ]
+        )
+        for pattern in group.get("top_patterns", []):
+            lines.append(f"  - {pattern['count']}x `{pattern['pattern']}`")
+        lines.append("")
+    lines.extend(
+        [
+            "## Container Evidence",
+            "",
+        ]
+    )
+    for container in report.get("containers", []):
+        meta = container["metadata"]
+        summary = container["summary"]
+        lines.extend(
+            [
+                f"### {meta['container_name']}",
+                "",
+                f"- State: {meta.get('state', '')}",
+                f"- Status: {meta.get('status', '')}",
+                f"- Service: {meta.get('service_name', '')}",
+                f"- Lines reviewed: {summary.get('total_lines', 0)}",
+                f"- Issue lines: {summary.get('issue_lines', 0)}",
+                f"- Error lines: {summary.get('error_lines', 0)}",
+                f"- Warning lines: {summary.get('warning_lines', 0)}",
+                f"- Success lines: {summary.get('success_lines', 0)}",
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _orchestration_report_inventory(session) -> dict:
+    servers = []
+    for conn in session.query(Connection).filter_by(enabled=True).order_by(Connection.name).all():
+        server = {
+            "id": conn.name,
+            "name": conn.server_name or conn.name,
+            "connection_id": conn.id,
+            "stacks": [],
+        }
+        client = PortainerClient(conn.base_url, conn.api_token)
+        try:
+            endpoints = client.get_endpoints()
+        except Exception as exc:
+            server["error"] = str(exc)
+            servers.append(server)
+            continue
+        stacks: dict[str, dict] = {}
+        for endpoint in endpoints:
+            endpoint_id = endpoint.get("Id")
+            if endpoint_id is None:
+                continue
+            try:
+                containers = client.get_containers(endpoint_id)
+            except Exception:
+                continue
+            for container in containers:
+                meta = _container_meta(conn, endpoint, container)
+                stack = stacks.setdefault(meta["stack_name"], {"name": meta["stack_name"], "containers": []})
+                stack["containers"].append(
+                    {
+                        "name": meta["container_name"],
+                        "service_name": meta["service_name"],
+                        "state": meta["state"],
+                        "status": meta["status"],
+                    }
+                )
+        server["stacks"] = [
+            {"name": name, "containers": sorted(item["containers"], key=lambda x: x["name"])}
+            for name, item in sorted(stacks.items())
+        ]
+        servers.append(server)
+    return {"servers": servers}
+
+
+def _generate_orchestration_report(session, body: OrchestrationReportIn) -> dict:
+    scope = "stack" if body.scope == "stack" else "container"
+    tail = max(100, min(int(body.tail or 2000), 5000))
+    conn = session.query(Connection).filter_by(name=body.server, enabled=True).first()
+    if not conn:
+        raise HTTPException(404, "Selected server was not found.")
+
+    client = PortainerClient(conn.base_url, conn.api_token)
+    endpoints = client.get_endpoints()
+    selected: list[tuple[dict, dict]] = []
+    for endpoint in endpoints:
+        endpoint_id = endpoint.get("Id")
+        if endpoint_id is None:
+            continue
+        for container in client.get_containers(endpoint_id):
+            meta = _container_meta(conn, endpoint, container)
+            if body.stack and meta["stack_name"] != body.stack:
+                continue
+            if scope == "container" and body.container and meta["container_name"] != body.container:
+                continue
+            if scope == "container" and not body.container:
+                continue
+            selected.append((endpoint, container))
+
+    if not selected:
+        raise HTTPException(404, "No containers matched the selected report scope.")
+
+    containers = []
+    raw_groups = []
+    top_table = []
+    for endpoint, container in selected[:30]:
+        meta = _container_meta(conn, endpoint, container)
+        raw_logs = client.get_container_logs(int(meta["endpoint_id"]), meta["container_id"], tail=tail)
+        summary = _summarize_log_text(raw_logs, tail=tail)
+        containers.append({"metadata": meta, "summary": summary})
+        top_pattern = (summary.get("top_patterns") or [{}])[0]
+        if top_pattern.get("pattern"):
+            top_table.append(
+                {
+                    "stack": meta["stack_name"],
+                    "container": meta["container_name"],
+                    "error": top_pattern["pattern"],
+                    "count": top_pattern.get("count", 0),
+                }
+            )
+        for pattern in (summary.get("top_patterns") or [])[:5]:
+            raw_groups.append(_report_group_from_pattern(meta["container_name"], pattern))
+
+    report = {
+        "title": f"{body.stack or conn.name} / {body.container or scope}",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "server": conn.name,
+        "server_name": conn.server_name or conn.name,
+        "stack": body.stack,
+        "container": body.container,
+        "scope": scope,
+        "tail": tail,
+        "top_table": sorted(top_table, key=lambda x: -int(x.get("count") or 0))[:10],
+        "groups": _merge_report_groups(raw_groups),
+        "containers": containers,
+    }
+    report["markdown"] = _build_report_markdown(report)
+    return report
+
+
 def _oracle_review(summary: dict, session) -> str:
     if not summary["total_events"]:
         return (
@@ -9130,6 +9639,20 @@ def get_ai_usage(request: Request, days: int = 30) -> dict:
         date_str = (start_date + timedelta(days=offset)).isoformat()
         daily.append({"date": date_str, **by_day[date_str]})
     return {"rows": list(seen.values()), "daily": daily, "totals": totals}
+
+
+@app.get("/orchestration/reports/inventory")
+def orchestration_report_inventory(request: Request) -> dict:
+    _require_user(request)
+    with SessionLocal() as s:
+        return _orchestration_report_inventory(s)
+
+
+@app.post("/orchestration/reports/generate")
+def orchestration_report_generate(body: OrchestrationReportIn, request: Request) -> dict:
+    _require_user(request)
+    with SessionLocal() as s:
+        return _generate_orchestration_report(s, body)
 
 
 def _infer_stack(cname: str) -> str:
