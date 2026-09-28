@@ -80,9 +80,11 @@ class OrchestrationReportIn(BaseModel):
     container: str = ""
     scope: str = "container"
     tail: int = 2000
-    report_date: str = ""
-    day_start: int | None = None
-    day_end: int | None = None
+    range_mode: str = "all"
+    range_start: int | None = None
+    range_end: int | None = None
+    range_start_date: str = ""
+    range_end_date: str = ""
 
 
 class LoginIn(BaseModel):
@@ -1453,6 +1455,8 @@ canvas{display:block;width:100%;height:58px}
 .diag-pattern{font-size:.7rem;color:#d8e1ec;border-top:1px solid rgba(230,237,243,.09);padding-top:4px}
 .diag-related{font-size:.68rem;color:var(--mut);display:flex;gap:5px;flex-wrap:wrap}
 .report-toolbar{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr)) auto;gap:8px;align-items:end;margin-bottom:12px}
+.report-range-dates{display:none;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px}
+.report-range-dates.visible{display:grid}
 .report-scope{display:flex;align-items:center;gap:10px;border:1px solid var(--bdr);border-radius:6px;background:#0d1117;padding:6px 8px;min-height:32px}
 .report-scope label{display:flex;align-items:center;gap:5px;color:var(--mut);font-size:.72rem;font-weight:750;white-space:nowrap}
 .report-actions{display:flex;gap:6px;align-items:center;justify-content:flex-end}
@@ -1980,8 +1984,15 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
                 </select>
               </div>
               <div class="orch-field">
-                <label>Report Day</label>
-                <input class="orch-input" type="date" id="report-date">
+                <label>Tracking Range</label>
+                <select class="orch-select" id="report-range-mode" onchange="toggleReportRange()">
+                  <option value="all" selected>Full tracking range</option>
+                  <option value="period">Specific period</option>
+                </select>
+                <div class="report-range-dates" id="report-range-dates">
+                  <input class="orch-input" type="date" id="report-range-start" aria-label="Period start date">
+                  <input class="orch-input" type="date" id="report-range-end" aria-label="Period end date">
+                </div>
               </div>
               <div class="report-actions">
                 <button class="btnp" type="button" id="report-run-btn" onclick="runReport()">Run Oracle Check</button>
@@ -3935,6 +3946,10 @@ function fillOrchSelects(){
 function reportScope(){
   return document.querySelector('input[name="report-scope"]:checked')?.value==='stack'?'stack':'container';
 }
+function toggleReportRange(){
+  const mode=document.getElementById('report-range-mode')?.value||'all';
+  document.getElementById('report-range-dates')?.classList.toggle('visible',mode==='period');
+}
 function selectedReportServer(){
   const id=document.getElementById('report-server')?.value||'';
   return (_reportInventory.servers||[]).find(s=>s.id===id)||null;
@@ -3973,11 +3988,7 @@ function renderReportFilters(){
 async function loadReportInventory(){
   const output=document.getElementById('report-output');
   const status=document.getElementById('report-status');
-  const reportDate=document.getElementById('report-date');
-  if(reportDate&&!reportDate.value){
-    const now=new Date();
-    reportDate.value=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-  }
+  toggleReportRange();
   try{
     if(status)status.textContent='Loading Portainer inventory...';
     _reportInventory=await fetch('/orchestration/reports/inventory').then(r=>r.json());
@@ -4071,7 +4082,9 @@ async function runReport(){
   const stack=selectedReportStack(server);
   const scope=reportScope();
   const container=document.getElementById('report-container')?.value||'';
-  const reportDate=document.getElementById('report-date')?.value||'';
+  const rangeMode=document.getElementById('report-range-mode')?.value||'all';
+  const rangeStartDate=document.getElementById('report-range-start')?.value||'';
+  const rangeEndDate=document.getElementById('report-range-end')?.value||'';
   const status=document.getElementById('report-status');
   const runBtn=document.getElementById('report-run-btn');
   const download=document.getElementById('report-download-btn');
@@ -4083,13 +4096,21 @@ async function runReport(){
     if(status)status.textContent='Select a container or switch scope to Stack.';
     return;
   }
-  if(!reportDate){
-    if(status)status.textContent='Choose a day for the root cause report.';
-    return;
+  let rangeStart=null,rangeEnd=null;
+  if(rangeMode==='period'){
+    if(!rangeStartDate||!rangeEndDate){
+      if(status)status.textContent='Choose both a start and end date for the report period.';
+      return;
+    }
+    if(rangeStartDate>rangeEndDate){
+      if(status)status.textContent='The report period start date must be on or before its end date.';
+      return;
+    }
+    const [startYear,startMonth,startDay]=rangeStartDate.split('-').map(Number);
+    const [endYear,endMonth,endDay]=rangeEndDate.split('-').map(Number);
+    rangeStart=new Date(startYear,startMonth-1,startDay);
+    rangeEnd=new Date(endYear,endMonth-1,endDay+1);
   }
-  const [year,month,day]=reportDate.split('-').map(Number);
-  const dayStart=new Date(year,month-1,day);
-  const dayEnd=new Date(year,month-1,day+1);
   try{
     if(runBtn)runBtn.disabled=true;
     if(download)download.disabled=true;
@@ -4100,12 +4121,15 @@ async function runReport(){
       container:scope==='container'?container:'',
       scope,
       tail:Number(document.getElementById('report-tail')?.value||2000),
-      report_date:reportDate,
-      day_start:Math.floor(dayStart.getTime()/1000),
-      day_end:Math.floor(dayEnd.getTime()/1000)
+      range_mode:rangeMode,
+      range_start:rangeStart?Math.floor(rangeStart.getTime()/1000):null,
+      range_end:rangeEnd?Math.floor(rangeEnd.getTime()/1000):null,
+      range_start_date:rangeMode==='period'?rangeStartDate:'',
+      range_end_date:rangeMode==='period'?rangeEndDate:''
     });
     renderReport(_reportCurrent);
-    if(status)status.textContent=`Report generated for ${reportDate} / ${_reportCurrent.server_name} / ${_reportCurrent.stack||'all stacks'} / ${_reportCurrent.container||scope}.`;
+    const rangeLabel=rangeMode==='period'?`${rangeStartDate} to ${rangeEndDate}`:'full tracking range';
+    if(status)status.textContent=`Report generated for ${rangeLabel} / ${_reportCurrent.server_name} / ${_reportCurrent.stack||'all stacks'} / ${_reportCurrent.container||scope}.`;
   }catch(e){
     _reportCurrent=null;
     renderReport(null);
@@ -8720,7 +8744,7 @@ def _build_report_markdown(report: dict) -> str:
         f"- Stack group: {report.get('stack', '') or 'all stacks'}",
         f"- Scope: {report.get('scope', '')}",
         f"- Container: {report.get('container', '') or 'all containers in stack'}",
-        f"- Report day: {report.get('report_date', '') or 'all available log dates'}",
+        f"- Tracking range: {report.get('range_label', 'all available logs')}",
         f"- Log tail: {report.get('tail', 0)} lines per container",
         "",
         "## Error Summary",
@@ -8871,13 +8895,18 @@ def _orchestration_report_inventory(session) -> dict:
 def _generate_orchestration_report(session, body: OrchestrationReportIn) -> dict:
     scope = "stack" if body.scope == "stack" else "container"
     tail = max(100, min(int(body.tail or 2000), 5000))
-    if (body.day_start is None) != (body.day_end is None):
-        raise HTTPException(400, "Both report day boundaries are required.")
-    day_start = body.day_start
-    day_end = body.day_end
-    if day_start is not None and day_end is not None:
-        if day_start < 0 or day_end <= day_start or day_end - day_start > 26 * 60 * 60:
-            raise HTTPException(400, "The selected report day has an invalid time range.")
+    if body.range_mode not in ("all", "period"):
+        raise HTTPException(400, "The selected report tracking range is invalid.")
+    if body.range_mode == "period":
+        if body.range_start is None or body.range_end is None:
+            raise HTTPException(400, "Both report period boundaries are required.")
+        if body.range_start < 0 or body.range_end <= body.range_start:
+            raise HTTPException(400, "The selected report period is invalid.")
+        range_start, range_end = body.range_start, body.range_end
+        range_label = f"{body.range_start_date} to {body.range_end_date}"
+    else:
+        range_start = range_end = None
+        range_label = "full tracking range"
     conn = session.query(Connection).filter_by(name=body.server, enabled=True).first()
     if not conn:
         raise HTTPException(404, "Selected server was not found.")
@@ -8910,9 +8939,9 @@ def _generate_orchestration_report(session, body: OrchestrationReportIn) -> dict
         raw_logs = client.get_container_logs(
             int(meta["endpoint_id"]),
             meta["container_id"],
-            since=max(0, day_start - 1) if day_start is not None else 0,
+            since=max(0, range_start - 1) if range_start is not None else 0,
             tail=tail,
-            until=day_end - 1 if day_end is not None else 0,
+            until=range_end - 1 if range_end is not None else 0,
         )
         summary = _summarize_log_text(raw_logs, tail=tail)
         containers.append({"metadata": meta, "summary": summary})
@@ -8940,7 +8969,7 @@ def _generate_orchestration_report(session, body: OrchestrationReportIn) -> dict
         "container": body.container,
         "scope": scope,
         "tail": tail,
-        "report_date": body.report_date,
+        "range_label": range_label,
         "top_table": sorted(top_table, key=lambda x: -int(x.get("count") or 0))[:10],
         "groups": _merge_report_groups(raw_groups),
         "containers": containers,
