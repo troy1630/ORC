@@ -1459,10 +1459,11 @@ canvas{display:block;width:100%;height:58px}
 .diag-patterns{display:flex;flex-direction:column;gap:4px}
 .diag-pattern{font-size:.7rem;color:#d8e1ec;border-top:1px solid rgba(230,237,243,.09);padding-top:4px}
 .diag-related{font-size:.68rem;color:var(--mut);display:flex;gap:5px;flex-wrap:wrap}
-.report-toolbar{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr)) auto;gap:8px;align-items:end;margin-bottom:12px}
-.report-range-dates{display:none;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px}
+.report-toolbar{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;align-items:end;margin-bottom:12px}
+.report-range-dates{display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:5px;min-width:0}
 .report-range-dates.visible{display:grid}
-.report-actions{display:flex;gap:6px;align-items:center;justify-content:flex-end}
+.report-range-dates .orch-input{min-width:0;width:100%;box-sizing:border-box}
+.report-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end;min-width:0}
 .report-status{font-size:.72rem;color:var(--mut);min-height:18px;margin:-4px 0 8px}
 .report-output{display:flex;flex-direction:column;gap:12px;min-height:260px}
 .report-table-wrap{overflow:auto;border:1px solid #21262d;border-radius:8px;background:#0d1117}
@@ -1484,7 +1485,9 @@ canvas{display:block;width:100%;height:58px}
 .report-diagnosis-title{font-size:.82rem;font-weight:850;color:#f0f6fc}
 .report-diagnosis-item{border-top:1px solid rgba(230,237,243,.1);padding-top:9px;display:flex;flex-direction:column;gap:6px}
 .report-confidence{display:inline-flex;border-radius:999px;padding:2px 7px;background:rgba(88,166,255,.12);color:#9ecbff;font-size:.65rem;font-weight:800;text-transform:uppercase}
+.report-diagnosis-count{display:inline-flex;border-radius:999px;padding:2px 7px;background:rgba(63,185,80,.12);color:#7ee787;font-size:.65rem;font-weight:800;white-space:nowrap}
 .report-evidence-ref{font-family:Consolas,monospace;font-size:.67rem;color:#9ecbff;margin-right:5px}
+@media (max-width:1050px){.report-toolbar{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .heatmap-set{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px}
 .heatmap-panel{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;min-width:0;overflow:auto}
 .heatmap-title{font-size:.75rem;font-weight:850;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
@@ -4127,22 +4130,27 @@ function reportTimestamp(value){
   const date=new Date(value);
   return Number.isNaN(date.getTime())?value:date.toLocaleString();
 }
-function reportDiagnosisHtml(diagnosis){
+function reportDiagnosisHtml(diagnosis,evidence){
   if(!diagnosis)return `<section class="report-diagnosis"><div class="report-diagnosis-title">AI Root Cause Analysis</div><div class="muted">Not requested. Review the evidence, then select Analyze with AI when you want a diagnosis.</div></section>`;
   const issues=diagnosis.diagnoses||[];
+  const findingsById=new Map((evidence?.findings||[]).map(finding=>[String(finding.id),finding]));
   return `<section class="report-diagnosis">
     <div class="report-diagnosis-title">AI Root Cause Analysis${diagnosis.model?` · ${esc(diagnosis.model)}`:''}</div>
     <div>${esc(diagnosis.summary||'No summary returned.')}</div>
     ${diagnosis.status==='unavailable'||diagnosis.status==='too_large'?'<div class="muted">No diagnosis was generated; observed evidence remains available below.</div>':''}
-    ${issues.map(item=>`<article class="report-diagnosis-item">
-      <div class="report-card-head"><strong>${esc(item.title||'Possible cause')}</strong><span class="report-confidence">${esc(item.confidence||'low')} confidence</span></div>
+    ${issues.map(item=>{
+      const evidenceIds=[...new Set((Array.isArray(item.evidence_ids)?item.evidence_ids:[]).map(String))];
+      const eventCount=evidenceIds.reduce((total,id)=>total+Math.max(0,Number(findingsById.get(id)?.count)||0),0);
+      return `<article class="report-diagnosis-item">
+      <div class="report-card-head"><strong>${esc(item.title||'Possible cause')}</strong><div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end"><span class="report-confidence">${esc(item.confidence||'low')} confidence</span>${evidenceIds.length?`<span class="report-diagnosis-count">${eventCount.toLocaleString()} events</span>`:''}</div></div>
       ${item.observed?`<div class="report-card-row"><span>Observed</span><div>${esc(item.observed)}</div></div>`:''}
       ${item.hypothesis?`<div class="report-card-row"><span>Hypothesis</span><div>${esc(item.hypothesis)}</div></div>`:''}
-      ${item.evidence_ids?.length?`<div class="report-card-row"><span>Evidence</span><div>${item.evidence_ids.map(id=>`<span class="report-evidence-ref">${esc(id)}</span>`).join('')}</div></div>`:''}
+      ${evidenceIds.length?`<div class="report-card-row"><span>Evidence</span><div>${evidenceIds.map(id=>{const count=Number(findingsById.get(id)?.count)||0;return `<span class="report-evidence-ref">${esc(id)} · ${count.toLocaleString()} events</span>`}).join('<br>')}</div></div>`:''}
       ${item.alternatives?.length?`<div class="report-card-row"><span>Also possible</span><div>${item.alternatives.map(esc).join('<br>')}</div></div>`:''}
       ${item.next_checks?.length?`<div class="report-card-row"><span>Next checks</span><div>${item.next_checks.map(esc).join('<br>')}</div></div>`:''}
       ${item.countermeasure?`<div class="report-card-row"><span>Countermeasure</span><div>${esc(item.countermeasure)}${item.approval_required?'<br><strong>Approval required before changes.</strong>':''}</div></div>`:''}
-    </article>`).join('')}
+    </article>`;
+    }).join('')}
     ${diagnosis.limitations?.length?`<div class="report-card-row"><span>Limitations</span><div>${diagnosis.limitations.map(esc).join('<br>')}</div></div>`:''}
   </section>`;
 }
@@ -4159,7 +4167,7 @@ function renderReport(report){
   }
   const groups=report.groups||[];
   output.innerHTML=`
-    ${reportDiagnosisHtml(report.diagnosis)}
+    ${reportDiagnosisHtml(report.diagnosis,report.analysis_evidence)}
     ${reportTableHtml(report.top_table||[])}
     ${reportHeatmapsHtml(report)}
     <div class="report-grid">
@@ -9085,6 +9093,12 @@ def _build_report_markdown(report: dict) -> str:
         "",
     ]
     diagnosis = report.get("diagnosis")
+    finding_counts = {}
+    for item in (report.get("analysis_evidence") or {}).get("findings", []):
+        try:
+            finding_counts[str(item.get("id"))] = max(0, int(item.get("count") or 0))
+        except (AttributeError, TypeError, ValueError):
+            continue
     lines.extend(["## AI Root Cause Analysis", ""])
     if not diagnosis:
         lines.append("AI analysis was not requested. The report contains observed log evidence only.")
@@ -9097,6 +9111,8 @@ def _build_report_markdown(report: dict) -> str:
         if diagnosis.get("status") != "complete":
             lines.extend(["", "No diagnosis was generated; no generic fallback was substituted."])
         for index, item in enumerate(diagnosis.get("diagnoses", []), start=1):
+            evidence_ids = list(dict.fromkeys(str(value) for value in item.get("evidence_ids", [])))
+            cited_events = sum(finding_counts.get(value, 0) for value in evidence_ids)
             lines.extend([
                 "",
                 f"### {index}. {item.get('title') or 'Diagnosis'}",
@@ -9104,7 +9120,8 @@ def _build_report_markdown(report: dict) -> str:
                 f"- Observed: {item.get('observed', '')}",
                 f"- Hypothesis: {item.get('hypothesis', '')}",
                 f"- Confidence: {item.get('confidence', 'low')}",
-                f"- Evidence: {', '.join(item.get('evidence_ids', []))}",
+                f"- Cited events: {cited_events}",
+                f"- Evidence: {', '.join(f'{value} ({finding_counts.get(value, 0)} events)' for value in evidence_ids)}",
             ])
             for alternative in item.get("alternatives", []):
                 lines.append(f"- Alternative: {alternative}")
