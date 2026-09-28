@@ -4,13 +4,15 @@ import re
 import hashlib
 import hmac
 import secrets
+import threading
 import time as _time
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -48,6 +50,12 @@ OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 _ORACLE_UUID_RE = re.compile(r"\b[0-9a-f]{8,}\b", re.I)
 _ORACLE_NUM_RE = re.compile(r"\b\d+\b")
+_GLANCES_REFRESH_SECONDS = 60
+_GLANCES_AVERAGE_SECONDS = 15 * 60
+_glances_lock = threading.Lock()
+_glances_samples: dict[int, deque] = defaultdict(deque)
+_glances_last_poll: dict[int, float] = {}
+_glances_latest: dict[int, dict] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -1180,7 +1188,7 @@ html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="cha
 .home-issue-server{color:var(--mut);font-size:.55rem;line-height:1.08;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .home-issue-row .sub-type{margin-right:4px;font-size:.54rem;padding:1px 4px}
 .home-issue-row .status-dot{width:16px;height:16px;font-size:.48rem}
-.metric-table-head,.metric-summary,.metric-stack{display:grid;grid-template-columns:minmax(210px,1fr) 74px 74px 92px 152px;gap:10px;align-items:center}
+.metric-table-head,.metric-summary,.metric-stack{display:grid;grid-template-columns:minmax(190px,1fr) 58px 58px 78px 78px 78px 140px;gap:8px;align-items:center}
 .metric-table-head{color:var(--mut);font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:0 10px 4px}
 .metric-connection{border:1px solid #21262d;border-radius:7px;background:#0d1117;min-width:0;overflow:hidden}
 .metric-connection summary{list-style:none;cursor:pointer}
@@ -1191,6 +1199,8 @@ html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="cha
 .metric-caret{width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:6px solid var(--mut);transition:transform .14s;flex-shrink:0}
 .metric-connection[open] .metric-caret{transform:rotate(90deg)}
 .metric-num{font-size:.73rem;font-variant-numeric:tabular-nums;text-align:right;color:var(--txt)}
+.metric-glances{font-size:.73rem;font-variant-numeric:tabular-nums;text-align:right;color:#9cc8ff;text-decoration:none;white-space:nowrap}
+.metric-glances:hover{color:#d2e5ff;text-decoration:underline}
 .metric-children{border-top:1px solid #21262d;background:#0b1118}
 .metric-stack{padding:6px 10px;color:var(--mut);font-size:.74rem}
 .metric-stack+.metric-stack{border-top:1px solid rgba(33,38,45,.72)}
@@ -1564,8 +1574,8 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .plane-grid,.layer-grid,.governance-grid,.memory-grid,.learning-loop{grid-template-columns:1fr}
   .profile-map-top{flex-direction:column}.profile-map-tools{align-items:flex-start}.profile-filter-group{justify-content:flex-start}.profile-card-grid{grid-template-columns:1fr}.profile-map-canvas{height:420px;min-height:360px}
   .issue-list{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
-  .metric-table-head,.metric-summary,.metric-stack{grid-template-columns:minmax(150px,1fr) 52px 54px 70px}
-  .metric-table-head span:nth-child(5),.metric-summary .home-health,.metric-stack .home-health{display:none}
+  .metric-table-head,.metric-summary,.metric-stack{grid-template-columns:minmax(110px,1fr) 34px 38px 48px 48px 48px;gap:4px}
+  .metric-table-head span:nth-child(7),.metric-summary .home-health,.metric-stack .home-health{display:none}
   .kingdom{padding:8px}
   .kingdom-hdr{align-items:flex-start}
   .kingdom-castle,.kingdom-logo{width:34px;height:34px}
@@ -2291,7 +2301,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
    STATE
    ============================================================ */
 let _evts=[], _homeRecent=[], _evFilters={severity:'',container:'',server:''};
-let _conns=[], _editId=null, _charEditKey='', _charDraftCharacter='', _charLogoDraft='', _charDefaultLogo='';
+let _conns=[], _hostMetrics={}, _editId=null, _charEditKey='', _charDraftCharacter='', _charLogoDraft='', _charDefaultLogo='';
 let _stacks=[], _connLogoDraft='', _networkZoom=1;
 let _networkPan={x:0,y:0,worldKey:'',centeredStageId:'',centeredVisible:false,dragging:false,startX:0,startY:0,originX:0,originY:0,suppressClick:false};
 let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,moved:false};
@@ -2807,11 +2817,19 @@ function renderHomeMetrics(stacks){
     return;
   }
   const head=`<div class="metric-table-head">
-    <span>Connection</span><span>Polls</span><span>Issues</span><span>Containers</span><span>Health</span>
+    <span>Connection</span><span>Polls</span><span>Issues</span><span>Containers</span><span>CPU 15m</span><span>MEM 15m</span><span>Health</span>
   </div>`;
   el.innerHTML=head+kingdoms.map(k=>{
     k.stacks.sort((a,b)=>stackFriendlyName(a).localeCompare(stackFriendlyName(b)));
     const totals=metricTotalsForStacks(k.stacks);
+    const host=_hostMetrics[k.server]||{};
+    const glancesHref=host.glances_url||'';
+    const cpu=host.cpu_percent==null?'—':`${Number(host.cpu_percent).toFixed(1)}%`;
+    const mem=host.memory_percent==null?'—':`${Number(host.memory_percent).toFixed(1)}%`;
+    const sampleInfo=`${host.sample_count||0} sample${host.sample_count===1?'':'s'} in the current 15-minute window${host.state==='unavailable'?'; Glances is unavailable, so this may be the last available average':''}${host.updated_at?`; last updated ${new Date(host.updated_at).toLocaleTimeString()}`:''}`;
+    const metricLink=(value,label)=>glancesHref
+      ? `<a class="metric-glances" href="${esc(glancesHref)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${esc(`${label}: ${sampleInfo}. Open Glances on ${serverDisplayName(k)}.`)}">${value}</a>`
+      : `<span class="metric-glances" title="Glances is not configured for this connection.">—</span>`;
     const stackRows=k.stacks.map(stack=>{
       const polls=stackPollCount(stack);
       const issues=stackIssueCount(stack);
@@ -2822,6 +2840,7 @@ function renderHomeMetrics(stacks){
         <span class="metric-num">${polls}</span>
         <span class="metric-num">${issues}</span>
         <span class="metric-num">${containers}</span>
+        <span class="metric-host-placeholder"></span><span class="metric-host-placeholder"></span>
         ${homeHealthHtml(health)}
       </div>`;
     }).join('');
@@ -2831,6 +2850,8 @@ function renderHomeMetrics(stacks){
         <span class="metric-num">${totals.polls}</span>
         <span class="metric-num">${totals.issues}</span>
         <span class="metric-num">${totals.containers}</span>
+        ${metricLink(cpu,'CPU 15-minute average')}
+        ${metricLink(mem,'Memory 15-minute average')}
         ${homeHealthHtml(totals.health)}
       </summary>
       <div class="metric-children">${stackRows}</div>
@@ -2880,6 +2901,13 @@ async function loadHomeRecent(){
     const el=document.getElementById('home-recent');
     if(el)el.innerHTML='<div class="empty">Could not load recent issues.</div>';
   }
+}
+async function loadHostMetrics(){
+  try{
+    const d=await fetch('/host-metrics').then(r=>r.json());
+    _hostMetrics=Object.fromEntries((d.items||[]).map(item=>[item.server,item]));
+    renderHomeDashboard();
+  }catch{}
 }
 function renderVisualViews(){
   renderHomeDashboard();
@@ -5803,6 +5831,7 @@ async function loadAll(){
   _conns=await fetch('/connections').then(r=>r.json()).catch(()=>_conns);
   _populateServerDropdown();
   await Promise.all([loadStatus(),loadEvts(),loadStacks(),loadRavenBacklog(),loadHomeRecent()]);
+  loadHostMetrics();
   if(document.getElementById('pane-orchestration')?.classList.contains('on'))await loadOrchestration();
   renderHomeDashboard();
   document.getElementById('upd').textContent=fmtShort(new Date().toISOString());
@@ -10278,6 +10307,124 @@ def _stack_character(name: str) -> str:
     if any(x in n for x in ("ai", "ml", "kpi", "chatbot", "advisor", "analytics", "tower")): return "wizard"
     if any(x in n for x in ("simulator", "sppm", "presentation", "ux2")): return "fighter"
     return ("orc", "rogue", "wizard", "fighter")[abs(hash(name)) % 4]
+
+
+def _glances_number(payload, keys: tuple[str, ...]) -> float | None:
+    if isinstance(payload, dict):
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return float(value)
+        for value in payload.values():
+            found = _glances_number(value, keys)
+            if found is not None:
+                return found
+    elif isinstance(payload, list):
+        found = [value for item in payload if (value := _glances_number(item, keys)) is not None]
+        if found:
+            return sum(found) / len(found)
+    return None
+
+
+def _glances_host_url(base_url: str) -> str | None:
+    try:
+        parsed = urlsplit(base_url if "://" in base_url else f"http://{base_url}")
+        host = parsed.hostname
+        if not host:
+            return None
+        display_host = f"[{host}]" if ":" in host else host
+        return f"http://{display_host}:61208"
+    except ValueError:
+        return None
+
+
+def _fetch_glances_metrics(base_url: str) -> tuple[str | None, float | None, float | None]:
+    glances_url = _glances_host_url(base_url)
+    if not glances_url:
+        return None, None, None
+    for api_version in (4, 3):
+        try:
+            with httpx.Client(timeout=2.5, trust_env=False) as client:
+                cpu_response = client.get(f"{glances_url}/api/{api_version}/cpu")
+                if cpu_response.status_code == 404 and api_version == 4:
+                    continue
+                cpu_response.raise_for_status()
+                mem_response = client.get(f"{glances_url}/api/{api_version}/mem")
+                mem_response.raise_for_status()
+                cpu = _glances_number(cpu_response.json(), ("total", "percent", "cpu_percent"))
+                memory = _glances_number(mem_response.json(), ("percent", "memory_percent"))
+                if cpu is None or memory is None:
+                    return glances_url, None, None
+                return glances_url, max(0.0, min(100.0, cpu)), max(0.0, min(100.0, memory))
+        except (httpx.HTTPError, ValueError, TypeError):
+            if api_version == 4:
+                continue
+    return glances_url, None, None
+
+
+@app.get("/host-metrics")
+def get_host_metrics() -> dict:
+    """Read Glances host metrics, sampling at most once per minute per server."""
+    now = _time.time()
+    with SessionLocal() as session:
+        connections = session.query(Connection).filter_by(enabled=True).all()
+        targets = [(conn.id, conn.name, conn.server_name or conn.name, conn.base_url) for conn in connections]
+
+    with _glances_lock:
+        due = [target for target in targets if now - _glances_last_poll.get(target[0], 0) >= _GLANCES_REFRESH_SECONDS]
+        if due:
+            with ThreadPoolExecutor(max_workers=min(8, len(due))) as pool:
+                futures = {pool.submit(_fetch_glances_metrics, target[3]): target for target in due}
+                for future in as_completed(futures):
+                    conn_id, server, server_name, _ = futures[future]
+                    try:
+                        glances_url, cpu, memory = future.result()
+                    except Exception:
+                        glances_url, cpu, memory = None, None, None
+                    _glances_last_poll[conn_id] = now
+                    previous = _glances_latest.get(conn_id, {})
+                    if cpu is not None and memory is not None:
+                        samples = _glances_samples[conn_id]
+                        samples.append((now, cpu, memory))
+                        while samples and now - samples[0][0] > _GLANCES_AVERAGE_SECONDS:
+                            samples.popleft()
+                        _glances_latest[conn_id] = {
+                            "server": server,
+                            "server_name": server_name,
+                            "glances_url": glances_url,
+                            "cpu_percent": sum(sample[1] for sample in samples) / len(samples),
+                            "memory_percent": sum(sample[2] for sample in samples) / len(samples),
+                            "sample_count": len(samples),
+                            "updated_at": datetime.fromtimestamp(now, timezone.utc).isoformat(),
+                            "state": "ok",
+                        }
+                    else:
+                        _glances_latest[conn_id] = {
+                            **previous,
+                            "server": server,
+                            "server_name": server_name,
+                            "glances_url": glances_url or previous.get("glances_url"),
+                            "state": "unavailable",
+                        }
+
+        active_ids = {target[0] for target in targets}
+        for conn_id in list(_glances_latest):
+            if conn_id not in active_ids:
+                _glances_latest.pop(conn_id, None)
+                _glances_samples.pop(conn_id, None)
+                _glances_last_poll.pop(conn_id, None)
+        items = []
+        for conn_id, server, server_name, base_url in targets:
+            item = dict(_glances_latest.get(conn_id, {}))
+            item.setdefault("server", server)
+            item.setdefault("server_name", server_name)
+            item.setdefault("glances_url", _glances_host_url(base_url))
+            item.setdefault("cpu_percent", None)
+            item.setdefault("memory_percent", None)
+            item.setdefault("sample_count", 0)
+            item.setdefault("state", "unavailable")
+            items.append(item)
+    return {"average_window_minutes": 15, "items": items}
 
 
 @app.get("/overview")
