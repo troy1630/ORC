@@ -80,6 +80,9 @@ class OrchestrationReportIn(BaseModel):
     container: str = ""
     scope: str = "container"
     tail: int = 2000
+    report_date: str = ""
+    day_start: int | None = None
+    day_end: int | None = None
 
 
 class LoginIn(BaseModel):
@@ -1449,7 +1452,7 @@ canvas{display:block;width:100%;height:58px}
 .diag-patterns{display:flex;flex-direction:column;gap:4px}
 .diag-pattern{font-size:.7rem;color:#d8e1ec;border-top:1px solid rgba(230,237,243,.09);padding-top:4px}
 .diag-related{font-size:.68rem;color:var(--mut);display:flex;gap:5px;flex-wrap:wrap}
-.report-toolbar{display:grid;grid-template-columns:repeat(5,minmax(130px,1fr)) auto;gap:8px;align-items:end;margin-bottom:12px}
+.report-toolbar{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr)) auto;gap:8px;align-items:end;margin-bottom:12px}
 .report-scope{display:flex;align-items:center;gap:10px;border:1px solid var(--bdr);border-radius:6px;background:#0d1117;padding:6px 8px;min-height:32px}
 .report-scope label{display:flex;align-items:center;gap:5px;color:var(--mut);font-size:.72rem;font-weight:750;white-space:nowrap}
 .report-actions{display:flex;gap:6px;align-items:center;justify-content:flex-end}
@@ -1975,6 +1978,10 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
                   <option value="2000" selected>2,000 lines</option>
                   <option value="5000">5,000 lines</option>
                 </select>
+              </div>
+              <div class="orch-field">
+                <label>Report Day</label>
+                <input class="orch-input" type="date" id="report-date">
               </div>
               <div class="report-actions">
                 <button class="btnp" type="button" id="report-run-btn" onclick="runReport()">Run Oracle Check</button>
@@ -3966,6 +3973,11 @@ function renderReportFilters(){
 async function loadReportInventory(){
   const output=document.getElementById('report-output');
   const status=document.getElementById('report-status');
+  const reportDate=document.getElementById('report-date');
+  if(reportDate&&!reportDate.value){
+    const now=new Date();
+    reportDate.value=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  }
   try{
     if(status)status.textContent='Loading Portainer inventory...';
     _reportInventory=await fetch('/orchestration/reports/inventory').then(r=>r.json());
@@ -4022,6 +4034,11 @@ function reportHeatmapsHtml(report){
     ${heatmapHtml('Warnings by Container and Date',heatmaps.warnings||[],dates,heatmaps.max_warnings||0,'warning')}
   </div>`;
 }
+function reportTimestamp(value){
+  if(!value)return 'Timestamp unavailable';
+  const date=new Date(value);
+  return Number.isNaN(date.getTime())?value:date.toLocaleString();
+}
 function renderReport(report){
   const output=document.getElementById('report-output');
   const download=document.getElementById('report-download-btn');
@@ -4042,6 +4059,7 @@ function renderReport(report){
           <div class="report-card-count">${esc(g.count)} events</div>
         </div>
         <div class="report-card-row"><span>Containers</span><div>${esc((g.containers||[]).join(', ')||'unknown')}</div></div>
+        ${g.latest_error?`<div class="report-card-row"><span>Most Recent Error</span><div><time datetime="${esc(g.latest_error.timestamp||'')}">${esc(reportTimestamp(g.latest_error.timestamp))}</time><br>${esc(g.latest_error.message)}</div></div>`:''}
         <div class="report-card-row"><span>Root Cause</span><div>${esc(g.possible_root_cause||'Needs review')}</div></div>
         <div class="report-card-row"><span>Countermeasure</span><div>${esc(g.countermeasure||'Review with developer')}</div></div>
         <div class="report-patterns">${(g.top_patterns||[]).map(p=>`<div class="report-pattern">${esc(p.count)}x ${esc(p.pattern||'pattern')}</div>`).join('')}</div>
@@ -4053,6 +4071,7 @@ async function runReport(){
   const stack=selectedReportStack(server);
   const scope=reportScope();
   const container=document.getElementById('report-container')?.value||'';
+  const reportDate=document.getElementById('report-date')?.value||'';
   const status=document.getElementById('report-status');
   const runBtn=document.getElementById('report-run-btn');
   const download=document.getElementById('report-download-btn');
@@ -4064,6 +4083,13 @@ async function runReport(){
     if(status)status.textContent='Select a container or switch scope to Stack.';
     return;
   }
+  if(!reportDate){
+    if(status)status.textContent='Choose a day for the root cause report.';
+    return;
+  }
+  const [year,month,day]=reportDate.split('-').map(Number);
+  const dayStart=new Date(year,month-1,day);
+  const dayEnd=new Date(year,month-1,day+1);
   try{
     if(runBtn)runBtn.disabled=true;
     if(download)download.disabled=true;
@@ -4073,10 +4099,13 @@ async function runReport(){
       stack:stack.name,
       container:scope==='container'?container:'',
       scope,
-      tail:Number(document.getElementById('report-tail')?.value||2000)
+      tail:Number(document.getElementById('report-tail')?.value||2000),
+      report_date:reportDate,
+      day_start:Math.floor(dayStart.getTime()/1000),
+      day_end:Math.floor(dayEnd.getTime()/1000)
     });
     renderReport(_reportCurrent);
-    if(status)status.textContent=`Report generated for ${_reportCurrent.server_name} / ${_reportCurrent.stack||'all stacks'} / ${_reportCurrent.container||scope}.`;
+    if(status)status.textContent=`Report generated for ${reportDate} / ${_reportCurrent.server_name} / ${_reportCurrent.stack||'all stacks'} / ${_reportCurrent.container||scope}.`;
   }catch(e){
     _reportCurrent=null;
     renderReport(null);
@@ -8392,6 +8421,16 @@ def _summarize_log_text(raw: str, tail: int = 2000) -> dict:
     error_lines = [line for line in issue_lines if any(term in line.lower() for term in ("error", "exception", "failed", "failure", "critical", "fatal", "timeout", "denied"))]
     warning_lines = [line for line in issue_lines if any(term in line.lower() for term in ("warning", "warn"))]
     patterns = Counter(_diagnostic_pattern(line) for line in issue_lines)
+    latest_by_pattern: dict[str, dict] = {}
+    for line in error_lines:
+        pattern = _diagnostic_pattern(line)
+        timestamp = _log_timestamp(line)
+        latest = latest_by_pattern.get(pattern)
+        if (timestamp and (not latest or not latest["timestamp"] or timestamp > latest["timestamp"])) or (not timestamp and not latest):
+            latest_by_pattern[pattern] = {
+                "timestamp": timestamp,
+                "message": _redact_log_text(_strip_log_timestamp(line))[:700],
+            }
     timestamps = [_log_timestamp(line) for line in lines if _log_timestamp(line)]
     daily_errors: Counter[str] = Counter()
     daily_warnings: Counter[str] = Counter()
@@ -8415,7 +8454,7 @@ def _summarize_log_text(raw: str, tail: int = 2000) -> dict:
         "first_timestamp": timestamps[0] if timestamps else "",
         "last_timestamp": timestamps[-1] if timestamps else "",
         "top_patterns": [
-            {"pattern": pattern, "count": count}
+            {"pattern": pattern, "count": count, "latest_error": latest_by_pattern.get(pattern)}
             for pattern, count in patterns.most_common(12)
         ],
         "daily_errors": dict(sorted(daily_errors.items())),
@@ -8625,12 +8664,19 @@ def _merge_report_groups(groups: list[dict]) -> list[dict]:
                 "patterns": Counter(),
                 "possible_root_cause": group["possible_root_cause"],
                 "countermeasure": group["countermeasure"],
+                "latest_error": None,
             },
         )
         bucket["count"] += group["count"]
         bucket["containers"].add(group["container"])
         if group["pattern"]:
             bucket["patterns"][group["pattern"]] += group["count"]
+        latest_error = group.get("latest_error")
+        if latest_error and latest_error.get("timestamp") and (
+            not bucket["latest_error"]
+            or latest_error["timestamp"] > bucket["latest_error"].get("timestamp", "")
+        ):
+            bucket["latest_error"] = latest_error
     out = []
     for item in merged.values():
         out.append(
@@ -8644,6 +8690,7 @@ def _merge_report_groups(groups: list[dict]) -> list[dict]:
                 ],
                 "possible_root_cause": item["possible_root_cause"],
                 "countermeasure": item["countermeasure"],
+                "latest_error": item["latest_error"],
             }
         )
     return sorted(out, key=lambda x: (-x["count"], x["label"]))[:5]
@@ -8673,6 +8720,7 @@ def _build_report_markdown(report: dict) -> str:
         f"- Stack group: {report.get('stack', '') or 'all stacks'}",
         f"- Scope: {report.get('scope', '')}",
         f"- Container: {report.get('container', '') or 'all containers in stack'}",
+        f"- Report day: {report.get('report_date', '') or 'all available log dates'}",
         f"- Log tail: {report.get('tail', 0)} lines per container",
         "",
         "## Error Summary",
@@ -8712,6 +8760,7 @@ def _build_report_markdown(report: dict) -> str:
                 "",
                 f"- Count: {group['count']}",
                 f"- Containers: {', '.join(group['containers'])}",
+                *([f"- Most recent error: {group['latest_error'].get('timestamp', 'Timestamp unavailable')} — {group['latest_error'].get('message', '')}"] if group.get("latest_error") else []),
                 f"- Possible root cause: {group['possible_root_cause']}",
                 f"- Countermeasure: {group['countermeasure']}",
                 "- Top patterns:",
@@ -8822,6 +8871,13 @@ def _orchestration_report_inventory(session) -> dict:
 def _generate_orchestration_report(session, body: OrchestrationReportIn) -> dict:
     scope = "stack" if body.scope == "stack" else "container"
     tail = max(100, min(int(body.tail or 2000), 5000))
+    if (body.day_start is None) != (body.day_end is None):
+        raise HTTPException(400, "Both report day boundaries are required.")
+    day_start = body.day_start
+    day_end = body.day_end
+    if day_start is not None and day_end is not None:
+        if day_start < 0 or day_end <= day_start or day_end - day_start > 26 * 60 * 60:
+            raise HTTPException(400, "The selected report day has an invalid time range.")
     conn = session.query(Connection).filter_by(name=body.server, enabled=True).first()
     if not conn:
         raise HTTPException(404, "Selected server was not found.")
@@ -8851,7 +8907,13 @@ def _generate_orchestration_report(session, body: OrchestrationReportIn) -> dict
     top_table = []
     for endpoint, container in selected[:30]:
         meta = _container_meta(conn, endpoint, container)
-        raw_logs = client.get_container_logs(int(meta["endpoint_id"]), meta["container_id"], tail=tail)
+        raw_logs = client.get_container_logs(
+            int(meta["endpoint_id"]),
+            meta["container_id"],
+            since=max(0, day_start - 1) if day_start is not None else 0,
+            tail=tail,
+            until=day_end - 1 if day_end is not None else 0,
+        )
         summary = _summarize_log_text(raw_logs, tail=tail)
         containers.append({"metadata": meta, "summary": summary})
         top_pattern = (summary.get("top_patterns") or [{}])[0]
@@ -8865,7 +8927,9 @@ def _generate_orchestration_report(session, body: OrchestrationReportIn) -> dict
                 }
             )
         for pattern in (summary.get("top_patterns") or [])[:5]:
-            raw_groups.append(_report_group_from_pattern(meta["container_name"], pattern))
+            group = _report_group_from_pattern(meta["container_name"], pattern)
+            group["latest_error"] = pattern.get("latest_error")
+            raw_groups.append(group)
 
     report = {
         "title": f"{body.stack or conn.name} / {body.container or scope}",
@@ -8876,6 +8940,7 @@ def _generate_orchestration_report(session, body: OrchestrationReportIn) -> dict
         "container": body.container,
         "scope": scope,
         "tail": tail,
+        "report_date": body.report_date,
         "top_table": sorted(top_table, key=lambda x: -int(x.get("count") or 0))[:10],
         "groups": _merge_report_groups(raw_groups),
         "containers": containers,
