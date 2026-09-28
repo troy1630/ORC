@@ -1470,10 +1470,10 @@ canvas{display:block;width:100%;height:58px}
 .report-table th,.report-table td{padding:8px 9px;border-bottom:1px solid #21262d;text-align:left;vertical-align:top}
 .report-table th{color:var(--mut);font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;background:#111821}
 .report-table tr:last-child td{border-bottom:0}
-.report-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:9px}
+.report-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
 .report-card{border:1px solid #21262d;border-radius:8px;background:#0d1117;padding:10px;display:flex;flex-direction:column;gap:7px;min-width:0}
 .report-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-.report-card-title{font-size:.84rem;font-weight:850;color:#f0f6fc}
+.report-card-title{font-size:.84rem;font-weight:850;color:#f0f6fc;overflow-wrap:anywhere}
 .report-card-count{border:1px solid rgba(248,81,73,.34);border-radius:999px;background:rgba(248,81,73,.12);color:#ffb3ad;font-size:.66rem;font-weight:850;padding:2px 7px;white-space:nowrap}
 .report-card-row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;font-size:.74rem;line-height:1.35}
 .report-card-row span:first-child{color:var(--mut);font-weight:850;text-transform:uppercase;font-size:.61rem;letter-spacing:.04em}
@@ -1572,6 +1572,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   .orch-page-grid{grid-template-columns:1fr}
   .orch-form{grid-template-columns:1fr}
   .report-toolbar{grid-template-columns:1fr}
+  .report-grid{grid-template-columns:1fr}
   .report-actions{justify-content:flex-start}
   .orch-chat{height:520px}
   .chat-compose{flex-direction:column}
