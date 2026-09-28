@@ -1459,7 +1459,7 @@ canvas{display:block;width:100%;height:58px}
 .diag-patterns{display:flex;flex-direction:column;gap:4px}
 .diag-pattern{font-size:.7rem;color:#d8e1ec;border-top:1px solid rgba(230,237,243,.09);padding-top:4px}
 .diag-related{font-size:.68rem;color:var(--mut);display:flex;gap:5px;flex-wrap:wrap}
-.report-toolbar{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;align-items:end;margin-bottom:12px}
+.report-toolbar{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;align-items:end;margin-bottom:12px}
 .report-range-dates{display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:5px;min-width:0}
 .report-range-dates.visible{display:grid}
 .report-range-dates .orch-input{min-width:0;width:100%;box-sizing:border-box}
@@ -1974,20 +1974,12 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
                 <select class="orch-select" id="report-server" onchange="reportServerChanged()"></select>
               </div>
               <div class="orch-field">
-                <label>Stack</label>
+                <label>Stack (optional)</label>
                 <select class="orch-select" id="report-stack" onchange="reportStackChanged()"></select>
               </div>
               <div class="orch-field">
-                <label>Container</label>
+                <label>Container (optional)</label>
                 <select class="orch-select" id="report-container" onchange="reportFiltersChanged()"></select>
-              </div>
-              <div class="orch-field">
-                <label for="report-scope">Report Scope</label>
-                <select class="orch-select" id="report-scope" onchange="reportScopeChanged()">
-                  <option value="server" selected>Entire server</option>
-                  <option value="stack">Specific stack</option>
-                  <option value="container">Specific container</option>
-                </select>
               </div>
               <div class="orch-field">
                 <label>Log Tail</label>
@@ -3959,17 +3951,18 @@ function fillOrchSelects(){
   }
 }
 function reportScope(){
-  const scope=document.getElementById('report-scope')?.value||'server';
-  return ['server','stack','container'].includes(scope)?scope:'server';
+  if(document.getElementById('report-container')?.value)return 'container';
+  if(document.getElementById('report-stack')?.value)return 'stack';
+  return 'server';
 }
 function currentReportParameters(){
   const scope=reportScope();
   const rangeMode=document.getElementById('report-range-mode')?.value||'all';
   return {
     server:document.getElementById('report-server')?.value||'',
-    stack:scope==='server'?'':(document.getElementById('report-stack')?.value||''),
+    stack:document.getElementById('report-stack')?.value||'',
     scope,
-    container:scope==='container'?(document.getElementById('report-container')?.value||''):'',
+    container:document.getElementById('report-container')?.value||'',
     tail:Number(document.getElementById('report-tail')?.value||2000),
     range_mode:rangeMode,
     range_start_date:rangeMode==='period'?(document.getElementById('report-range-start')?.value||''):'',
@@ -3995,17 +3988,12 @@ function reportServerChanged(){
   if(container)container.value='';
   reportFiltersChanged(true);
   const server=selectedReportServer();
-  if(server&&reportScope()!=='server'&&!server.stacks_loaded)loadReportInventory(server.id);
+  if(server&&!server.stacks_loaded)loadReportInventory(server.id);
 }
 function reportStackChanged(){
   const container=document.getElementById('report-container');
   if(container)container.value='';
   reportFiltersChanged(true);
-}
-function reportScopeChanged(){
-  reportFiltersChanged(true);
-  const server=selectedReportServer();
-  if(server&&reportScope()!=='server'&&!server.stacks_loaded)loadReportInventory(server.id);
 }
 function toggleReportRange(){
   const mode=document.getElementById('report-range-mode')?.value||'all';
@@ -4032,21 +4020,21 @@ function renderReportFilters(){
   if(prevServer&&servers.some(s=>s.id===prevServer))serverEl.value=prevServer;
   const server=selectedReportServer()||servers[0]||null;
   if(server)serverEl.value=server.id;
-  stackEl.innerHTML=`<option value="">Choose a stack...</option>`+(server?.stacks||[]).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+  stackEl.innerHTML=`<option value="">All stacks (server scope)</option>`+(server?.stacks||[]).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
   if(prevStack&&(server?.stacks||[]).some(s=>s.name===prevStack))stackEl.value=prevStack;
   const stack=selectedReportStack(server);
-  containerEl.innerHTML=`<option value="">Choose a container...</option>`+(stack?.containers||[]).map(c=>`<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+  containerEl.innerHTML=`<option value="">All containers (stack scope)</option>`+(stack?.containers||[]).map(c=>`<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
   if(prevContainer&&(stack?.containers||[]).some(c=>c.name===prevContainer))containerEl.value=prevContainer;
   const scope=reportScope();
   const hasStacks=!!server?.stacks_loaded;
-  stackEl.disabled=scope==='server'||!hasStacks;
-  containerEl.disabled=scope!=='container'||!hasStacks||!stack;
+  stackEl.disabled=!hasStacks;
+  containerEl.disabled=!hasStacks||!stack;
   const status=document.getElementById('report-status');
   if(status&&server?.error)status.textContent=`Inventory warning for ${server.name||server.id}: ${server.error}`;
   else if(status&&!servers.length)status.textContent='No enabled Portainer servers are configured.';
   else if(status&&scope!=='server'&&server&&!server.stacks_loaded)status.textContent='Loading the selected server inventory for stack or container scope...';
   else if(status&&scope!=='server'&&server?.stacks_loaded&&!(server.stacks||[]).length)status.textContent='No stacks were found for the selected server.';
-  else if(status&&scope!=='server'&&!stack)status.textContent='Choose a stack to narrow the report scope.';
+  else if(status&&scope!=='server'&&!stack)status.textContent='Choose a stack, or clear the stack selection to report the entire server.';
   else if(status)status.textContent='';
 }
 async function loadReportInventory(serverId=''){
@@ -4068,7 +4056,7 @@ async function loadReportInventory(serverId=''){
       _reportInventory=inventory;
     }
     renderReportFilters();
-    if(!serverId&&reportScope()!=='server'){
+    if(!serverId){
       const selected=selectedReportServer();
       if(selected&&!selected.stacks_loaded)return loadReportInventory(selected.id);
     }
@@ -8985,6 +8973,10 @@ def _analyze_report_evidence(evidence: dict, session) -> dict:
         cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.I)
         result = json.loads(cleaned)
         valid_ids = {str(item.get("id")) for item in evidence.get("findings", [])}
+        finding_counts = {
+            str(item.get("id")): max(0, int(item.get("count") or 0))
+            for item in evidence.get("findings", [])
+        }
         if not isinstance(result, dict):
             raise ValueError("The model response was not a JSON object.")
         raw_diagnoses = result.get("diagnoses", [])
@@ -9020,6 +9012,10 @@ def _analyze_report_evidence(evidence: dict, session) -> dict:
                 "countermeasure": str(item.get("countermeasure", ""))[:1000],
                 "approval_required": bool(item.get("countermeasure")) or bool(item.get("approval_required", False)),
             })
+        diagnoses.sort(
+            key=lambda item: sum(finding_counts.get(ref, 0) for ref in set(item["evidence_ids"])),
+            reverse=True,
+        )
         limitations = result.get("limitations", [])
         if not isinstance(limitations, list):
             limitations = []
