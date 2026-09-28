@@ -2843,7 +2843,7 @@ function renderHomeMetrics(stacks){
     return;
   }
   const head=`<div class="metric-table-head">
-    <span>Connection</span><span>Polls</span><span>Issues</span><span>Containers</span><span>CPU 15m</span><span>MEM 15m</span><span>Disk /</span><span>Health</span>
+    <span>Connection</span><span>Polls</span><span>Issues</span><span>Containers</span><span>CPU 15m</span><span>MEM 15m</span><span>Disk</span><span>Health</span>
   </div>`;
   el.innerHTML=head+kingdoms.map(k=>{
     k.stacks.sort((a,b)=>stackFriendlyName(a).localeCompare(stackFriendlyName(b)));
@@ -2857,7 +2857,7 @@ function renderHomeMetrics(stacks){
     const metricLink=(value,label)=>glancesHref
       ? `<a class="metric-glances" href="${esc(glancesHref)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${esc(`${label}: ${sampleInfo}. Open Glances on ${serverDisplayName(k)}.`)}">${value}</a>`
       : `<span class="metric-glances" title="Glances is not configured for this connection.">—</span>`;
-    const diskTitle=host.storage_used!=null&&host.storage_total!=null?`${disk} of ${formatBytes(host.storage_used)} used from ${formatBytes(host.storage_total)} on ${host.storage_mount||'/'}`:'Root filesystem usage from Glances';
+    const diskTitle=host.storage_used!=null&&host.storage_total!=null?`${disk} of ${formatBytes(host.storage_used)} used from ${formatBytes(host.storage_total)} on ${host.storage_mount||'the selected filesystem'}`:'Filesystem usage from Glances is unavailable';
     const stackRows=k.stacks.map(stack=>{
       const polls=stackPollCount(stack);
       const issues=stackIssueCount(stack);
@@ -10408,7 +10408,16 @@ def _fetch_glances_metrics(base_url: str) -> dict:
                         response.raise_for_status()
                         payload = response.json()
                         if isinstance(payload, list):
-                            target.extend(payload)
+                            target.extend(item for item in payload if isinstance(item, dict))
+                        elif isinstance(payload, dict):
+                            if "mnt_point" in payload or "name" in payload:
+                                target.append(payload)
+                            else:
+                                for value in payload.values():
+                                    if isinstance(value, list):
+                                        target.extend(item for item in value if isinstance(item, dict))
+                                    elif isinstance(value, dict):
+                                        target.append(value)
                     except (httpx.HTTPError, ValueError, TypeError):
                         pass
                 return {
@@ -10477,16 +10486,22 @@ def _normalize_glances_containers(conn_id: int, rows: list, now: float) -> list[
 
 
 def _root_filesystem(filesystems: list) -> dict | None:
-    if not filesystems:
+    usable = [
+        fs for fs in filesystems
+        if isinstance(fs, dict)
+        and _number_or_none(fs.get("percent")) is not None
+        and _number_or_none(fs.get("size")) is not None
+        and _number_or_none(fs.get("used")) is not None
+    ]
+    if not usable:
         return None
-    root = next((fs for fs in filesystems if isinstance(fs, dict) and fs.get("mnt_point") == "/"), None)
-    if root is None:
-        return None
+    root = next((fs for fs in usable if fs.get("mnt_point") == "/"), None)
+    selected = root or max(usable, key=lambda fs: _number_or_none(fs.get("size")) or 0)
     return {
-        "storage_mount": "/",
-        "storage_percent": _number_or_none(root.get("percent")),
-        "storage_used": _number_or_none(root.get("used")),
-        "storage_total": _number_or_none(root.get("size")),
+        "storage_mount": selected.get("mnt_point") or selected.get("device_name") or "filesystem",
+        "storage_percent": _number_or_none(selected.get("percent")),
+        "storage_used": _number_or_none(selected.get("used")),
+        "storage_total": _number_or_none(selected.get("size")),
     }
 
 
