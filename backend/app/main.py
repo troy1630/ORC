@@ -1354,7 +1354,8 @@ html[data-view-mode="character"] #pane-overview::before,html[data-view-mode="cha
 .net-backbone line.err{stroke:rgba(248,81,73,.86);stroke-width:5.4}.net-backbone line.warn{stroke:rgba(210,153,34,.88);stroke-width:5.4}
 .net-backbone line.worker-link{stroke:rgba(31,37,45,.86);stroke-width:3.05}
 .net-backbone line.worker-link.err{stroke:rgba(248,81,73,.88);stroke-width:3.35}.net-backbone line.worker-link.warn{stroke:rgba(210,153,34,.9);stroke-width:3.35}
-.net-hub,.network-stack,.net-worker{position:absolute;left:var(--x);top:var(--y);transform:translate(-50%,-50%)}
+.net-hub,.network-stack,.net-worker{position:absolute;left:var(--x);top:var(--y);transform:translate(-50%,-50%);transition:left .32s ease-out,top .32s ease-out}
+.net-node-dragging{transition:none!important}
 .net-hub,.network-stack,.net-worker{cursor:grab}
 .net-hub:active,.network-stack:active,.net-worker:active{cursor:grabbing}
 .net-hub{z-index:3;width:66px;height:66px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(13,17,23,.9);border:2px solid rgba(88,166,255,.8);box-shadow:0 0 0 5px rgba(88,166,255,.14),0 10px 24px rgba(0,0,0,.26)}
@@ -1892,6 +1893,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
   <!-- NETWORK -->
   <div class="pane" id="pane-network">
     <div class="net-tools">
+      <button class="btns" id="network-running-toggle" onclick="toggleNetworkRunningOnly()" title="Show or hide stopped containers">Running only</button>
       <button class="btns" onclick="zoomNetwork(-0.1)">-</button>
       <button class="btns" onclick="zoomNetwork(0.1)">+</button>
       <button class="btns" onclick="resetNetworkView()">&#8982;</button>
@@ -2378,7 +2380,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
    ============================================================ */
 let _evts=[], _homeRecent=[], _evFilters={severity:'',container:'',server:''};
 let _conns=[], _hostMetrics={}, _editId=null, _charEditKey='', _charDraftCharacter='', _charLogoDraft='', _charDefaultLogo='';
-let _stacks=[], _connLogoDraft='', _networkZoom=1;
+let _stacks=[], _connLogoDraft='', _networkZoom=1, _networkRunningOnly=true;
 let _networkPan={x:0,y:0,worldKey:'',centeredStageId:'',centeredVisible:false,dragging:false,startX:0,startY:0,originX:0,originY:0,suppressClick:false};
 let _networkDrag={active:false,nodeId:'',startX:0,startY:0,originX:0,originY:0,moved:false};
 let _networkChecking={server:'',container:''};
@@ -3275,6 +3277,18 @@ function resetNetworkView(){
   _networkPan.centeredVisible=false;
   renderNetwork(_stacks);
 }
+function toggleNetworkRunningOnly(){
+  _networkRunningOnly=!_networkRunningOnly;
+  renderNetwork(_stacks);
+}
+function networkVisibleStacks(stacks){
+  if(!_networkRunningOnly)return stacks;
+  return stacks.map(stack=>({...stack,containers:(stack.containers||[]).filter(app=>!app.state||String(app.state).toLowerCase()==='running')}));
+}
+function syncNetworkRunningToggle(){
+  const button=document.getElementById('network-running-toggle');
+  if(button)button.textContent=_networkRunningOnly?'Running only':'All containers';
+}
 function networkRand(key,salt){
   return (hashStr(`${key}::${salt}`)%10000)/10000;
 }
@@ -3429,8 +3443,7 @@ function layoutNetworkWorld(kingdoms){
     const ox=col*cellW+(cellW-layout.width)/2;
     const oy=row*cellH+(cellH-layout.height)/2;
     const offsetNode=node=>{
-      const moved=loadNetworkNodePosition(node.id);
-      return {...node,x:moved?moved.x:node.x+ox,y:moved?moved.y:node.y+oy};
+      return {...node,x:node.x+ox,y:node.y+oy};
     };
     const hub={...offsetNode(layout.hub),kingdom:layout.kingdom};
     const stacks=layout.stacks.map(offsetNode);
@@ -3489,6 +3502,11 @@ function setNetworkNodePosition(el,x,y,persist=true){
   }
   if(persist)saveNetworkNodePosition(el.dataset.nodeId,x,y);
 }
+function snapNetworkNode(el){
+  const x=Number(el.dataset.homeX),y=Number(el.dataset.homeY);
+  el.classList.remove('net-node-dragging');
+  if(Number.isFinite(x)&&Number.isFinite(y))requestAnimationFrame(()=>setNetworkNodePosition(el,x,y,false));
+}
 function renderTopology(stacks,stageId,artMode='character'){
   const stage=document.getElementById(stageId);
   if(!stage)return;
@@ -3513,7 +3531,7 @@ function renderTopology(stacks,stageId,artMode='character'){
     const health=kingdomHealth(node.kingdom||{});
     const healthTitle=`Health = 1 - (${health.defects} defects / ${health.lines} lines queried)`;
     const hubArt=artMode==='logo'?serverLogo(node.kingdom||{}):'/assets/kingdoms/castle.png';
-    return `<div class="net-hub" data-node-id="${esc(node.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" title="${esc(serverDisplayName(node.kingdom||{}))}">
+    return `<div class="net-hub" data-node-id="${esc(node.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" data-home-x="${node.x.toFixed(1)}" data-home-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" title="${esc(serverDisplayName(node.kingdom||{}))}">
       <img src="${esc(hubArt)}" alt="">
       <span class="net-hub-meta">
         <span class="net-hub-label">${esc(serverDisplayName(node.kingdom||{}))}</span>
@@ -3531,7 +3549,7 @@ function renderTopology(stacks,stageId,artMode='character'){
     const art=artMode==='logo'?selectedStackLogo(stack):ch.src;
     const stackTotals=stackIssueTotals(stack);
     const severity=stackTotals.errors>0?'error':stackTotals.warnings>0?'warning':'';
-    return `<div class="network-stack" data-node-id="${esc(node.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}">
+    return `<div class="network-stack" data-node-id="${esc(node.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" data-home-x="${node.x.toFixed(1)}" data-home-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}">
       <div class="net-stack-node" onclick="jumpToEvents('${esc(stack.server)}','${esc(stack.name)}','${esc(severity)}')" title="${esc(stack.name)}">
         <img src="${esc(art)}" alt="${esc(stackFriendlyName(stack))}">
         <span class="net-stack-name">${esc(stackFriendlyName(stack))}</span>
@@ -3555,7 +3573,7 @@ function renderTopology(stacks,stageId,artMode='character'){
     const issueText=`${counts.errors} error${counts.errors!==1?'s':''}, ${counts.warnings} warning${counts.warnings!==1?'s':''}`;
     const checking=_networkChecking.server===node.stack.server&&_networkChecking.container===containerName;
     const focusedChecking=!!_focusedNetworkChecking[`${node.stack.server}::${containerName}`];
-    return `<div class="net-worker ${side} ${checking?'checking':''} ${focusedChecking?'focused-checking':''}" data-node-id="${esc(node.id)}" data-stack-node-id="${esc(node.stackNode.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" onclick="jumpToEventsFromEl(this)" data-server="${esc(node.stack.server)}" data-container="${esc(containerName)}" data-severity="${esc(dot==='err'?'error':dot==='warn'?'warning':'')}" aria-label="${esc(containerName)}">
+    return `<div class="net-worker ${side} ${checking?'checking':''} ${focusedChecking?'focused-checking':''}" data-node-id="${esc(node.id)}" data-stack-node-id="${esc(node.stackNode.id)}" data-x="${node.x.toFixed(1)}" data-y="${node.y.toFixed(1)}" data-home-x="${node.x.toFixed(1)}" data-home-y="${node.y.toFixed(1)}" style="--x:${networkPx(node.x)};--y:${networkPx(node.y)}" onclick="jumpToEventsFromEl(this)" data-server="${esc(node.stack.server)}" data-container="${esc(containerName)}" data-severity="${esc(dot==='err'?'error':dot==='warn'?'warning':'')}" aria-label="${esc(containerName)}">
       <span class="worker-avatar"><img src="${esc(workerAsset)}" alt=""></span>
       <span class="net-dot ${dot}">${esc(dotText)}</span>
       <span class="net-worker-name">${esc(displayName)}</span>
@@ -3580,8 +3598,9 @@ function renderTopology(stacks,stageId,artMode='character'){
     ${workersHtml}
   </div>`;
   applyNetworkTransform();
+  syncNetworkRunningToggle();
 }
-function renderNetwork(stacks){renderTopology(stacks,'network-stage',_viewMode==='corporate'?'logo':'character');}
+function renderNetwork(stacks){renderTopology(networkVisibleStacks(stacks),'network-stage',_viewMode==='corporate'?'logo':'character');}
 function activeTopologyStage(){
   return document.querySelector('#pane-network.on .network-stage')||null;
 }
@@ -5870,6 +5889,7 @@ function setupNetworkPan(){
     const nodeEl=e.target.closest('.net-hub,.network-stack,.net-worker');
     if(nodeEl){
       e.preventDefault();
+      nodeEl.classList.add('net-node-dragging');
       _networkDrag.active=true;
       _networkDrag.nodeId=nodeEl.dataset.nodeId||'';
       _networkDrag.startX=e.clientX;
@@ -5898,7 +5918,7 @@ function setupNetworkPan(){
       if(Math.hypot(sx,sy)>4)_networkDrag.moved=true;
       const x=_networkDrag.originX+sx/_networkZoom;
       const y=_networkDrag.originY+sy/_networkZoom;
-      setNetworkNodePosition(el,x,y);
+      setNetworkNodePosition(el,x,y,false);
       return;
     }
     if(!_networkPan.dragging)return;
@@ -5908,12 +5928,14 @@ function setupNetworkPan(){
   });
   const stop=e=>{
     if(_networkDrag.active){
+      const el=getNetworkNodeEl(_networkDrag.nodeId,stage);
       if(_networkDrag.moved){
         _networkPan.suppressClick=true;
         setTimeout(()=>{_networkPan.suppressClick=false;},80);
       }
       _networkDrag.active=false;
       _networkDrag.nodeId='';
+      if(el)snapNetworkNode(el);
       try{stage.releasePointerCapture(e.pointerId);}catch{}
       return;
     }
@@ -10835,6 +10857,7 @@ def get_overview(hours: int = 24) -> dict:
                         "name": service,
                         "full_name": cname,
                         "container_id": cid,
+                        "state": str(c.get("State", "")).lower(),
                         "type": _container_type(service),
                         "errors": errs.get((conn.id, cid), 0),
                         "warnings": warns.get((conn.id, cid), 0),
