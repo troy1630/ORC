@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -22,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, text as _sa_text
 
-from .config import REDIS_URL, REPO_ROOT
+from .config import ADMIN_PASSWORD, ADMIN_USERNAME, CREDENTIAL_ENCRYPTION_KEY, REDIS_URL, REPO_ROOT
 from .db import (
     AIUsageLog,
     AgentMessage,
@@ -37,6 +38,7 @@ from .db import (
     SessionLocal,
     SystemSetting,
     RunbookExecution,
+    ServerCredential,
     ToolPromotion,
     UserAccount,
     UserSession,
@@ -77,6 +79,13 @@ class ConnectionIn(BaseModel):
 class ConnectionTestIn(BaseModel):
     base_url: str
     api_token: str
+
+
+class ServerCredentialIn(BaseModel):
+    linux_user_id: str = Field(default="", max_length=512)
+    linux_password: str = Field(default="", max_length=4096)
+    stack_notes: str = Field(default="", max_length=20000)
+    container_notes: str = Field(default="", max_length=20000)
 
 
 class OracleReviewIn(BaseModel):
@@ -655,18 +664,56 @@ def _user_dict(row: UserAccount) -> dict:
 
 def _ensure_default_admin() -> None:
     with SessionLocal() as s:
-        existing = s.query(UserAccount).filter_by(username="admin").first()
-        if existing:
+        if s.query(UserAccount).first():
             return
+        if not ADMIN_USERNAME or not ADMIN_PASSWORD:
+            raise RuntimeError("Set ADMIN_USERNAME and ADMIN_PASSWORD before the first ORC startup")
         s.add(
             UserAccount(
-                username="admin",
-                password_hash=_hash_password("admin"),
+                username=ADMIN_USERNAME,
+                password_hash=_hash_password(ADMIN_PASSWORD),
                 role="admin",
                 enabled=True,
             )
         )
         s.commit()
+
+
+def _credential_cipher() -> Fernet:
+    if not CREDENTIAL_ENCRYPTION_KEY:
+        raise HTTPException(503, "Credential storage is not configured")
+    try:
+        return Fernet(CREDENTIAL_ENCRYPTION_KEY.encode("ascii"))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(503, "Credential storage is not configured") from exc
+
+
+def _clean_credential_notes(value: str) -> str:
+    lines = [re.sub(r"^[\s•*-]+", "", line).strip() for line in value.splitlines()]
+    return "\n".join(line for line in lines if line)
+
+
+def _credential_payload(body: ServerCredentialIn) -> str:
+    return json.dumps({
+        "linux_user_id": body.linux_user_id.strip(),
+        "linux_password": body.linux_password,
+        "stack_notes": _clean_credential_notes(body.stack_notes),
+        "container_notes": _clean_credential_notes(body.container_notes),
+    })
+
+
+def _credential_dict(row: ServerCredential, connection: Connection) -> dict:
+    try:
+        payload = json.loads(_credential_cipher().decrypt(row.encrypted_payload.encode("ascii")))
+    except (InvalidToken, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(500, "Could not decrypt stored credentials") from exc
+    return {
+        "connection_id": connection.id,
+        "server_name": connection.server_name or connection.name,
+        "base_url": connection.base_url,
+        **payload,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
 
 
 def _current_user(request: Request) -> dict | None:
@@ -1437,6 +1484,8 @@ canvas{display:block;width:100%;height:58px}
 .agent-role{font-size:.68rem;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
 .agent-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center;margin-top:8px}
 .trust-select,.orch-input,.orch-select,.orch-textarea{width:100%;background:#0d1117;border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-size:.78rem;padding:6px 8px;outline:none}
+.credential-notes{min-height:76px;line-height:1.5;white-space:pre-wrap}
+.credential-keyword{color:var(--blu);font-weight:700}
 .orch-textarea{min-height:70px;resize:vertical;line-height:1.35;font-family:inherit}
 .trust-select:focus,.orch-input:focus,.orch-select:focus,.orch-textarea:focus{border-color:var(--pur)}
 .agent-enabled{display:flex;align-items:center;gap:6px;color:var(--mut);font-size:.7rem;white-space:nowrap}
@@ -1870,6 +1919,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
       </div>
       <div class="orch-subtabs">
         <button class="orch-tab on" id="admin-tab-connections" onclick="showAdminTab('connections')">Connections</button>
+        <button class="orch-tab" id="admin-tab-server-credentials" onclick="showAdminTab('server-credentials')">Server Credentials</button>
         <button class="orch-tab" id="admin-tab-ai-usage" onclick="showAdminTab('ai-usage')">AI Usage</button>
         <button class="orch-tab" id="admin-tab-retention" onclick="showAdminTab('retention')">Retention</button>
       </div>
@@ -1882,6 +1932,13 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
             <button class="btnp" onclick="openModal()">+ Add Connection</button>
           </div>
           <div id="conn-body"><div class="empty">Loading…</div></div>
+        </div>
+      </section>
+
+      <section class="orch-view" id="admin-view-server-credentials">
+        <div style="margin-top:12px">
+          <div style="font-size:.78rem;color:var(--mut);margin:0 0 12px">Credentials are encrypted before storage. Server name and URL come from Connections.</div>
+          <div id="server-credentials-body"><div class="empty">Loading…</div></div>
         </div>
       </section>
 
@@ -2435,7 +2492,7 @@ async function logout(){
   location.reload();
 }
 async function startApp(){
-  showTab('home');
+  showTab(_currentUser?.role==='admin'?'admin':'home');
   renderOracle();
   setViewMode(storageGet(VIEW_MODE_KEY)||'corporate',false);
   setWindowHours(storageGet('orc.window.hours')||24,false);
@@ -2489,6 +2546,7 @@ function showAdminTab(id){
   if(tab)tab.classList.add('on');
   if(view)view.classList.add('on');
   if(_adminTab==='connections')loadConns();
+  if(_adminTab==='server-credentials')loadServerCredentials();
   if(_adminTab==='ai-usage')loadAiUsage();
   if(_adminTab==='retention')loadRetentionSettings();
 }
@@ -3696,6 +3754,65 @@ function renderEvts(){
   document.getElementById('ev-body').innerHTML=`<div class="scroll"><table>
     <thead><tr><th>Time (MT)</th><th>Server</th><th>Container</th><th>Severity</th><th>Message</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
+}
+
+/* ============================================================
+   ADMIN — SERVER CREDENTIALS
+   ============================================================ */
+function credentialNotesHtml(value){
+  const marked=esc(value||'').replace(/\b(user(?:name)?|password)\b/gi,'<strong class="credential-keyword">$1</strong>');
+  return (marked.split('\n').filter(Boolean).map(line=>`<div>• ${line}</div>`).join(''))||'<div>• <br></div>';
+}
+function setCredentialNotes(id,value){
+  const el=document.getElementById(id);
+  if(el)el.innerHTML=credentialNotesHtml(value);
+}
+function credentialNotesValue(id){
+  return (document.getElementById(id)?.innerText||'').replace(/^\s*•\s?/gm,'').trim();
+}
+function highlightCredentialWord(editor){
+  const sel=window.getSelection(), node=sel?.anchorNode;
+  if(!node||node.nodeType!==Node.TEXT_NODE)return;
+  const word=node.data.slice(0,sel.anchorOffset).match(/\b(user(?:name)?|password)$/i)?.[0];
+  if(!word)return;
+  const range=document.createRange();
+  range.setStart(node,sel.anchorOffset-word.length);range.setEnd(node,sel.anchorOffset);
+  const mark=document.createElement('strong');mark.className='credential-keyword';range.surroundContents(mark);
+  sel.removeAllRanges();const end=document.createRange();end.selectNodeContents(mark);end.collapse(false);sel.addRange(end);
+}
+function addCredentialBullet(id){
+  const el=document.getElementById(id);if(!el)return;
+  el.focus();document.execCommand('insertHTML',false,'<div>• <br></div>');
+}
+function credentialCardHtml(c){
+  const id=c.connection_id;
+  return `<div class="card" style="padding:16px;margin-bottom:12px">
+    <div style="font-weight:600">${esc(c.server_name)}</div>
+    <div class="mono muted" style="font-size:.75rem;margin:3px 0 14px">${esc(c.base_url)}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+      <div class="orch-field"><label>Linux VM user ID</label><input class="orch-input" id="cred-user-${id}" value="${esc(c.linux_user_id)}" autocomplete="username"></div>
+      <div class="orch-field"><label>Linux VM password</label><input class="orch-input" id="cred-password-${id}" type="password" value="${esc(c.linux_password)}" autocomplete="new-password"></div>
+      <div class="orch-field"><label>Stack credentials and notes</label><div id="cred-stack-${id}" class="orch-input credential-notes" contenteditable="true" oninput="highlightCredentialWord(this)"></div><button class="btns" type="button" onclick="addCredentialBullet('cred-stack-${id}')">+ Bullet</button></div>
+      <div class="orch-field"><label>Container credentials and notes</label><div id="cred-container-${id}" class="orch-input credential-notes" contenteditable="true" oninput="highlightCredentialWord(this)"></div><button class="btns" type="button" onclick="addCredentialBullet('cred-container-${id}')">+ Bullet</button></div>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center"><button class="btnp" type="button" onclick="saveServerCredentials(${id})">Save credentials</button><span id="cred-status-${id}" class="muted" style="font-size:.75rem">${c.updated_at?'Last saved '+fmt(c.updated_at):''}</span></div>
+  </div>`;
+}
+async function loadServerCredentials(){
+  const body=document.getElementById('server-credentials-body');
+  try{
+    const d=await fetch('/admin/server-credentials').then(async r=>{if(!r.ok)throw new Error((await r.json()).detail||'Request failed');return r.json();});
+    if(!(d.items||[]).length){body.innerHTML='<div class="empty">Add a connection before storing server credentials.</div>';return;}
+    body.innerHTML=d.items.map(credentialCardHtml).join('');
+    d.items.forEach(c=>{setCredentialNotes(`cred-stack-${c.connection_id}`,c.stack_notes);setCredentialNotes(`cred-container-${c.connection_id}`,c.container_notes);});
+  }catch(e){body.innerHTML=`<div class="empty">Could not load credentials: ${esc(e.message)}</div>`;}
+}
+async function saveServerCredentials(id){
+  const status=document.getElementById(`cred-status-${id}`);
+  const body={linux_user_id:document.getElementById(`cred-user-${id}`).value,linux_password:document.getElementById(`cred-password-${id}`).value,stack_notes:credentialNotesValue(`cred-stack-${id}`),container_notes:credentialNotesValue(`cred-container-${id}`)};
+  status.textContent='Saving…';
+  try{const r=await fetch(`/admin/server-credentials/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Save failed');status.textContent='Saved.';}
+  catch(e){status.textContent=e.message||'Save failed.';}
 }
 
 /* ============================================================
@@ -5921,7 +6038,10 @@ async def auth_middleware(request: Request, call_next):
     )
     if not public and not _current_user(request):
         return JSONResponse({"detail": "Login required"}, status_code=401)
-    return await call_next(request)
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -5964,6 +6084,7 @@ def auth_login(body: LoginIn, response: Response) -> dict:
             token,
             httponly=True,
             samesite="lax",
+            secure=True,
             max_age=SESSION_DAYS * 24 * 60 * 60,
         )
         return {"ok": True, "user": _user_dict(user)}
@@ -9905,13 +10026,15 @@ def _hours_window(hours: int) -> int:
 # ---------------------------------------------------------------------------
 
 @app.get("/connections")
-def list_connections() -> list:
+def list_connections(request: Request) -> list:
+    _require_admin(request)
     with SessionLocal() as s:
         return [_cdct(c) for c in s.query(Connection).order_by(Connection.name).all()]
 
 
 @app.post("/connections", status_code=201)
-def create_connection(body: ConnectionIn) -> dict:
+def create_connection(body: ConnectionIn, request: Request) -> dict:
+    _require_admin(request)
     with SessionLocal() as s:
         c = Connection(
             name=body.name, type=body.type,
@@ -9927,7 +10050,8 @@ def create_connection(body: ConnectionIn) -> dict:
 
 
 @app.put("/connections/{cid}")
-def update_connection(cid: int, body: ConnectionIn) -> dict:
+def update_connection(cid: int, body: ConnectionIn, request: Request) -> dict:
+    _require_admin(request)
     with SessionLocal() as s:
         c = s.get(Connection, cid)
         if not c:
@@ -9947,7 +10071,8 @@ def update_connection(cid: int, body: ConnectionIn) -> dict:
 
 
 @app.delete("/connections/{cid}", status_code=204)
-def delete_connection(cid: int) -> None:
+def delete_connection(cid: int, request: Request) -> None:
+    _require_admin(request)
     with SessionLocal() as s:
         c = s.get(Connection, cid)
         if not c:
@@ -9957,13 +10082,15 @@ def delete_connection(cid: int) -> None:
 
 
 @app.post("/connections/test-url")
-def test_connection_url(body: ConnectionTestIn) -> dict:
+def test_connection_url(body: ConnectionTestIn, request: Request) -> dict:
+    _require_admin(request)
     ok = PortainerClient(body.base_url.rstrip("/"), body.api_token).health_check()
     return {"ok": ok, "error": None if ok else "Could not reach Portainer API"}
 
 
 @app.post("/connections/{cid}/test")
-def test_connection(cid: int) -> dict:
+def test_connection(cid: int, request: Request) -> dict:
+    _require_admin(request)
     with SessionLocal() as s:
         c = s.get(Connection, cid)
         if not c:
@@ -9974,7 +10101,8 @@ def test_connection(cid: int) -> dict:
 
 
 @app.post("/connections/{cid}/poll")
-def poll_now(cid: int) -> dict:
+def poll_now(cid: int, request: Request) -> dict:
+    _require_admin(request)
     """Immediately scan all containers on one connection (runs in API process)."""
     from .ingest import parse_logs
     from . import raven as _raven
@@ -10062,6 +10190,44 @@ def poll_now(cid: int) -> dict:
             s.commit()
 
     return {"ok": True, "total_events": total_events}
+
+
+@app.get("/admin/server-credentials")
+def list_server_credentials(request: Request) -> dict:
+    _require_admin(request)
+    with SessionLocal() as s:
+        rows = {row.connection_id: row for row in s.query(ServerCredential).all()}
+        items = []
+        for connection in s.query(Connection).order_by(Connection.name).all():
+            row = rows.get(connection.id)
+            items.append(_credential_dict(row, connection) if row else {
+                "connection_id": connection.id,
+                "server_name": connection.server_name or connection.name,
+                "base_url": connection.base_url,
+                "linux_user_id": "", "linux_password": "",
+                "stack_notes": "", "container_notes": "", "updated_at": None,
+            })
+    return {"items": items}
+
+
+@app.put("/admin/server-credentials/{connection_id}")
+def save_server_credentials(connection_id: int, body: ServerCredentialIn, request: Request) -> dict:
+    _require_admin(request)
+    encrypted_payload = _credential_cipher().encrypt(_credential_payload(body).encode("utf-8")).decode("ascii")
+    with SessionLocal() as s:
+        connection = s.get(Connection, connection_id)
+        if not connection:
+            raise HTTPException(404, "Connection not found")
+        row = s.query(ServerCredential).filter_by(connection_id=connection_id).first()
+        if row:
+            row.encrypted_payload = encrypted_payload
+            row.updated_at = datetime.now(timezone.utc)
+        else:
+            row = ServerCredential(connection_id=connection_id, encrypted_payload=encrypted_payload)
+            s.add(row)
+        s.commit()
+        s.refresh(row)
+        return _credential_dict(row, connection)
 
 
 # ---------------------------------------------------------------------------

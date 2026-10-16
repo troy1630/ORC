@@ -38,6 +38,20 @@ class Connection(Base):
     revert_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class ServerCredential(Base):
+    __tablename__ = "server_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    connection_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("connections.id", ondelete="CASCADE"), unique=True
+    )
+    encrypted_payload: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class ObservedEvent(Base):
     __tablename__ = "observed_events"
 
