@@ -3760,20 +3760,20 @@ function renderEvts(){
    ADMIN — SERVER CREDENTIALS
    ============================================================ */
 function credentialNotesHtml(value){
-  const marked=esc(value||'').replace(/\b(user(?:name)?|password)\b/gi,'<strong class="credential-keyword">$1</strong>');
-  return (marked.split('\n').filter(Boolean).map(line=>`<div>• ${line}</div>`).join(''))||'<div>• <br></div>';
+  const marked=esc(value||'').replace(/\\b(user(?:name)?|password)\\b/gi,'<strong class="credential-keyword">$1</strong>');
+  return (marked.split('\\n').filter(Boolean).map(line=>`<div>• ${line}</div>`).join(''))||'<div>• <br></div>';
 }
 function setCredentialNotes(id,value){
   const el=document.getElementById(id);
   if(el)el.innerHTML=credentialNotesHtml(value);
 }
 function credentialNotesValue(id){
-  return (document.getElementById(id)?.innerText||'').replace(/^\s*•\s?/gm,'').trim();
+  return (document.getElementById(id)?.innerText||'').replace(/^\\s*•\\s?/gm,'').trim();
 }
 function highlightCredentialWord(editor){
   const sel=window.getSelection(), node=sel?.anchorNode;
   if(!node||node.nodeType!==Node.TEXT_NODE)return;
-  const word=node.data.slice(0,sel.anchorOffset).match(/\b(user(?:name)?|password)$/i)?.[0];
+  const word=node.data.slice(0,sel.anchorOffset).match(/\\b(user(?:name)?|password)$/i)?.[0];
   if(!word)return;
   const range=document.createRange();
   range.setStart(node,sel.anchorOffset-word.length);range.setEnd(node,sel.anchorOffset);
@@ -3784,6 +3784,11 @@ function addCredentialBullet(id){
   const el=document.getElementById(id);if(!el)return;
   el.focus();document.execCommand('insertHTML',false,'<div>• <br></div>');
 }
+function toggleCredentialPassword(id,button){
+  const input=document.getElementById(id);if(!input)return;
+  const reveal=input.type==='password';
+  input.type=reveal?'text':'password';button.textContent=reveal?'Hide':'Reveal';
+}
 function credentialCardHtml(c){
   const id=c.connection_id;
   return `<div class="card" style="padding:16px;margin-bottom:12px">
@@ -3791,7 +3796,7 @@ function credentialCardHtml(c){
     <div class="mono muted" style="font-size:.75rem;margin:3px 0 14px">${esc(c.base_url)}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
       <div class="orch-field"><label>Linux VM user ID</label><input class="orch-input" id="cred-user-${id}" value="${esc(c.linux_user_id)}" autocomplete="username"></div>
-      <div class="orch-field"><label>Linux VM password</label><input class="orch-input" id="cred-password-${id}" type="password" value="${esc(c.linux_password)}" autocomplete="new-password"></div>
+      <div class="orch-field"><label>Linux VM password</label><div style="display:flex;gap:6px"><input class="orch-input" id="cred-password-${id}" type="password" value="${esc(c.linux_password)}" autocomplete="new-password"><button class="btns" type="button" onclick="toggleCredentialPassword('cred-password-${id}',this)">Reveal</button></div></div>
       <div class="orch-field"><label>Stack credentials and notes</label><div id="cred-stack-${id}" class="orch-input credential-notes" contenteditable="true" oninput="highlightCredentialWord(this)"></div><button class="btns" type="button" onclick="addCredentialBullet('cred-stack-${id}')">+ Bullet</button></div>
       <div class="orch-field"><label>Container credentials and notes</label><div id="cred-container-${id}" class="orch-input credential-notes" contenteditable="true" oninput="highlightCredentialWord(this)"></div><button class="btns" type="button" onclick="addCredentialBullet('cred-container-${id}')">+ Bullet</button></div>
     </div>
