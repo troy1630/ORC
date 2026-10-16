@@ -38,7 +38,7 @@ The Portainer token file referenced by the user must not be committed. Pass it i
 - `PORTAINER_BASE_URL`
 - `PORTAINER_API_TOKEN_FILE`
 - `ADMIN_USERNAME` and `ADMIN_PASSWORD` for the initial administrator account
-- `CREDENTIAL_ENCRYPTION_KEY` for encrypted server credentials (a Fernet key)
+- `CREDENTIAL_ENCRYPTION_KEY` for encrypted server credentials (a long, random, persistent deployment secret)
 - `SESSION_COOKIE_SECURE=true` when ORC is served through HTTPS
 
 ## First Build Sequence

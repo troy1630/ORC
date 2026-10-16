@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import base64
 import hashlib
 import hmac
 import secrets
@@ -681,11 +682,12 @@ def _ensure_default_admin() -> None:
 
 def _credential_cipher() -> Fernet:
     if not CREDENTIAL_ENCRYPTION_KEY:
-        raise HTTPException(503, "Credential storage is not configured")
+        raise HTTPException(503, "Set CREDENTIAL_ENCRYPTION_KEY in the API deployment environment")
     try:
         return Fernet(CREDENTIAL_ENCRYPTION_KEY.encode("ascii"))
-    except (ValueError, TypeError) as exc:
-        raise HTTPException(503, "Credential storage is not configured") from exc
+    except (ValueError, TypeError):
+        key = base64.urlsafe_b64encode(hashlib.sha256(CREDENTIAL_ENCRYPTION_KEY.encode("utf-8")).digest())
+        return Fernet(key)
 
 
 def _clean_credential_notes(value: str) -> str:
@@ -2445,6 +2447,7 @@ const CONTAINER_NAME_PREFIX='orc.container.name.';
 const RAVEN_FEED_HEIGHT_KEY='orc.raven.feed.height';
 const ASIDE_WIDTH_KEY='orc.aside.width';
 const VIEW_MODE_KEY='orc.view.mode';
+const TAB_AUTH_KEY='orc.tab.authenticated';
 const MT_ZONE='America/Denver';
 const DATE_FMT=new Intl.DateTimeFormat('en-US',{timeZone:MT_ZONE,year:'numeric',month:'short',day:'2-digit',hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
 const TIME_FMT=new Intl.DateTimeFormat('en-US',{timeZone:MT_ZONE,hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
@@ -2467,6 +2470,10 @@ function setAuthView(user){
   }
 }
 async function checkAuth(){
+  if(sessionStorage.getItem(TAB_AUTH_KEY)!=='1'){
+    setAuthView(null);
+    return false;
+  }
   try{
     const d=await fetch('/auth/me').then(r=>r.json());
     if(d.authenticated){setAuthView(d.user);return true;}
@@ -2483,11 +2490,13 @@ async function login(){
     const r=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
     const d=await r.json();
     if(!r.ok)throw new Error(d.detail||'Login failed');
+    sessionStorage.setItem(TAB_AUTH_KEY,'1');
     setAuthView(d.user);
     await startApp();
   }catch(e){err.textContent=e.message||'Login failed';}
 }
 async function logout(){
+  sessionStorage.removeItem(TAB_AUTH_KEY);
   await fetch('/auth/logout',{method:'POST'}).catch(()=>{});
   location.reload();
 }
@@ -3789,8 +3798,15 @@ function toggleCredentialPassword(id,button){
   const reveal=input.type==='password';
   input.type=reveal?'text':'password';button.textContent=reveal?'Hide':'Reveal';
 }
+function cockpitUrl(baseUrl){
+  try{
+    const url=new URL(baseUrl);url.port='9090';url.pathname='/';url.search='';url.hash='';
+    return url.href;
+  }catch{return '';}
+}
 function credentialCardHtml(c){
   const id=c.connection_id;
+  const cockpit=cockpitUrl(c.base_url);
   return `<div class="card" style="padding:16px;margin-bottom:12px">
     <div style="font-weight:600">${esc(c.server_name)}</div>
     <div class="mono muted" style="font-size:.75rem;margin:3px 0 14px">${esc(c.base_url)}</div>
@@ -3800,7 +3816,7 @@ function credentialCardHtml(c){
       <div class="orch-field"><label>Stack credentials and notes</label><div id="cred-stack-${id}" class="orch-input credential-notes" contenteditable="true" oninput="highlightCredentialWord(this)"></div><button class="btns" type="button" onclick="addCredentialBullet('cred-stack-${id}')">+ Bullet</button></div>
       <div class="orch-field"><label>Container credentials and notes</label><div id="cred-container-${id}" class="orch-input credential-notes" contenteditable="true" oninput="highlightCredentialWord(this)"></div><button class="btns" type="button" onclick="addCredentialBullet('cred-container-${id}')">+ Bullet</button></div>
     </div>
-    <div style="margin-top:14px;display:flex;gap:10px;align-items:center"><button class="btnp" type="button" onclick="saveServerCredentials(${id})">Save credentials</button><span id="cred-status-${id}" class="muted" style="font-size:.75rem">${c.updated_at?'Last saved '+fmt(c.updated_at):''}</span></div>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center"><button class="btnp" type="button" onclick="saveServerCredentials(${id})">Save credentials</button>${cockpit?`<a class="btns" href="${esc(cockpit)}" target="_blank" rel="noopener noreferrer">Cockpit</a>`:''}<span id="cred-status-${id}" class="muted" style="font-size:.75rem">${c.updated_at?'Last saved '+fmt(c.updated_at):''}</span></div>
   </div>`;
 }
 async function loadServerCredentials(){
