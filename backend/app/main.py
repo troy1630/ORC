@@ -3283,7 +3283,9 @@ function toggleNetworkRunningOnly(){
 }
 function networkVisibleStacks(stacks){
   if(!_networkRunningOnly)return stacks;
-  return stacks.map(stack=>({...stack,containers:(stack.containers||[]).filter(app=>!app.state||String(app.state).toLowerCase()==='running')}));
+  return stacks
+    .map(stack=>({...stack,containers:(stack.containers||[]).filter(app=>!app.state||String(app.state).toLowerCase()==='running')}))
+    .filter(stack=>stack.containers.length);
 }
 function syncNetworkRunningToggle(){
   const button=document.getElementById('network-running-toggle');
