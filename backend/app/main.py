@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, text as _sa_text
 
-from .config import ADMIN_PASSWORD, ADMIN_USERNAME, CREDENTIAL_ENCRYPTION_KEY, REDIS_URL, REPO_ROOT
+from .config import ADMIN_PASSWORD, ADMIN_USERNAME, CREDENTIAL_ENCRYPTION_KEY, REDIS_URL, REPO_ROOT, SESSION_COOKIE_SECURE
 from .db import (
     AIUsageLog,
     AgentMessage,
@@ -6084,7 +6084,7 @@ def auth_login(body: LoginIn, response: Response) -> dict:
             token,
             httponly=True,
             samesite="lax",
-            secure=True,
+            secure=SESSION_COOKIE_SECURE,
             max_age=SESSION_DAYS * 24 * 60 * 60,
         )
         return {"ok": True, "user": _user_dict(user)}

@@ -13,6 +13,7 @@ REDIS_URL: str = os.getenv("REDIS_URL", "redis://redis:6379/0")
 ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "").strip()
 ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
 CREDENTIAL_ENCRYPTION_KEY: str = os.getenv("CREDENTIAL_ENCRYPTION_KEY", "")
+SESSION_COOKIE_SECURE: bool = os.getenv("SESSION_COOKIE_SECURE", "false").strip().lower() in {"1", "true", "yes"}
 POLL_INTERVAL_SECONDS: int = int(os.getenv("POLL_INTERVAL_SECONDS", "3"))
 # Target cycle: spread N connections evenly across this window
 CYCLE_SECONDS: int = int(os.getenv("CYCLE_SECONDS", "180"))
