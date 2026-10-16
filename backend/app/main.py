@@ -665,18 +665,26 @@ def _user_dict(row: UserAccount) -> dict:
 
 def _ensure_default_admin() -> None:
     with SessionLocal() as s:
-        if s.query(UserAccount).first():
-            return
         if not ADMIN_USERNAME or not ADMIN_PASSWORD:
-            raise RuntimeError("Set ADMIN_USERNAME and ADMIN_PASSWORD before the first ORC startup")
-        s.add(
-            UserAccount(
+            if not s.query(UserAccount).first():
+                raise RuntimeError("Set ADMIN_USERNAME and ADMIN_PASSWORD before the first ORC startup")
+            return
+        admin = s.query(UserAccount).filter_by(username=ADMIN_USERNAME).first()
+        if admin:
+            admin.password_hash = _hash_password(ADMIN_PASSWORD)
+            admin.role = "admin"
+            admin.enabled = True
+        else:
+            admin = UserAccount(
                 username=ADMIN_USERNAME,
                 password_hash=_hash_password(ADMIN_PASSWORD),
                 role="admin",
                 enabled=True,
             )
-        )
+            s.add(admin)
+        legacy = s.query(UserAccount).filter_by(username="admin").first()
+        if legacy and legacy is not admin and _verify_password("admin", legacy.password_hash):
+            legacy.enabled = False
         s.commit()
 
 
@@ -1664,7 +1672,7 @@ dialog::backdrop{background:rgba(0,0,0,.75)}
     </div>
     <div class="login-form">
       <input class="orch-input" id="login-username" autocomplete="username" placeholder="Username">
-      <input class="orch-input" id="login-password" autocomplete="current-password" placeholder="Password" type="password">
+      <div style="display:flex;gap:6px"><input class="orch-input" id="login-password" autocomplete="current-password" placeholder="Password" type="password"><button class="btns" type="button" onclick="toggleCredentialPassword('login-password',this)">Reveal</button></div>
       <div class="login-error" id="login-error"></div>
       <button class="btnp" type="button" onclick="login()">Login</button>
     </div>
